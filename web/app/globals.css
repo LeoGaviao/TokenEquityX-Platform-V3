@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+:root {
+  --accent:  #EAB308;
+  --navy:    #1A3C5E;
+  --dark:    #030712;
+}
+
+body {
+  background: #030712;
+  color: #f9fafb;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #111827; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+
+/* Card */
+.card {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+
+/* Stat */
+.stat-label { color: #9ca3af; font-size: 0.75rem; }
+.stat-value { color: #f9fafb; font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }
+
+/* Badge */
+.badge { display: inline-flex; align-items: center; padding: 0.125rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; }
+.badge-green  { background: #14532d; color: #86efac; }
+.badge-red    { background: #7f1d1d; color: #fca5a5; }
+.badge-yellow { background: #713f12; color: #fde047; }
+.badge-blue   { background: #1e3a5f; color: #93c5fd; }
+.badge-purple { background: #3b0764; color: #d8b4fe; }
+.badge-gray   { background: #1f2937; color: #9ca3af; }
+
+/* Button */
+.btn-primary   { background: #eab308; color: #000; font-weight: 700; padding: 0.625rem 1.25rem; border-radius: 0.75rem; transition: background 0.2s; }
+.btn-primary:hover { background: #ca8a04; }
+.btn-secondary { background: #1f2937; color: #d1d5db; padding: 0.625rem 1.25rem; border-radius: 0.75rem; border: 1px solid #374151; transition: all 0.2s; }
+.btn-secondary:hover { background: #374151; color: #fff; }
+.btn-danger    { background: #7f1d1d; color: #fca5a5; padding: 0.625rem 1.25rem; border-radius: 0.75rem; transition: background 0.2s; }
+.btn-danger:hover { background: #991b1b; }
+
+/* Table */
+.table-row { border-bottom: 1px solid #1f2937; }
+.table-row:hover { background: #111827; }
+.table-header { color: #6b7280; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Input */
+.input { width: 100%; background: #1f2937; border: 1px solid #374151; border-radius: 0.5rem; padding: 0.625rem 0.875rem; color: #f9fafb; font-size: 0.875rem; outline: none; transition: border-color 0.2s; }
+.input:focus { border-color: #eab308; }
+
+/* Select */
+.select { width: 100%; background: #1f2937; border: 1px solid #374151; border-radius: 0.5rem; padding: 0.625rem 0.875rem; color: #f9fafb; font-size: 0.875rem; outline: none; }

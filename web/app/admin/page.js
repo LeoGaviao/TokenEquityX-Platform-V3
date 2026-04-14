@@ -1,0 +1,1849 @@
+'use client';
+import { useWallet } from '../../hooks/useWallet';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import api from '../../lib/api';
+import {
+  AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
+} from 'recharts';
+
+const NAVY='#1A3C5E', GOLD='#C8972B', GREEN='#16a34a', RED='#dc2626', TEAL='#0891b2';
+const fmt  = n => { const v=parseFloat(n||0); if(v>=1e9) return `$${(v/1e9).toFixed(2)}B`; if(v>=1e6) return `$${(v/1e6).toFixed(2)}M`; if(v>=1e3) return `$${(v/1e3).toFixed(1)}K`; return `$${v.toFixed(2)}`; };
+const fmtN = n => n>=1e6?`${(n/1e6).toFixed(2)}M`:n>=1e3?`${(n/1e3).toFixed(1)}K`:`${n}`;
+const ts   = d => new Date(d).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const dt   = d => new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+
+// ── Field helpers (mirrors issuer ApplicationsTab)
+const FIELD_LABELS = {
+  revenueTTM:'Revenue (TTM)', ebitdaTTM:'EBITDA (TTM)', freeCashFlow:'Free Cash Flow',
+  totalDebt:'Total Debt', cash:'Cash & Equivalents', growthRatePct:'Growth Rate %',
+  discountRatePct:'Discount Rate %', faceValue:'Face Value', couponRatePct:'Coupon Rate %',
+  marketYieldPct:'Market Yield %', periodsRemaining:'Periods Remaining', periodsPerYear:'Periods/Year',
+  propertyValuation:'Property Valuation', netOperatingIncome:'Net Operating Income', capRate:'Cap Rate %',
+  totalResourceTonnes:'Total Resource (t)', gradePercent:'Grade %', commodityPricePerTonne:'Commodity Price/t',
+  miningCostPerTonne:'Mining Cost/t', recoveryRate:'Recovery Rate', mineLifeYears:'Mine Life (yrs)',
+  annualRevenue:'Annual Revenue', operatingMarginPct:'Operating Margin %', contractYears:'Contract Years',
+  sector:'Sector', periodLabel:'Period',
+};
+const MONEY_FIELDS = ['revenueTTM','ebitdaTTM','freeCashFlow','totalDebt','cash','faceValue',
+  'propertyValuation','netOperatingIncome','commodityPricePerTonne','miningCostPerTonne','annualRevenue'];
+const PCT_FIELDS = ['growthRatePct','discountRatePct','couponRatePct','marketYieldPct',
+  'gradePercent','operatingMarginPct','capRate'];
+const MODEL_LABELS = {
+  revenueMultiple:'Revenue Multiple', ebitdaMultiple:'EBITDA Multiple',
+  dcf:'Discounted Cash Flow (DCF)', nav:'Net Asset Value (NAV)',
+  capRate:'Capitalisation Rate', resourceValuation:'Resource NPV',
+  bondPricing:'Bond Present Value', infrastructure:'Infrastructure DCF',
+};
+
+// ── Admin Final Approval
+function AdminFinalApproval({ item, onApprove, onReject }) {
+  const [listingType, setListingType] = useState(item.audit_report?.suggestedListingType || '');
+  const [adminNotes, setAdminNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const report = item.audit_report || {};
+  const handleApprove = async () => {
+    if (!listingType) { alert('Please select a listing type.'); return; }
+    setSubmitting(true);
+    await onApprove(listingType, adminNotes);
+    setSubmitting(false);
+  };
+  return (
+    <div className="space-y-3">
+      <div className="bg-green-900/20 border border-green-800/50 rounded-xl p-4">
+        <p className="text-green-300 text-xs font-bold mb-2">✓ Auditor Has Approved — Admin Final Sign-Off Required</p>
+        {report.certifiedPrice && (
+          <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+            <span className="text-gray-400">Certified Price: <span className="text-yellow-400 font-bold">${report.certifiedPrice?.toFixed(4)}</span></span>
+            <span className="text-gray-400">Risk: <span className="font-bold text-white">{report.riskRating}</span></span>
+            <span className="text-gray-400 col-span-2">Auditor Suggestion: <span className="text-blue-300 font-bold">{report.suggestedListingType?.replace('_',' ')||'Not specified'}</span></span>
+          </div>
+        )}
+        {report.findings && <p className="text-gray-400 text-xs italic leading-relaxed">{report.findings}</p>}
+      </div>
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Listing Type <span className="text-red-400">*</span></label>
+        <div className="space-y-2">
+          {[
+            { value:'BROWNFIELD_BOURSE', label:'🏛 Brownfield — Main Bourse', desc:'≥3 years audited financials + revenue ≥ USD 1.5M. Full order book.' },
+            { value:'GREENFIELD_P2P',    label:'🔄 Greenfield — P2P Only',   desc:'< 3 years financials or revenue < USD 1.5M. Peer-to-peer transfers only.' },
+          ].map(opt => (
+            <div key={opt.value} onClick={()=>setListingType(opt.value)}
+              className={`cursor-pointer rounded-xl p-3 border transition-all ${listingType===opt.value?'border-blue-500 bg-blue-900/20':'border-gray-700 bg-gray-800/30 hover:border-gray-500'}`}>
+              <p className="text-sm font-bold">{opt.label}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{opt.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Admin Notes (visible to issuer)</label>
+        <textarea rows={2} value={adminNotes} onChange={e=>setAdminNotes(e.target.value)}
+          placeholder="Any conditions or next steps for the issuer regarding token minting and listing."
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600 resize-none"/>
+      </div>
+      <button onClick={handleApprove} disabled={submitting||!listingType}
+        className="w-full py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40 transition-colors"
+        style={{background:GREEN}}>
+        {submitting?'⏳ Approving…':'🚀 Final Approval — Proceed to Token Minting'}
+      </button>
+      <button onClick={onReject}
+        className="w-full py-2 rounded-xl text-xs font-semibold text-red-400 bg-red-900/30 hover:bg-red-900/50 border border-red-800">
+        ❌ Reject Application
+      </button>
+    </div>
+  );
+}
+
+// ── Submission Detail Panel (mirrors issuer ApplicationsTab drawer)
+function SubmissionDetailPanel({ item }) {
+  const [data,      setData]      = useState(null);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true); setError(null);
+      try {
+        const res = await api.get(`/submissions/${item.id}`);
+        const sub = res.data;
+        let parsedData = {};
+        try { parsedData = typeof sub.data_json === 'string' ? JSON.parse(sub.data_json) : (sub.data_json || {}); } catch {}
+        const financialData = parsedData.financialData || parsedData;
+        const hasFinancials = financialData && (
+          financialData.revenueTTM || financialData.faceValue ||
+          financialData.propertyValuation || financialData.totalResourceTonnes || financialData.annualRevenue
+        );
+        let valuation = null;
+        if (hasFinancials && item.symbol) {
+          try {
+            const vRes = await api.post('/pipeline/preview', { tokenSymbol: item.symbol, financialData });
+            valuation = vRes.data;
+          } catch {}
+        }
+        if (!cancelled) setData({ sub, parsedData, financialData, valuation });
+      } catch(e) {
+        if (!cancelled) setError('Could not load submission details.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [item.id]);
+
+  if (loading) return (
+    <div className="text-center py-8 text-gray-500">
+      <p className="text-2xl mb-2">⏳</p>
+      <p className="text-sm">Loading submission details…</p>
+    </div>
+  );
+
+  if (error) return (
+    <div className="bg-red-900/30 border border-red-700/50 rounded-xl p-4 text-red-300 text-sm">{error}</div>
+  );
+
+  if (!data) return null;
+
+  const { financialData, valuation, sub } = data;
+  const hasFinancialFields = financialData && Object.keys(financialData)
+    .filter(k => !['documents','submittedAt','type','dataHash'].includes(k) && financialData[k] !== null && financialData[k] !== undefined && financialData[k] !== '').length > 0;
+
+  return (
+    <div className="space-y-5 pt-2">
+
+      {/* Financial data submitted */}
+      {hasFinancialFields && (
+        <div>
+          <h4 className="font-semibold text-sm text-gray-300 mb-3">📊 Financial Data Submitted by Issuer</h4>
+          <div className="bg-gray-900/60 border border-gray-700/50 rounded-xl p-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {Object.entries(financialData)
+                .filter(([k,v]) => v !== null && v !== undefined && v !== '' && !['documents','submittedAt','type','dataHash','periodLabel'].includes(k))
+                .map(([key, val]) => {
+                  const isMoney = MONEY_FIELDS.includes(key);
+                  const isPct   = PCT_FIELDS.includes(key);
+                  const displayVal = isMoney ? fmt(val) : isPct ? `${val}%` : String(val);
+                  return (
+                    <div key={key} className="bg-gray-800/50 rounded-lg p-3">
+                      <p className="text-xs text-gray-500 mb-1">{FIELD_LABELS[key] || key}</p>
+                      <p className="font-semibold text-sm text-white">{displayVal}</p>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Valuation engine breakdown */}
+      {valuation && (
+        <div>
+          <h4 className="font-semibold text-sm text-gray-300 mb-3">🔢 Valuation Engine Breakdown</h4>
+          <div className="bg-gray-900/60 border border-gray-700/50 rounded-xl p-4 space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 mb-1">Asset Type</p>
+                <p className="font-bold text-yellow-400">{valuation.assetType}</p>
+              </div>
+              <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 mb-1">Blended Enterprise Value</p>
+                <p className="font-bold text-green-400 text-lg">{fmt(valuation.blended)}</p>
+              </div>
+              <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 mb-1">Reference Price / Token</p>
+                <p className="font-bold text-white text-lg">${parseFloat(valuation.pricePerToken||0).toFixed(4)}</p>
+              </div>
+            </div>
+            {valuation.models && Object.entries(valuation.models)
+              .filter(([,v]) => v && (v.enterpriseValue > 0 || v.price > 0 || v.nav > 0)).length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Model Breakdown</p>
+                <div className="space-y-2">
+                  {Object.entries(valuation.models)
+                    .filter(([,v]) => v && (v.enterpriseValue > 0 || v.price > 0 || v.nav > 0))
+                    .map(([modelName, modelData]) => {
+                      const val = modelData?.enterpriseValue || modelData?.price || modelData?.nav || 0;
+                      return (
+                        <div key={modelName} className="flex items-center justify-between bg-gray-800/40 rounded-lg px-3 py-2">
+                          <div>
+                            <p className="text-sm font-medium">{MODEL_LABELS[modelName] || modelName}</p>
+                            {modelData?.multiple && <p className="text-xs text-gray-500">Multiple: {modelData.multiple}x</p>}
+                            {modelData?.macaulayDuration && <p className="text-xs text-gray-500">Duration: {modelData.macaulayDuration} yrs</p>}
+                          </div>
+                          <p className="font-bold text-yellow-400">{fmt(val)}</p>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-gray-600 border-t border-gray-700/50 pt-3">
+              System-generated preview. Auditor may apply adjustments before certifying the final oracle price.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Auditor-facing summary */}
+      <div>
+        <h4 className="font-semibold text-sm text-gray-300 mb-3">🔍 Auditor-Facing Summary</h4>
+        <div className="bg-blue-900/10 border border-blue-800/30 rounded-xl p-4 space-y-2 text-sm">
+          {[
+            ['Submission ID',    String(item.id)],
+            ['Token Symbol',     item.symbol || '—'],
+            ['Period',           item.isNewApplication ? (sub?.period || 'Tokenisation Application') : (item.name || '—')],
+            ['Reference',        sub?.reference_number || item.reference || '—'],
+            ['Assigned Auditor', item.assigned_auditor || sub?.assigned_auditor || 'Not yet assigned'],
+            ['Current Status',   sub?.status || item.status || '—'],
+            ...(valuation ? [['System Reference Price', `$${parseFloat(valuation.pricePerToken||0).toFixed(6)}`]] : []),
+          ].map(([label, value])=>(
+            <div key={label} className="flex justify-between">
+              <span className="text-gray-400">{label}</span>
+              <span className={
+                label==='Assigned Auditor' && !(item.assigned_auditor||sub?.assigned_auditor) ? 'text-amber-400' :
+                label==='System Reference Price' ? 'text-yellow-400 font-bold' :
+                label==='Token Symbol' ? 'font-bold' : 'text-gray-200'
+              }>{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Auditor notes */}
+      {(sub?.auditor_notes || item.notes) && (
+        <div>
+          <h4 className="font-semibold text-sm text-gray-300 mb-2">Auditor Notes / Internal Notes</h4>
+          <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 text-sm text-gray-300 leading-relaxed">
+            {sub?.auditor_notes || item.notes}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Blog Management
+function AdminOfferingsTab({ NAVY, GOLD, GREEN, RED, notify }) {
+  const [offerings,     setOfferings]     = useState([]);
+  const [tokens,        setTokens]        = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [selected,      setSelected]      = useState(null);
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [view,          setView]          = useState('list'); // 'list' | 'detail'
+  const [submitting,    setSubmitting]    = useState(false);
+  const [closeForm,     setCloseForm]     = useState({ bank_reference:'', admin_notes:'', trading_mode:'FULL_TRADING' });
+  const API  = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+  const hdrs = () => ({ Authorization:`Bearer ${localStorage.getItem('token')}`, 'Content-Type':'application/json' });
+  const fmt  = n => { const v=parseFloat(n||0); if(v>=1e6) return `$${(v/1e6).toFixed(2)}M`; if(v>=1e3) return `$${(v/1e3).toFixed(1)}K`; return `$${v.toFixed(2)}`; };
+  const inputCls = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600";
+  const STATUS_COLORS = {
+    PENDING_APPROVAL: 'bg-amber-900/50 text-amber-300 border border-amber-700/50',
+    AUDITOR_REVIEWED: 'bg-blue-900/50 text-blue-300 border border-blue-700/50',
+    OPEN:             'bg-green-900/50 text-green-300 border border-green-700/50',
+    DISBURSED:        'bg-purple-900/50 text-purple-300 border border-purple-700/50',
+    CANCELLED:        'bg-red-900/50 text-red-300 border border-red-700/50',
+  };
+  const RECOMMENDATION_COLORS = {
+    APPROVE:          'text-green-400',
+    REJECT:           'text-red-400',
+    REQUEST_CHANGES:  'text-amber-400',
+  };
+
+  const loadOfferings = () => {
+    setLoading(true);
+    fetch(`${API}/offerings`, { headers: hdrs() })
+      .then(r => r.json()).then(d => { if (Array.isArray(d)) setOfferings(d); })
+      .catch(() => {}).finally(() => setLoading(false));
+  };
+
+  const loadSubscriptions = (id) => {
+    fetch(`${API}/offerings/${id}/subscriptions`, { headers: hdrs() })
+      .then(r => r.json()).then(d => { if (Array.isArray(d)) setSubscriptions(d); })
+      .catch(() => {});
+  };
+
+  useEffect(() => { loadOfferings(); }, []);
+
+  const approveOffering = async (id) => {
+    if (!window.confirm('Approve this offering and open it for investor subscriptions?')) return;
+    setSubmitting(true);
+    try {
+      const res  = await fetch(`${API}/offerings/${id}/approve`, { method:'PUT', headers: hdrs(), body: JSON.stringify({ admin_notes: 'Approved by admin' }) });
+      const data = await res.json();
+      notify(res.ok ? 'success' : 'error', data.message || data.error);
+      loadOfferings();
+      if (selected?.id === id) setSelected(prev => ({ ...prev, status: 'OPEN' }));
+    } catch { notify('error', 'Could not approve offering'); }
+    setSubmitting(false);
+  };
+
+  const rejectOffering = async (id) => {
+    const reason = window.prompt('Reason for rejection (required):');
+    if (!reason) return;
+    try {
+      const res  = await fetch(`${API}/offerings/${id}/reject`, { method:'PUT', headers: hdrs(), body: JSON.stringify({ reason }) });
+      const data = await res.json();
+      notify(res.ok ? 'success' : 'error', data.message || data.error);
+      loadOfferings(); setView('list'); setSelected(null);
+    } catch { notify('error', 'Could not reject offering'); }
+  };
+
+  const closeOffering = async () => {
+    if (!selected) return;
+    if (!window.confirm(`Close offering and disburse proceeds to issuer?`)) return;
+    setSubmitting(true);
+    try {
+      const res  = await fetch(`${API}/offerings/${selected.id}/close`, { method:'POST', headers: hdrs(), body: JSON.stringify(closeForm) });
+      const data = await res.json();
+      if (!res.ok) { notify('error', data.error || 'Failed'); setSubmitting(false); return; }
+      notify('success', data.message);
+      setView('list'); setSelected(null); loadOfferings();
+    } catch { notify('error', 'Could not close offering'); }
+    setSubmitting(false);
+  };
+
+  const cancelOffering = async (id) => {
+    if (!window.confirm('Cancel this offering and refund all subscribers?')) return;
+    try {
+      const res  = await fetch(`${API}/offerings/${id}/cancel`, { method:'POST', headers: hdrs(), body: JSON.stringify({ reason: 'Cancelled by admin' }) });
+      const data = await res.json();
+      notify(res.ok ? 'success' : 'error', data.message || data.error);
+      loadOfferings(); setView('list'); setSelected(null);
+    } catch { notify('error', 'Could not cancel offering'); }
+  };
+
+  const pendingQueue   = offerings.filter(o => o.status === 'PENDING_APPROVAL' || o.status === 'AUDITOR_REVIEWED');
+  const activeOfferings = offerings.filter(o => o.status === 'OPEN');
+  const pastOfferings   = offerings.filter(o => o.status === 'DISBURSED' || o.status === 'CANCELLED');
+
+  if (view === 'detail' && selected) return (
+    <div className="space-y-5 max-w-3xl">
+      <div className="flex items-center gap-3">
+        <button onClick={()=>{ setView('list'); setSelected(null); setSubscriptions([]); }} className="text-gray-400 hover:text-white text-sm">← Back</button>
+        <h2 className="text-xl font-bold">{selected.symbol} — Primary Offering</h2>
+        <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[selected.status]||''}`}>{selected.status?.replace('_',' ')}</span>
+      </div>
+
+      {/* Key metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          ['Target Raise',       fmt(selected.target_raise_usd),         'text-white'],
+          ['Total Raised',       fmt(selected.total_raised_usd),         'text-green-400'],
+          ['Subscribers',        selected.subscriber_count || 0,         'text-white'],
+          ['Tokens Subscribed',  parseInt(selected.tokens_subscribed||0).toLocaleString(), 'text-yellow-400'],
+        ].map(([l,v,c])=>(
+          <div key={l} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <p className="text-xs text-gray-500 mb-1">{l}</p>
+            <p className={`text-lg font-bold ${c}`}>{v}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Offering terms */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <h3 className="font-semibold text-sm mb-3 text-gray-300">📋 Offering Terms (Proposed by Issuer)</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+          {[
+            ['Offering Price',     `$${parseFloat(selected.offering_price_usd||0).toFixed(4)}`],
+            ['Min Subscription',   fmt(selected.min_subscription_usd)],
+            ['Max Subscription',   selected.max_subscription_usd ? fmt(selected.max_subscription_usd) : 'No limit'],
+            ['Total Tokens',       parseInt(selected.total_tokens_offered||0).toLocaleString()],
+            ['Deadline',           new Date(selected.subscription_deadline).toLocaleDateString('en-GB')],
+            ['Issuance Fee',       `${(parseFloat(selected.issuance_fee_rate||0)*100).toFixed(1)}%`],
+          ].map(([l,v])=>(
+            <div key={l} className="bg-gray-800/50 rounded-lg p-3">
+              <p className="text-xs text-gray-500 mb-0.5">{l}</p>
+              <p className="font-semibold text-white">{v}</p>
+            </div>
+          ))}
+        </div>
+        {selected.offering_rationale && (
+          <div className="mt-3 bg-gray-800/30 rounded-lg p-3">
+            <p className="text-xs text-gray-500 mb-1">Issuer Rationale</p>
+            <p className="text-sm text-gray-300 leading-relaxed">{selected.offering_rationale}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Auditor review panel */}
+      {selected.status === 'AUDITOR_REVIEWED' && selected.auditor_recommendation && (
+        <div className={`rounded-xl p-4 border ${selected.auditor_recommendation==='APPROVE'?'bg-green-900/20 border-green-800/50':selected.auditor_recommendation==='REJECT'?'bg-red-900/20 border-red-800/50':'bg-amber-900/20 border-amber-800/50'}`}>
+          <p className="font-semibold text-sm mb-2">🔍 Auditor Review Submitted</p>
+          <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+            <span className="text-gray-400">Recommendation: <span className={`font-bold ${RECOMMENDATION_COLORS[selected.auditor_recommendation]||'text-white'}`}>{selected.auditor_recommendation?.replace('_',' ')}</span></span>
+            <span className="text-gray-400">Reviewed: <span className="text-white">{selected.auditor_reviewed_at ? new Date(selected.auditor_reviewed_at).toLocaleDateString('en-GB') : '—'}</span></span>
+          </div>
+          {selected.price_assessment && <p className="text-xs text-gray-400 mb-1">Price Assessment: <span className="text-gray-200">{selected.price_assessment}</span></p>}
+          {selected.auditor_notes    && <p className="text-xs text-gray-400">Notes: <span className="text-gray-200">{selected.auditor_notes}</span></p>}
+        </div>
+      )}
+
+      {/* Pending approval queue — admin approve / reject */}
+      {(selected.status === 'PENDING_APPROVAL' || selected.status === 'AUDITOR_REVIEWED') && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+          <h3 className="font-semibold text-sm text-gray-300">⚙️ Admin Decision</h3>
+          {selected.status === 'PENDING_APPROVAL' && (
+            <div className="bg-amber-900/20 border border-amber-800/40 rounded-lg p-3 text-xs text-amber-300">
+              ⚠️ This offering has not yet been reviewed by an auditor. You may still approve it, but auditor review is recommended.
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button onClick={()=>approveOffering(selected.id)} disabled={submitting}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40"
+              style={{background:GREEN}}>
+              ✅ Approve & Open Offering
+            </button>
+            <button onClick={()=>rejectOffering(selected.id)}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-red-900/40 text-red-300 border border-red-800 hover:bg-red-900/60">
+              ❌ Reject
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">Approving will move the token to PRIMARY_ONLY market state and open subscriptions to investors.</p>
+        </div>
+      )}
+
+      {/* Close / disburse panel for open offerings */}
+      {selected.status === 'OPEN' && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+          <h3 className="font-semibold text-sm text-gray-300">💰 Close Offering & Disburse Proceeds</h3>
+          <div className="bg-blue-900/20 border border-blue-800/40 rounded-lg p-3 text-sm space-y-1">
+            <p className="text-blue-300 font-semibold text-xs mb-2">Settlement Preview</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div><p className="text-xs text-gray-500">Gross Raised</p><p className="font-bold text-white">{fmt(selected.total_raised_usd)}</p></div>
+              <div><p className="text-xs text-gray-500">Issuance Fee (2%)</p><p className="font-bold text-red-300">-{fmt(parseFloat(selected.total_raised_usd)*0.02)}</p></div>
+              <div><p className="text-xs text-gray-500">Net to Issuer</p><p className="font-bold text-green-400">{fmt(parseFloat(selected.total_raised_usd)*0.98)}</p></div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Bank Transfer Reference</label>
+              <input value={closeForm.bank_reference} onChange={e=>setCloseForm(f=>({...f,bank_reference:e.target.value}))}
+                className={inputCls} placeholder="e.g. TXN-2026-001"/>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Post-Offering Trading Mode</label>
+              <select value={closeForm.trading_mode} onChange={e=>setCloseForm(f=>({...f,trading_mode:e.target.value}))} className={inputCls}>
+                <option value="FULL_TRADING">Full Trading (Main Bourse)</option>
+                <option value="P2P_ONLY">P2P Only (Greenfield)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">Admin Notes (audit trail)</label>
+            <textarea rows={2} value={closeForm.admin_notes} onChange={e=>setCloseForm(f=>({...f,admin_notes:e.target.value}))}
+              className={inputCls+' resize-none'} placeholder="Any notes for the record"/>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={closeOffering} disabled={submitting}
+              className="flex-1 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-40"
+              style={{background:GREEN}}>
+              {submitting ? '⏳ Processing…' : '✅ Close & Disburse to Issuer'}
+            </button>
+            <button onClick={()=>cancelOffering(selected.id)}
+              className="px-5 py-3 rounded-xl text-sm font-semibold bg-red-900/40 text-red-300 border border-red-800 hover:bg-red-900/60">
+              Cancel Offering
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Disbursed summary */}
+      {selected.status === 'DISBURSED' && (
+        <div className="bg-green-900/20 border border-green-800/40 rounded-xl p-4">
+          <p className="text-green-300 font-bold mb-3">✅ Offering Closed & Disbursed</p>
+          <div className="grid grid-cols-3 gap-3 text-sm mb-3">
+            <div><p className="text-xs text-gray-500">Gross Raised</p><p className="font-bold text-white">{fmt(selected.total_raised_usd)}</p></div>
+            <div><p className="text-xs text-gray-500">Issuance Fee</p><p className="font-bold text-red-300">-{fmt(selected.issuance_fee_usd)}</p></div>
+            <div><p className="text-xs text-gray-500">Net to Issuer</p><p className="font-bold text-green-400">{fmt(selected.net_proceeds_usd)}</p></div>
+          </div>
+          {selected.bank_reference && <p className="text-xs text-gray-500">Bank ref: <span className="font-mono text-white">{selected.bank_reference}</span></p>}
+          {selected.disbursed_at   && <p className="text-xs text-gray-500 mt-1">Disbursed: {new Date(selected.disbursed_at).toLocaleDateString('en-GB')}</p>}
+        </div>
+      )}
+
+      {/* Subscriber list */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h3 className="font-semibold text-sm mb-3">👥 Subscriber List</h3>
+        {subscriptions.length === 0 ? (
+          <p className="text-gray-500 text-sm text-center py-4">No subscriptions yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead><tr className="text-gray-500 text-xs border-b border-gray-800">
+              {['Investor','Amount','Tokens','Rail','Status','Date'].map(h=><th key={h} className="text-left pb-2 pr-3">{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {subscriptions.map((s,i)=>(
+                <tr key={i} className="border-b border-gray-800/50">
+                  <td className="py-2 pr-3"><p className="font-medium text-sm">{s.full_name}</p><p className="text-xs text-gray-500">{s.email}</p></td>
+                  <td className="py-2 pr-3 text-green-400 font-semibold">{fmt(s.amount_usd)}</td>
+                  <td className="py-2 pr-3">{parseInt(s.tokens_allocated).toLocaleString()}</td>
+                  <td className="py-2 pr-3"><span className={`text-xs px-2 py-0.5 rounded-full ${s.settlement_rail==='USDC'?'bg-purple-900/50 text-purple-300':'bg-blue-900/50 text-blue-300'}`}>{s.settlement_rail}</span></td>
+                  <td className="py-2 pr-3"><span className={`text-xs px-2 py-0.5 rounded-full ${s.status==='CONFIRMED'?'bg-green-900/50 text-green-300':s.status==='REFUNDED'?'bg-red-900/50 text-red-300':'bg-gray-700 text-gray-400'}`}>{s.status}</span></td>
+                  <td className="py-2 text-xs text-gray-400">{new Date(s.subscribed_at).toLocaleDateString('en-GB')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── LIST VIEW
+  return (
+    <div className="space-y-6 max-w-4xl">
+      <div><h2 className="text-xl font-bold">Primary Offerings</h2><p className="text-gray-500 text-sm mt-0.5">Review issuer proposals, approve offerings and manage disbursements.</p></div>
+
+      {loading && <p className="text-gray-500 text-sm py-4">Loading…</p>}
+
+      {/* Pending approval queue */}
+      {!loading && pendingQueue.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-amber-300 mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block"/>
+            Awaiting Review / Approval ({pendingQueue.length})
+          </h3>
+          <div className="space-y-3">
+            {pendingQueue.map(o=>(
+              <div key={o.id} className="bg-gray-900 border border-amber-800/30 rounded-xl p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="font-bold text-blue-300">{o.symbol}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[o.status]||''}`}>{o.status?.replace('_',' ')}</span>
+                      {o.auditor_recommendation && (
+                        <span className={`text-xs font-semibold ${RECOMMENDATION_COLORS[o.auditor_recommendation]||''}`}>
+                          Auditor: {o.auditor_recommendation?.replace('_',' ')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-5 text-xs text-gray-400 flex-wrap">
+                      <span>Price: <span className="text-white">${parseFloat(o.offering_price_usd).toFixed(4)}</span></span>
+                      <span>Target: <span className="text-white">{fmt(o.target_raise_usd)}</span></span>
+                      <span>Tokens: <span className="text-white">{parseInt(o.total_tokens_offered).toLocaleString()}</span></span>
+                      <span>Deadline: <span className="text-white">{new Date(o.subscription_deadline).toLocaleDateString('en-GB')}</span></span>
+                      <span>Issuer: <span className="text-white">{o.issuer_name || o.issuer_email || '—'}</span></span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={()=>{ setSelected(o); setView('detail'); loadSubscriptions(o.id); }}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-blue-900/40 text-blue-300 hover:bg-blue-900/60">Review</button>
+                    <button onClick={()=>approveOffering(o.id)} disabled={submitting}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-green-900/40 text-green-300 hover:bg-green-900/60 disabled:opacity-40">✅ Approve</button>
+                    <button onClick={()=>rejectOffering(o.id)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-red-900/40 text-red-300 hover:bg-red-900/60">❌ Reject</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Open offerings */}
+      {!loading && activeOfferings.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-green-300 mb-3">🟢 Open Offerings ({activeOfferings.length})</h3>
+          <div className="space-y-3">
+            {activeOfferings.map(o=>(
+              <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-bold text-blue-300">{o.symbol}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[o.status]||''}`}>OPEN</span>
+                    <span className="text-xs text-gray-500">{o.subscriber_count || 0} subscribers</span>
+                  </div>
+                  <div className="flex gap-5 text-xs text-gray-400 flex-wrap">
+                    <span>Raised: <span className="text-green-400 font-semibold">{fmt(o.total_raised_usd)}</span> of <span className="text-white">{fmt(o.target_raise_usd)}</span></span>
+                    <span>Deadline: <span className="text-white">{new Date(o.subscription_deadline).toLocaleDateString('en-GB')}</span></span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="mt-2 w-full bg-gray-800 rounded-full h-1.5">
+                    <div className="h-1.5 rounded-full bg-green-500" style={{width:`${Math.min(100,(parseFloat(o.total_raised_usd)/parseFloat(o.target_raise_usd))*100).toFixed(0)}%`}}/>
+                  </div>
+                </div>
+                <button onClick={()=>{ setSelected(o); setView('detail'); loadSubscriptions(o.id); }}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-blue-900/40 text-blue-300 hover:bg-blue-900/60 flex-shrink-0">Manage</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Past offerings */}
+      {!loading && pastOfferings.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">📁 Past Offerings</h3>
+          <div className="space-y-2">
+            {pastOfferings.map(o=>(
+              <div key={o.id} className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-4 flex items-center justify-between gap-4 opacity-75">
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-semibold text-sm">{o.symbol}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[o.status]||''}`}>{o.status}</span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {o.status==='DISBURSED'
+                      ? `Raised: ${fmt(o.total_raised_usd)} · Net to issuer: ${fmt(o.net_proceeds_usd)}`
+                      : `Cancelled`}
+                  </p>
+                </div>
+                <button onClick={()=>{ setSelected(o); setView('detail'); loadSubscriptions(o.id); }}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 text-gray-400 hover:text-white flex-shrink-0">View</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!loading && offerings.length === 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+          <p className="text-3xl mb-3">🏦</p>
+          <p className="font-semibold mb-1">No offering proposals yet</p>
+          <p className="text-gray-500 text-sm">Issuers will submit offering proposals from their dashboard once their token is approved through the pipeline.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminBlogTab() {
+  const [posts,   setPosts]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [msg,     setMsg]     = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [form,    setForm]    = useState({
+    title:'', category:'General', summary:'', body:'',
+    author:'', author_role:'', read_time:'5 min', featured:false, published:false,
+  });
+
+  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+  const hdrs = () => ({ Authorization:`Bearer ${localStorage.getItem('token')}`, 'Content-Type':'application/json' });
+  const CATS = ['General','Market Intelligence','Education','Research','Case Study','Announcement'];
+
+  const loadPosts = () => {
+    setLoading(true);
+    fetch(`${API}/blog/all`, { headers: hdrs() })
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setPosts(data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadPosts(); }, []);
+
+  const openNew = () => {
+    setForm({ title:'', category:'General', summary:'', body:'', author:'', author_role:'', read_time:'5 min', featured:false, published:false });
+    setEditing('new');
+  };
+
+  const openEdit = (p) => {
+    setForm({ title:p.title||'', category:p.category||'General', summary:p.summary||'', body:p.body||'', author:p.author||'', author_role:p.author_role||'', read_time:p.read_time||'5 min', featured:!!p.featured, published:!!p.published });
+    setEditing(p);
+  };
+
+  const save = async () => {
+    if (!form.title || !form.summary || !form.body || !form.author) {
+      setMsg({ type:'error', text:'Title, summary, body and author are required.' }); return;
+    }
+    try {
+      const url    = editing === 'new' ? `${API}/blog` : `${API}/blog/${editing.id}`;
+      const method = editing === 'new' ? 'POST' : 'PUT';
+      const res    = await fetch(url, { method, headers: hdrs(), body: JSON.stringify(form) });
+      const data   = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMsg({ type:'success', text: editing === 'new' ? 'Article created.' : 'Article updated.' });
+      setEditing(null); loadPosts();
+    } catch (err) { setMsg({ type:'error', text: err.message || 'Save failed.' }); }
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  const del = async (id) => {
+    if (!confirm('Delete this article?')) return;
+    try { await fetch(`${API}/blog/${id}`, { method:'DELETE', headers: hdrs() }); loadPosts(); setMsg({ type:'success', text:'Deleted.' }); }
+    catch { setMsg({ type:'error', text:'Delete failed.' }); }
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  const togglePublish = async (p) => {
+    try { await fetch(`${API}/blog/${p.id}`, { method:'PUT', headers: hdrs(), body: JSON.stringify({ published: !p.published }) }); loadPosts(); } catch {}
+  };
+
+  const inputCls = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600";
+
+  if (editing) return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="flex items-center gap-3">
+        <button onClick={()=>setEditing(null)} className="text-gray-400 hover:text-white text-sm">← Back</button>
+        <h2 className="text-xl font-bold">{editing === 'new' ? 'New Article' : 'Edit Article'}</h2>
+      </div>
+      {msg && <div className={`p-3 rounded-xl text-sm border ${msg.type==='success'?'bg-green-900/30 border-green-700 text-green-300':'bg-red-900/30 border-red-700 text-red-300'}`}>{msg.text}</div>}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+        <div><label className="text-xs text-gray-400 block mb-1">Title *</label><input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} className={inputCls} placeholder="Article title"/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="text-xs text-gray-400 block mb-1">Category</label><select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))} className={inputCls}>{CATS.map(c=><option key={c}>{c}</option>)}</select></div>
+          <div><label className="text-xs text-gray-400 block mb-1">Read Time</label><input value={form.read_time} onChange={e=>setForm(f=>({...f,read_time:e.target.value}))} className={inputCls} placeholder="5 min"/></div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="text-xs text-gray-400 block mb-1">Author *</label><input value={form.author} onChange={e=>setForm(f=>({...f,author:e.target.value}))} className={inputCls} placeholder="e.g. Richard Chimuka"/></div>
+          <div><label className="text-xs text-gray-400 block mb-1">Author Role</label><input value={form.author_role} onChange={e=>setForm(f=>({...f,author_role:e.target.value}))} className={inputCls} placeholder="e.g. CEO"/></div>
+        </div>
+        <div><label className="text-xs text-gray-400 block mb-1">Summary *</label><textarea rows={3} value={form.summary} onChange={e=>setForm(f=>({...f,summary:e.target.value}))} className={inputCls+' resize-none'} placeholder="One-paragraph summary"/></div>
+        <div><label className="text-xs text-gray-400 block mb-1">Article Body *</label><textarea rows={14} value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} className={inputCls+' resize-y font-mono text-xs'} placeholder="Full article text."/></div>
+        <div className="flex items-center gap-6">
+          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.featured} onChange={e=>setForm(f=>({...f,featured:e.target.checked}))}/><span className="text-sm text-gray-300">Featured</span></label>
+          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.published} onChange={e=>setForm(f=>({...f,published:e.target.checked}))}/><span className="text-sm text-gray-300">Publish immediately</span></label>
+        </div>
+      </div>
+      <div className="flex gap-3">
+        <button onClick={save} className="flex-1 py-3 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>{form.published?'🌐 Save & Publish':'💾 Save as Draft'}</button>
+        <button onClick={()=>setEditing(null)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">Cancel</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4 max-w-4xl">
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-xl font-bold">Blog Management</h2><p className="text-gray-500 text-sm mt-0.5">Create, edit and publish articles to the public blog.</p></div>
+        <button onClick={openNew} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white" style={{background:NAVY}}>+ New Article</button>
+      </div>
+      {msg && <div className={`p-3 rounded-xl text-sm border ${msg.type==='success'?'bg-green-900/30 border-green-700 text-green-300':'bg-red-900/30 border-red-700 text-red-300'}`}>{msg.text}</div>}
+      {loading && <p className="text-gray-500 text-sm py-4">Loading…</p>}
+      {!loading && posts.length === 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+          <p className="text-3xl mb-3">📝</p><p className="font-semibold mb-1">No articles yet</p>
+          <p className="text-gray-500 text-sm mb-4">Create your first article to populate the public blog.</p>
+          <button onClick={openNew} className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white" style={{background:NAVY}}>+ New Article</button>
+        </div>
+      )}
+      {!loading && posts.length > 0 && (
+        <div className="space-y-3">
+          {posts.map(p => (
+            <div key={p.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${p.published?'bg-green-900/50 text-green-300':'bg-gray-700 text-gray-400'}`}>{p.published?'🌐 Published':'📋 Draft'}</span>
+                  {p.featured?<span className="text-xs bg-yellow-900/50 text-yellow-300 px-2 py-0.5 rounded-full">★ Featured</span>:null}
+                  <span className="text-xs text-gray-500">{p.category}</span>
+                </div>
+                <p className="font-semibold text-sm truncate">{p.title}</p>
+                <p className="text-gray-500 text-xs mt-0.5">By {p.author} · {p.read_time}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={()=>togglePublish(p)} className={`text-xs px-3 py-1.5 rounded-lg font-medium ${p.published?'bg-amber-900/40 text-amber-300 hover:bg-amber-900/60':'bg-green-900/40 text-green-300 hover:bg-green-900/60'}`}>{p.published?'Unpublish':'Publish'}</button>
+                <button onClick={()=>openEdit(p)} className="text-xs px-3 py-1.5 rounded-lg bg-blue-900/40 text-blue-300 hover:bg-blue-900/60">Edit</button>
+                <button onClick={()=>del(p.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-900/40 text-red-300 hover:bg-red-900/60">Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PIPELINE_STAGES=[
+  {key:'spv',label:'SPV Registered',icon:'🏢'},
+  {key:'kyc',label:'KYC Verified',icon:'✅'},
+  {key:'docs',label:'Documents Uploaded',icon:'📄'},
+  {key:'auditor',label:'Auditor Review',icon:'🔍'},
+  {key:'contract',label:'Smart Contract',icon:'⛓️'},
+  {key:'secz',label:'SECZ Approved',icon:'🏛️'},
+  {key:'live',label:'Live',icon:'🟢'},
+];
+const REVENUE_COLORS=[NAVY,GOLD,GREEN,TEAL,'#7c3aed','#db2777','#ea580c'];
+
+const mockPipeline=[
+  {id:1,name:'Acme Mining Ltd',symbol:'ACME',asset_class:'Mining',stages:{spv:true,kyc:true,docs:true,auditor:true,contract:true,secz:false,live:false},amount_target:2000000,amount_raised:0,submitted:'2026-03-10',analyst:'R. Moyo',contacts:[{name:'James Ncube',role:'CEO',email:'jncube@acmemining.co.zw',phone:'+263 77 234 5678'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'KYC Package — Directors',status:'uploaded'},{name:'Prospectus Draft',status:'uploaded'},{name:'Audited Financials 2025',status:'uploaded'},{name:'SECZ Application Form',status:'pending'}],auditor:'J. Sibanda CPA',partner:'Stanbic Ref. Desk',notes:'Awaiting SECZ sandbox application. All technical requirements met.'},
+  {id:2,name:'Harare CBD REIT',symbol:'HCPR',asset_class:'Real Estate',stages:{spv:true,kyc:true,docs:true,auditor:false,contract:false,secz:false,live:false},amount_target:5000000,amount_raised:0,submitted:'2026-03-14',analyst:'T. Chikwanda',contacts:[{name:'Rudo Mhuriro',role:'Portfolio Manager',email:'rmhuriro@hararereit.co.zw',phone:'+263 71 345 6789'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'KYC Package — Directors',status:'uploaded'},{name:'Prospectus Draft',status:'uploaded'},{name:'Property Valuation Reports',status:'uploaded'},{name:'Audited Financials 2025',status:'pending'}],auditor:'Pending assignment',partner:'None',notes:'Auditor review pending — waiting for Q4 2025 audited financials from KPMG.'},
+  {id:3,name:'Great Dyke Minerals',symbol:'GDMR',asset_class:'Mining',stages:{spv:true,kyc:true,docs:false,auditor:false,contract:false,secz:false,live:false},amount_target:3000000,amount_raised:0,submitted:'2026-03-18',analyst:'R. Moyo',contacts:[{name:'Tinashe Gumbo',role:'Technical Director',email:'tgumbo@greatdyke.co.zw',phone:'+263 77 456 7890'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'KYC Package — Directors',status:'uploaded'},{name:'JORC Resource Report',status:'pending'},{name:'Prospectus Draft',status:'pending'},{name:'Feasibility Study',status:'pending'}],auditor:'Pending assignment',partner:'None',notes:'Issuer has not uploaded JORC report or prospectus. Follow up required.'},
+  {id:4,name:'ZimInfra Bond 2027',symbol:'ZWIB',asset_class:'Bond',stages:{spv:true,kyc:true,docs:true,auditor:true,contract:true,secz:true,live:true},amount_target:1500000,amount_raised:1250000,submitted:'2026-02-28',analyst:'S. Dube',contacts:[{name:'Wellington Choto',role:'CFO',email:'wchoto@ziminfra.co.zw',phone:'+263 71 234 5678'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'Bond Prospectus',status:'uploaded'},{name:'Government Guarantee Certificate',status:'uploaded'},{name:'SECZ Listing Certificate',status:'uploaded'},{name:'Audited Financials 2025',status:'uploaded'}],auditor:'J. Sibanda CPA',partner:'Stanbic Ref. Desk',notes:'Fully live. First quarterly coupon payment due April 2026.'},
+  {id:5,name:'SunPower Energy SPV',symbol:'SPVR',asset_class:'Infrastructure',stages:{spv:true,kyc:false,docs:false,auditor:false,contract:false,secz:false,live:false},amount_target:4000000,amount_raised:0,submitted:'2026-03-20',analyst:'Pending',contacts:[{name:'Admire Chisvo',role:'CEO',email:'achisvo@sunpower.co.zw',phone:'+263 77 567 8901'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'KYC Package — Directors',status:'pending'},{name:'EIA Certificate',status:'pending'},{name:'Prospectus Draft',status:'pending'}],auditor:'Pending assignment',partner:'None',notes:'KYC submitted but incomplete — missing certified copies of director IDs.'},
+];
+
+const mockVolChart=Array.from({length:14},(_,i)=>({day:`${i+1} Mar`,volume:Math.floor(50000+Math.random()*200000),fees:Math.floor(250+Math.random()*1000)}));
+const mockRevBreakdown=[{name:'Trading Fees',value:15200},{name:'Platform Fees',value:50000},{name:'Issuance Fees',value:25000},{name:'Valuation Svcs',value:20000},{name:'KYC Fees',value:25000}];
+const mockAlerts=[
+  {id:1,type:'warning',msg:'HCPR auditor review pending for 4 days',time:'10:42 AM'},
+  {id:2,type:'info',msg:'ACME — SECZ approval document submitted',time:'09:17 AM'},
+  {id:3,type:'error',msg:'Oracle price for GDMR has not updated in 72 hours',time:'Yesterday'},
+  {id:4,type:'success',msg:'ZimInfra Bond fully deployed',time:'Yesterday'},
+];
+const ALERT_STYLES={warning:'bg-amber-900/40 border-amber-700 text-amber-300',error:'bg-red-900/40 border-red-700 text-red-300',success:'bg-green-900/40 border-green-700 text-green-300',info:'bg-blue-900/40 border-blue-700 text-blue-300'};
+const ALERT_ICONS={warning:'⚠️',error:'🚨',success:'✅',info:'ℹ️'};
+
+export default function AdminDashboard() {
+  const {account,user,ready}=useWallet();
+  const router=useRouter();
+  const [tokens,setTokens]=useState([]);
+  const [users,setUsers]=useState([]);
+  const [selectedUser,setSelectedUser]=useState(null);
+  const [userModalRole,setUserModalRole]=useState('');
+  const [userModalLoading,setUserModalLoading]=useState(false);
+  const [trades,setTrades]=useState([]);
+  const [pipeline,setPipeline]=useState(mockPipeline);
+  const [selPipeline,setSelPipeline]=useState(null);
+  const [assignModal,setAssignModal]=useState(null);
+  const [assignNote,setAssignNote]=useState('');
+  const [kycItems,setKycItems]=useState([
+    {id:1,name:'Tendai Moyo',wallet:'0x3f7a…c4d2',type:'Accredited Investor',submitted:'2026-03-26',docs:'3/3',risk:'LOW'},
+    {id:2,name:'Rudo Investments Ltd',wallet:'0x8b2c…a1f9',type:'Institutional',submitted:'2026-03-25',docs:'4/5',risk:'MEDIUM'},
+    {id:3,name:'Chikwanda Family Off.',wallet:'0x1d9e…7b3c',type:'Family Office',submitted:'2026-03-24',docs:'5/5',risk:'LOW'},
+  ]);
+  const [flaggedTxns,setFlaggedTxns]=useState([
+    {id:1,title:'Unusual volume pattern — ACME',desc:'Wallet 0x7f4a…b2c1 placed 14 orders in 3 minutes, total USD 48,000. Possible wash trading.',time:'Today 08:47 AM',system:'MarketController'},
+  ]);
+  const [tab,setTab]=useState('overview');
+  const [deposits,setDeposits]=useState([]);
+  const [withdrawals,setWithdrawals]=useState([]);
+  const [walletLoading,setWalletLoading]=useState(false);
+  const [txHistory,    setTxHistory]    = useState([]);
+  const [txLoading,    setTxLoading]    = useState(false);
+  const [txFilter,     setTxFilter]     = useState('ALL');
+  const [txSearch,     setTxSearch]     = useState('');
+  const [txPage,       setTxPage]       = useState(1);
+  const TX_PAGE_SIZE = 25;
+  const [walletMsg,setWalletMsg]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [now,setNow]=useState(new Date());
+  const [health]=useState({api:true,blockchain:true,ws:true,db:true,oracle:true});
+  const [actionMsg,setActionMsg]=useState(null);
+  const [staffForm,setStaffForm]=useState({full_name:'',email:'',password:'',role:'AUDITOR'});
+  const [staffMsg,setStaffMsg]=useState(null);
+  const [staffLoading,setStaffLoading]=useState(false);
+
+  // Track which pipeline item has drill-down open
+  const [detailItem, setDetailItem] = useState(null);
+
+  const advanceStage = async (item) => {
+    const STAGE_KEYS = ['spv','kyc','docs','auditor','contract','secz','live'];
+    const nextStageIdx = STAGE_KEYS.findIndex(k => !item.stages[k]);
+    if (nextStageIdx === -1) { notify('info', 'Application is already fully approved.'); return; }
+    const nextStage = STAGE_KEYS[nextStageIdx];
+    try {
+      if (item.isNewApplication) await api.put(`/submissions/${item.id}/status`, { status:'UNDER_REVIEW', notes:`Stage advanced to: ${nextStage} by Admin on ${new Date().toLocaleDateString()}` });
+      setPipeline(p => p.map(i => i.id===item.id ? { ...i, stages: { ...i.stages, [nextStage]: true } } : i));
+      notify('success', `✅ ${item.name} advanced — ${nextStage.toUpperCase()} stage marked complete.`);
+    } catch(e) { notify('error', 'Failed to advance stage: ' + (e.response?.data?.error || e.message)); }
+  };
+
+  const rejectApplication = async (item) => {
+    if (!window.confirm(`Reject ${item.name}? This will notify the issuer.`)) return;
+    try {
+      if (item.isNewApplication) await api.put(`/submissions/${item.id}/status`, { status:'REJECTED', notes:`Application rejected by Admin on ${new Date().toLocaleDateString()}` });
+      setPipeline(p => p.filter(i => i.id !== item.id));
+      setSelPipeline(null); setDetailItem(null);
+      notify('error', `❌ ${item.name} application rejected.`);
+    } catch(e) { notify('error', 'Failed to reject: ' + (e.response?.data?.error || e.message)); }
+  };
+
+  const suspendApplication = async (item) => {
+    const isSuspended = item.status === 'SUSPENDED';
+    const reason = isSuspended ? null : window.prompt(`Reason for suspending ${item.name} (optional):`);
+    if (reason === null && !isSuspended) return;
+    if (!window.confirm(`${isSuspended ? 'Reinstate' : 'Suspend'} ${item.name}?`)) return;
+    try {
+      await api.put(`/submissions/${item.id}/suspend`, { reason: reason || '' });
+      setPipeline(p => p.map(i => i.id === item.id
+        ? { ...i, status: isSuspended ? 'PENDING' : 'SUSPENDED' }
+        : i
+      ));
+      notify(isSuspended ? 'success' : 'warning',
+        isSuspended
+          ? `✅ ${item.name} reinstated — status set back to Pending.`
+          : `🚫 ${item.name} suspended. Issuer cannot progress until reinstated.`
+      );
+    } catch(e) {
+      notify('error', 'Failed to update status: ' + (e.response?.data?.error || e.message));
+    }
+  };
+
+  const deleteApplication = async (item) => {
+    if (!window.confirm(
+      `PERMANENTLY DELETE "${item.name}"?\n\nThis removes all submission data and cannot be undone.`
+    )) return;
+    try {
+      await api.delete(`/submissions/${item.id}`);
+      setPipeline(p => p.filter(i => i.id !== item.id));
+      setSelPipeline(null);
+      setDetailItem(null);
+      notify('error', `🗑 ${item.name} permanently deleted.`);
+    } catch(e) {
+      notify('error', 'Failed to delete: ' + (e.response?.data?.error || e.message));
+    }
+  };
+
+  const assignAuditor = async (item, auditorName) => {
+    try {
+      if (item.isNewApplication || item.id) await api.put(`/submissions/${item.id}/assign`, { assignedAuditor: auditorName });
+      setPipeline(p => p.map(i => i.id===item.id ? { ...i, auditor: auditorName } : i));
+      setAssignModal(null); setAssignNote('');
+      notify('success', `🔍 "${auditorName}" assigned to ${item.name}.`);
+    } catch(e) {
+      setPipeline(p => p.map(i => i.id===item.id ? { ...i, auditor: auditorName } : i));
+      setAssignModal(null); setAssignNote('');
+      notify('success', `🔍 "${auditorName}" assigned to ${item.name}.`);
+    }
+  };
+
+  useEffect(()=>{
+    const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+    if(!storedUser?.role) return;
+    if(storedUser.role !== 'ADMIN'){ window.location.href = '/'; return; }
+    loadAll();
+    const tick = setInterval(()=>setNow(new Date()), 1000);
+    return()=>clearInterval(tick);
+  }, [ready]);
+
+  const loadAll = async () => {
+    try {
+      const[tokRes,tradeRes,usersRes,subRes]=await Promise.allSettled([
+        api.get('/assets'), api.get('/trading/recent?limit=20'),
+        api.get('/admin/users'), api.get('/submissions/pending'),
+      ]);
+      if(tokRes.status==='fulfilled')setTokens(tokRes.value.data||[]);
+      if(tradeRes.status==='fulfilled')setTrades(tradeRes.value.data||[]);
+      if(usersRes.status==='fulfilled')setUsers(usersRes.value.data||[]);
+      const token = localStorage.getItem('token');
+      fetch('http://localhost:3001/api/wallet/admin/deposits',{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setDeposits(d);}).catch(()=>{});
+      fetch('http://localhost:3001/api/wallet/admin/withdrawals',{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setWithdrawals(d);}).catch(()=>{});
+      if(subRes.status==='fulfilled' && subRes.value.data?.length){
+        const tokenisationApps = subRes.value.data.filter(s=>s.submission_type==='TOKENISATION_APPLICATION'||s.period==='TOKENISATION_APPLICATION').map(s=>({
+          id:s.id,name:s.entity_name||(s.token_symbol+' — Application'),symbol:s.token_symbol,asset_class:'Pending Classification',
+          stages:{spv:false,kyc:false,docs:(s.document_count||0)>0,auditor:!!s.assigned_auditor,contract:false,secz:s.status==='ADMIN_APPROVED',live:false},
+          amount_target:0,amount_raised:0,submitted:s.created_at,analyst:'Pending assignment',
+          reference:s.reference_number,status:s.status,assigned_auditor:s.assigned_auditor||null,
+          audit_report:s.audit_report?(typeof s.audit_report==='string'?JSON.parse(s.audit_report):s.audit_report):null,
+          contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
+          docs:Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})),
+          auditor:s.assigned_auditor||'Pending assignment',partner:'None',
+          notes:`Ref: ${s.reference_number||s.id} · Status: ${s.status} · Documents: ${s.document_count||0}`,
+          isNewApplication:true,
+        }));
+        const financialSubs = subRes.value.data.filter(s=>s.submission_type!=='TOKENISATION_APPLICATION'&&s.period!=='TOKENISATION_APPLICATION').map(s=>({
+          id:s.id,name:`${s.token_symbol} — ${s.period} Financial Submission`,symbol:s.token_symbol,asset_class:'Financial Data',
+          stages:{spv:true,kyc:true,docs:true,auditor:!!s.assigned_auditor,contract:false,secz:false,live:false},
+          amount_target:0,amount_raised:0,submitted:s.created_at,analyst:s.assigned_auditor||'Pending assignment',
+          reference:s.reference_number,status:s.status,assigned_auditor:s.assigned_auditor||null,
+          contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
+          docs:Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})),
+          auditor:s.assigned_auditor||'Pending assignment',partner:'None',
+          notes:`Financial data submission. Period: ${s.period}. Status: ${s.status}.`,
+          isNewApplication:true,
+        }));
+        setPipeline([...tokenisationApps,...financialSubs,...mockPipeline]);
+      }
+    } catch(e){console.error(e);}
+    finally{setLoading(false);}
+  };
+
+  const fetchUsers = async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch('http://localhost:3001/api/admin/users',{headers:{Authorization:`Bearer ${token}`}});
+    const data = await res.json();
+    setUsers(Array.isArray(data)?data:[]);
+  };
+
+  const createStaff = async () => {
+    if(!staffForm.full_name||!staffForm.email||!staffForm.password){setStaffMsg({type:'error',text:'Name, email and password are required.'});return;}
+    setStaffLoading(true);setStaffMsg(null);
+    try {
+      const token=localStorage.getItem('token');
+      const res=await fetch('http://localhost:3001/api/admin/staff',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(staffForm)});
+      const data=await res.json();
+      if(!res.ok)throw new Error(data.error);
+      setStaffMsg({type:'success',text:data.message});
+      setStaffForm({full_name:'',email:'',password:'',role:'AUDITOR'});
+      fetchUsers();
+    }catch(err){setStaffMsg({type:'error',text:err.message||'Failed to create account.'});}
+    finally{setStaffLoading(false);}
+  };
+
+  const notify=(type,text)=>{setActionMsg({type,text});setTimeout(()=>setActionMsg(null),3500);};
+
+  const loadTxHistory = async (filter = 'ALL', page = 1) => {
+    setTxLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({ limit: TX_PAGE_SIZE, offset: (page-1)*TX_PAGE_SIZE });
+      if (filter !== 'ALL') params.append('type', filter);
+      const res  = await fetch(`http://localhost:3001/api/wallet/admin/transactions?${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (Array.isArray(data)) setTxHistory(data);
+    } catch {}
+    setTxLoading(false);
+  };
+  const handleKYC=(id,action)=>{setKycItems(k=>k.filter(i=>i.id!==id));const msgs={approve:'✅ KYC approved.',review:'📋 Info requested.',reject:'❌ KYC rejected.'};notify(action==='approve'?'success':action==='review'?'info':'error',msgs[action]);};
+  const handleFlag=(id,action)=>{setFlaggedTxns(f=>f.filter(i=>i.id!==id));notify(action==='dismiss'?'info':'warning',action==='dismiss'?'Flag dismissed.':'🚫 Wallet suspended.');};
+  const pipelineProgress=stages=>{const keys=PIPELINE_STAGES.map(s=>s.key);const done=keys.filter(k=>stages[k]).length;return Math.round((done/keys.length)*100);};
+  const liveListings=pipeline.filter(p=>p.stages.live).length;
+  const pendingApprovals=pipeline.filter(p=>!p.stages.live).length;
+  const totalAUM=pipeline.filter(p=>p.stages.live).reduce((a,p)=>a+p.amount_raised,0);
+  const totalFeesMTD=mockRevBreakdown.reduce((a,r)=>a+r.value,0);
+  const totalUsers=users.length||9;
+  const pendingKYC=kycItems.length;
+  const pendingDeposits=deposits.filter(d=>d.status==='PENDING').length;
+  const pendingWithdrawals=withdrawals.filter(w=>w.status==='PENDING').length;
+
+  if(typeof window === 'undefined') return null;
+  if(!JSON.parse(localStorage.getItem('user')||'{}')?.role) return null;
+
+  const KPI=({label,value,sub,icon,color='text-white'})=>(
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div className="flex items-start justify-between">
+        <div><p className="text-gray-500 text-xs uppercase tracking-wider mb-1">{label}</p><p className={`text-2xl font-bold ${color}`}>{value}</p>{sub&&<p className="text-gray-500 text-xs mt-1">{sub}</p>}</div>
+        <span className="text-2xl">{icon}</span>
+      </div>
+    </div>
+  );
+
+  return(
+    <div className="min-h-screen bg-gray-950 text-white">
+      <div className="border-b border-gray-800 px-6 py-3 flex items-center justify-between bg-gray-900/80">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{background:GOLD}}><span className="text-sm font-bold text-gray-900">TX</span></div>
+          <div><p className="font-bold text-sm">TokenEquityX</p><p className="text-gray-500 text-xs">Admin Control Centre</p></div>
+          <span className="ml-2 text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded-full">ADMIN</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {Object.entries(health).map(([k,v])=>(
+            <div key={k} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${v?'bg-green-900/50 text-green-400 border border-green-800':'bg-red-900/50 text-red-400 border border-red-800'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${v?'bg-green-400 animate-pulse':'bg-red-400'}`}/>{k.toUpperCase()}
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-4">
+          <p className="text-gray-400 text-sm font-mono">{now.toLocaleTimeString('en-GB')}</p>
+          <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.id||'Admin'}</span>
+          <button onClick={()=>{localStorage.clear();window.location.href='/';}} className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1 rounded-lg">Disconnect</button>
+        </div>
+      </div>
+
+      <div className="max-w-screen-2xl mx-auto px-6 py-6">
+        {actionMsg&&<div className={`rounded-xl p-4 border mb-4 text-sm ${actionMsg.type==='success'?'bg-green-900/40 border-green-700 text-green-300':actionMsg.type==='error'?'bg-red-900/40 border-red-700 text-red-300':actionMsg.type==='warning'?'bg-amber-900/40 border-amber-700 text-amber-300':'bg-blue-900/40 border-blue-700 text-blue-300'}`}>{actionMsg.text}</div>}
+
+        <div className="flex items-center justify-between mb-6">
+          <div><h1 className="text-2xl font-bold">Platform Overview</h1><p className="text-gray-500 text-sm">Real-time view of all platform activity</p></div>
+          <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 flex-wrap">
+            {['overview','pipeline','trading','compliance','users','wallet','ledger','offerings','tools','blog'].map(t=>(
+              <button key={t} onClick={()=>setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                {t}
+                {t==='pipeline'&&pendingApprovals>0&&<span className="ml-1.5 bg-amber-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingApprovals}</span>}
+                {t==='compliance'&&pendingKYC>0&&<span className="ml-1.5 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingKYC}</span>}
+                {t==='wallet'&&(pendingDeposits+pendingWithdrawals)>0&&<span className="ml-1.5 bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingDeposits+pendingWithdrawals}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ══ OVERVIEW ══ */}
+        {tab==='overview'&&(
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4">
+              <KPI label="Total AUM" value={fmt(totalAUM)} sub="live listings" icon="💰" color="text-yellow-400"/>
+              <KPI label="Fees MTD" value={fmt(totalFeesMTD)} sub="all streams" icon="📈" color="text-green-400"/>
+              <KPI label="Live Listings" value={liveListings} sub={`${pendingApprovals} pending`} icon="🏢"/>
+              <KPI label="Users" value={fmtN(totalUsers)} sub="registered" icon="👥"/>
+              <KPI label="Pending KYC" value={pendingKYC} sub="awaiting review" icon="⏳" color={pendingKYC>0?'text-amber-400':'text-white'}/>
+              <KPI label="Active Orders" value={8} sub="in order book" icon="📋"/>
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h3 className="font-semibold mb-4">Volume & Fees — Last 14 Days</h3>
+                <ResponsiveContainer width="100%" height={240}>
+                  <AreaChart data={mockVolChart}>
+                    <defs>
+                      <linearGradient id="volG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={NAVY} stopOpacity={0.6}/><stop offset="95%" stopColor={NAVY} stopOpacity={0}/></linearGradient>
+                      <linearGradient id="feeG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={GOLD} stopOpacity={0.6}/><stop offset="95%" stopColor={GOLD} stopOpacity={0}/></linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937"/>
+                    <XAxis dataKey="day" tick={{fill:'#6b7280',fontSize:11}} tickLine={false}/>
+                    <YAxis tick={{fill:'#6b7280',fontSize:11}} tickLine={false} tickFormatter={v=>`$${(v/1000).toFixed(0)}K`}/>
+                    <Tooltip contentStyle={{background:'#111827',border:'1px solid #374151',borderRadius:8}}/>
+                    <Area type="monotone" dataKey="volume" stroke={NAVY} fill="url(#volG)" strokeWidth={2} name="Volume"/>
+                    <Area type="monotone" dataKey="fees" stroke={GOLD} fill="url(#feeG)" strokeWidth={2} name="Fees"/>
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h3 className="font-semibold mb-4">Revenue Mix MTD</h3>
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart><Pie data={mockRevBreakdown} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>{mockRevBreakdown.map((_,i)=><Cell key={i} fill={REVENUE_COLORS[i]}/>)}</Pie><Tooltip contentStyle={{background:'#111827',border:'1px solid #374151',borderRadius:8}} formatter={v=>[`$${v.toLocaleString()}`,'Revenue']}/></PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-1.5 mt-2">{mockRevBreakdown.map((r,i)=><div key={i} className="flex items-center justify-between text-xs"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{background:REVENUE_COLORS[i]}}/><span className="text-gray-400">{r.name}</span></div><span className="text-white font-medium">${r.value.toLocaleString()}</span></div>)}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4"><h3 className="font-semibold">Live Listings</h3><button onClick={()=>setTab('pipeline')} className="text-xs text-blue-400 hover:text-blue-300">Pipeline →</button></div>
+                <table className="w-full text-sm"><thead><tr className="text-gray-500 text-xs border-b border-gray-800">{['Token','Class','Price','24h Vol','Raised'].map(h=><th key={h} className="text-left pb-2 font-medium pr-4">{h}</th>)}</tr></thead>
+                <tbody>{(tokens.length?tokens:mockPipeline.filter(p=>p.stages.live)).map((t,i)=>(
+                  <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer" onClick={()=>{setSelPipeline(mockPipeline.find(p=>p.symbol===(t.symbol||'ZWIB')));setTab('pipeline');}}>
+                    <td className="py-3 pr-4"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold" style={{background:NAVY}}>{(t.symbol||'Z')[0]}</div><div><p className="font-medium">{t.symbol||'ZWIB'}</p><p className="text-gray-500 text-xs">{t.company_name||t.name}</p></div></div></td>
+                    <td className="py-3 pr-4"><span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full">{t.asset_class||t.asset_type||'Bond'}</span></td>
+                    <td className="py-3 pr-4 font-mono">${parseFloat(t.oracle_price||t.current_price_usd||1).toFixed(4)}</td>
+                    <td className="py-3 pr-4 text-gray-300">{fmt(Math.floor(50000+i*80000))}</td>
+                    <td className="py-3 text-green-400">{fmt(t.amount_raised||1250000)}</td>
+                  </tr>))}</tbody></table>
+              </div>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h3 className="font-semibold mb-4">System Alerts</h3>
+                <div className="space-y-2">{mockAlerts.map(a=><div key={a.id} className={`rounded-lg p-3 border text-xs ${ALERT_STYLES[a.type]}`}><div className="flex items-start gap-2"><span>{ALERT_ICONS[a.type]}</span><div><p>{a.msg}</p><p className="opacity-60 mt-0.5">{a.time}</p></div></div></div>)}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ PIPELINE ══ */}
+        {tab==='pipeline'&&(
+          <div className="space-y-4">
+            <div className="grid grid-cols-4 gap-4 mb-2">
+              {[{label:'Applications',value:pipeline.length,icon:'📋'},{label:'Live',value:pipeline.filter(p=>p.stages.live).length,icon:'🟢'},{label:'In Review',value:pipeline.filter(p=>p.stages.kyc&&!p.stages.live).length,icon:'🔍'},{label:'Awaiting KYC',value:pipeline.filter(p=>!p.stages.kyc).length,icon:'⏳'}].map((s,i)=><KPI key={i} {...s}/>)}
+            </div>
+            {pipeline.map(item=>{
+              const progress=pipelineProgress(item.stages);
+              const nextStage=PIPELINE_STAGES.find(s=>!item.stages[s.key]);
+              const isSelected=selPipeline?.id===item.id;
+              const isDetailOpen=detailItem?.id===item.id;
+              return(
+                <div key={item.id} className={`rounded-xl border transition-all ${isSelected?'border-blue-600':'border-gray-800'} bg-gray-900`}>
+                  <div className="p-5 cursor-pointer" onClick={()=>{setSelPipeline(isSelected?null:item);if(isSelected)setDetailItem(null);}}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm" style={{background:NAVY}}>{item.symbol[0]}</div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-blue-300">{item.name}</p>
+                            <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full">{item.symbol}</span>
+                            <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{item.asset_class}</span>
+                            {item.status==='SUSPENDED' && (
+                              <span className="text-xs bg-amber-900/50 text-amber-300 px-2 py-0.5 rounded-full border border-amber-700/50">🚫 Suspended</span>
+                            )}
+                          </div>
+                          <p className="text-gray-500 text-xs mt-0.5">Submitted {dt(item.submitted)} · Analyst: {item.analyst}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right"><p className="font-bold text-yellow-400 text-lg">{progress}%</p><p className="text-gray-500 text-xs">{PIPELINE_STAGES.filter(s=>item.stages[s.key]).length}/{PIPELINE_STAGES.length} stages</p></div>
+                        <span className="text-gray-500">{isSelected?'▲':'▼'}</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-800 rounded-full h-2 mb-3"><div className="h-2 rounded-full" style={{width:`${progress}%`,background:progress===100?GREEN:GOLD}}/></div>
+                    <div className="flex flex-wrap gap-2">
+                      {PIPELINE_STAGES.map(stage=>{
+                        const done=item.stages[stage.key];
+                        const isNext=!done&&stage===nextStage;
+                        return<div key={stage.key} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${done?'bg-green-900/40 border-green-700 text-green-300':isNext?'bg-amber-900/40 border-amber-600 text-amber-300 animate-pulse':'bg-gray-800 border-gray-700 text-gray-500'}`}><span>{stage.icon}</span><span>{stage.label}</span>{done&&<span>✓</span>}{isNext&&<span>← Next</span>}</div>;
+                      })}
+                    </div>
+                    {nextStage&&<div className="mt-3 bg-amber-900/20 border border-amber-800/50 rounded-lg px-4 py-2"><p className="text-amber-300 text-xs"><span className="font-semibold">Awaiting:</span> {nextStage.label}</p></div>}
+                  </div>
+
+                  {isSelected&&(
+                    <div className="border-t border-gray-800 p-5">
+                      {/* ── 3-column summary row */}
+                      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-5">
+                        <div className="bg-gray-800/50 rounded-xl p-4">
+                          <h4 className="font-semibold text-sm mb-3 text-gray-300">📋 Key Contacts</h4>
+                          {item.contacts.map((c,i)=>(
+                            <div key={i} className="mb-3">
+                              <p className="font-medium text-sm">{c.name}</p>
+                              <p className="text-gray-500 text-xs">{c.role}</p>
+                              <p className="text-blue-400 text-xs">{c.email}</p>
+                              <p className="text-gray-500 text-xs">{c.phone}</p>
+                            </div>
+                          ))}
+                          <div className="pt-3 border-t border-gray-700 space-y-2">
+                            <div><p className="text-gray-500 text-xs">Assigned Auditor</p><p className="text-sm font-medium">{item.auditor}</p></div>
+                            <div><p className="text-gray-500 text-xs">Partner</p><p className="text-sm font-medium">{item.partner}</p></div>
+                          </div>
+                        </div>
+                        <div className="bg-gray-800/50 rounded-xl p-4">
+                          <h4 className="font-semibold text-sm mb-3 text-gray-300">📄 Documents</h4>
+                          <div className="space-y-2">
+                            {item.docs.map((d,i)=>(
+                              <div key={i} className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span>{d.status==='uploaded'?'✅':'⏳'}</span>
+                                  <span className="text-xs text-gray-300">{d.name}</span>
+                                </div>
+                                {d.status==='uploaded'&&<button className="text-xs text-blue-400 hover:text-blue-300">View</button>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="bg-gray-800/50 rounded-xl p-4">
+                          <h4 className="font-semibold text-sm mb-3 text-gray-300">📝 Actions</h4>
+                          {item.assigned_auditor && (
+                            <div className="bg-blue-900/30 border border-blue-800/50 rounded-lg px-3 py-2 mb-3">
+                              <p className="text-blue-300 text-xs font-semibold">🔍 Assigned Auditor</p>
+                              <p className="text-white text-sm mt-0.5">{item.assigned_auditor}</p>
+                            </div>
+                          )}
+                          {item.audit_report && (
+                            <div className="bg-green-900/20 border border-green-800/50 rounded-lg px-3 py-2 mb-3">
+                              <p className="text-green-300 text-xs font-bold mb-1">✓ Audit Report Received</p>
+                              <div className="grid grid-cols-2 gap-1 text-xs">
+                                <span className="text-gray-400">Risk: <span className="text-white font-bold">{item.audit_report.riskRating}</span></span>
+                                <span className="text-gray-400">Price: <span className="text-yellow-400 font-bold">${item.audit_report.certifiedPrice?.toFixed(4)}</span></span>
+                                <span className="text-gray-400 col-span-2">Suggested: <span className="text-blue-300 font-bold">{item.audit_report.suggestedListingType?.replace('_',' ')}</span></span>
+                              </div>
+                            </div>
+                          )}
+                          <div className="space-y-2">
+                            {item.stages.live ? (
+                              <div className="bg-green-900/30 border border-green-800/50 rounded-lg p-3 text-center">
+                                <p className="text-green-300 font-semibold text-sm">🟢 Live on Platform</p>
+                                <p className="text-green-400 text-xs mt-1">{fmt(item.amount_raised)} raised</p>
+                              </div>
+                            ) : item.status === 'ADMIN_APPROVED' ? (
+                              <div className="space-y-2">
+                                <div className="bg-green-900/20 border border-green-800/50 rounded-lg p-3">
+                                  <p className="text-green-300 font-bold text-xs mb-1">✅ Token Approved</p>
+                                  <p className="text-gray-400 text-xs">This token has been approved. You can now create a primary offering or list it directly for trading.</p>
+                                </div>
+                                <button
+                                  onClick={()=>setTab('offerings')}
+                                  className="w-full py-2 rounded-lg text-xs font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                                  🏦 Go to Offerings — Create Primary Round
+                                </button>
+                                <button
+                                  onClick={()=>advanceStage(item)}
+                                  className="w-full py-2 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-600 text-white">
+                                  ✅ Mark as Live (skip offering)
+                                </button>
+                              </div>
+                            ) : item.status === 'AUDITOR_APPROVED' ? (
+                              <AdminFinalApproval item={item} onApprove={(listingType, notes) => {
+                                api.put(`/submissions/${item.id}/admin-approve`, { listingType, adminNotes:notes, tokenSymbol:item.symbol })
+                                  .then(r => { setPipeline(p => p.map(i => i.id===item.id ? { ...i, status:'ADMIN_APPROVED', stages:{...i.stages,secz:true} } : i)); notify('success', r.data.message); })
+                                  .catch(e => notify('error', e.response?.data?.error || 'Approval failed'));
+                              }} onReject={() => rejectApplication(item)}/>
+                            ) : (
+                              <>
+                                <button onClick={()=>advanceStage(item)} className="w-full py-2 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-600 text-white">✅ Advance to Next Stage</button>
+                                <button onClick={()=>notify('info',`Email drafted to ${item.contacts[0]?.email||'issuer'}. Configure SMTP in .env to send.`)} className="w-full py-2 rounded-lg text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-white">📧 Email Issuer</button>
+                                <button onClick={()=>setAssignModal({itemId:item.id,itemName:item.name,item})} className="w-full py-2 rounded-lg text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-white">🔍 Assign Auditor</button>
+                                <div className="border-t border-gray-700/50 pt-2 mt-1 space-y-2">
+                                  <button
+                                    onClick={()=>suspendApplication(item)}
+                                    className={`w-full py-2 rounded-lg text-xs font-semibold border transition-colors ${
+                                      item.status==='SUSPENDED'
+                                        ? 'bg-green-900/40 text-green-300 border-green-800 hover:bg-green-900/60'
+                                        : 'bg-amber-900/30 text-amber-300 border-amber-800 hover:bg-amber-900/50'
+                                    }`}>
+                                    {item.status==='SUSPENDED' ? '✅ Reinstate Application' : '🚫 Suspend Application'}
+                                  </button>
+                                  <button
+                                    onClick={()=>deleteApplication(item)}
+                                    className="w-full py-2 rounded-lg text-xs font-semibold bg-red-900/40 text-red-300 border border-red-800 hover:bg-red-900/60">
+                                    🗑 Delete Application Permanently
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ── Drill-down toggle button */}
+                      <div className="border-t border-gray-700/50 pt-4">
+                        <button
+                          onClick={()=>setDetailItem(isDetailOpen?null:item)}
+                          className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 ${isDetailOpen?'bg-blue-900/40 border border-blue-700/50 text-blue-300':'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700'}`}>
+                          {isDetailOpen ? '▲ Collapse Financial Detail' : '▼ Drill Down — View Financial Data & Valuation Breakdown'}
+                        </button>
+
+                        {/* ── Full detail panel */}
+                        {isDetailOpen && (
+                          <div className="mt-4 bg-gray-800/30 border border-gray-700/50 rounded-xl p-5">
+                            <SubmissionDetailPanel item={item} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ══ TRADING ══ */}
+        {tab==='trading'&&(
+          <div className="space-y-6">
+            <div className="grid grid-cols-4 gap-4">
+              <KPI label="Volume Today" value={fmt(485000)} sub="all assets" icon="📊"/>
+              <KPI label="Trades Today" value="34" sub="matched" icon="🔄"/>
+              <KPI label="Fees Today" value={fmt(2425)} sub="0.50% rate" icon="💵"/>
+              <KPI label="Circuit Breakers" value="0" sub="none active" icon="🔒" color="text-green-400"/>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="font-semibold mb-4">Daily Volume</h3>
+              <ResponsiveContainer width="100%" height={220}><BarChart data={mockVolChart}><CartesianGrid strokeDasharray="3 3" stroke="#1f2937"/><XAxis dataKey="day" tick={{fill:'#6b7280',fontSize:10}} tickLine={false}/><YAxis tick={{fill:'#6b7280',fontSize:10}} tickLine={false} tickFormatter={v=>`$${(v/1000).toFixed(0)}K`}/><Tooltip contentStyle={{background:'#111827',border:'1px solid #374151',borderRadius:8}} formatter={v=>[`$${v.toLocaleString()}`,'Volume']}/><Bar dataKey="volume" fill={NAVY} radius={[4,4,0,0]}/></BarChart></ResponsiveContainer>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="font-semibold mb-4">Recent Trades</h3>
+              <table className="w-full text-sm"><thead><tr className="text-gray-500 text-xs border-b border-gray-800">{['Time','Token','Side','Qty','Price','Value','Status'].map(h=><th key={h} className="text-left pb-2 pr-4">{h}</th>)}</tr></thead>
+              <tbody>{(trades.length?trades:Array.from({length:10},(_,i)=>{const sym=['ZWIB','HCPR','ACME','GDMR'][i%4];const side=i%3===0?'SELL':'BUY';const qty=Math.floor(100+Math.random()*2000);const price=(0.95+Math.random()*0.15).toFixed(4);return{token_symbol:sym,side,quantity:qty,price,total_usdc:(qty*price).toFixed(2),settled_at:new Date(Date.now()-i*180000).toISOString()}})).map((t,i)=>(
+                <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                  <td className="py-2 pr-4 font-mono text-xs text-gray-400">{ts(t.settled_at||t.matched_at||Date.now())}</td>
+                  <td className="py-2 pr-4 font-medium">{t.token_symbol||t.symbol}</td>
+                  <td className="py-2 pr-4"><span className={`text-xs font-bold ${(t.side||'BUY')==='BUY'?'text-green-400':'text-red-400'}`}>{t.side||'BUY'}</span></td>
+                  <td className="py-2 pr-4">{(t.quantity||0).toLocaleString()}</td>
+                  <td className="py-2 pr-4 font-mono">${parseFloat(t.price||0).toFixed(4)}</td>
+                  <td className="py-2 pr-4 text-yellow-400">${parseFloat(t.total_usdc||0).toLocaleString()}</td>
+                  <td className="py-2"><span className="text-xs bg-green-900/50 text-green-300 px-2 py-0.5 rounded-full">SETTLED</span></td>
+                </tr>))}</tbody></table>
+            </div>
+          </div>
+        )}
+
+        {/* ══ COMPLIANCE ══ */}
+        {tab==='compliance'&&(
+          <div className="space-y-6">
+            <div className="grid grid-cols-4 gap-4">
+              <KPI label="KYC Pending" value={pendingKYC} icon="⏳" color={pendingKYC>0?'text-amber-400':'text-white'}/>
+              <KPI label="Approved This Month" value="38" icon="✅" color="text-green-400"/>
+              <KPI label="Flagged Txns" value={flaggedTxns.length} icon="🚨" color={flaggedTxns.length>0?'text-red-400':'text-green-400'}/>
+              <KPI label="FIU Reports Due" value="0" icon="📑"/>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="font-semibold mb-4">KYC Review Queue</h3>
+              {kycItems.length===0&&<p className="text-gray-500 text-sm text-center py-6">✅ No pending KYC applications</p>}
+              <div className="space-y-3">
+                {kycItems.map((k,i)=>(
+                  <div key={i} className="flex items-center justify-between bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-blue-900 flex items-center justify-center text-sm font-bold">{k.name[0]}</div>
+                      <div>
+                        <p className="font-medium text-sm">{k.name}</p>
+                        <p className="text-gray-500 text-xs">{k.wallet} · {k.type}</p>
+                        <p className="text-gray-600 text-xs">Submitted {dt(k.submitted)} · Docs: {k.docs}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${k.risk==='LOW'?'bg-green-900/50 text-green-300':k.risk==='MEDIUM'?'bg-amber-900/50 text-amber-300':'bg-red-900/50 text-red-300'}`}>{k.risk} RISK</span>
+                      <button onClick={()=>handleKYC(k.id,'approve')} className="bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg">✅ Approve</button>
+                      <button onClick={()=>handleKYC(k.id,'review')} className="bg-amber-800 hover:bg-amber-700 text-white text-xs px-3 py-1.5 rounded-lg">🔍 Request Info</button>
+                      <button onClick={()=>handleKYC(k.id,'reject')} className="bg-red-900/50 hover:bg-red-900 text-red-400 text-xs px-3 py-1.5 rounded-lg border border-red-800">❌ Reject</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="font-semibold mb-4">Flagged Transactions</h3>
+              {flaggedTxns.length===0&&<p className="text-gray-500 text-sm text-center py-6">✅ No active compliance flags</p>}
+              {flaggedTxns.map(f=>(
+                <div key={f.id} className="bg-red-900/20 border border-red-800/50 rounded-xl p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-red-300 font-medium text-sm">{f.title}</p>
+                      <p className="text-gray-500 text-xs mt-1">{f.desc}</p>
+                      <p className="text-gray-600 text-xs mt-0.5">Detected: {f.time} · {f.system}</p>
+                    </div>
+                    <div className="flex gap-2 ml-4">
+                      <button onClick={()=>handleFlag(f.id,'investigate')} className="text-xs bg-amber-800 hover:bg-amber-700 text-amber-200 px-3 py-1.5 rounded-lg">🔍 Investigate</button>
+                      <button onClick={()=>handleFlag(f.id,'suspend')} className="text-xs bg-red-800 hover:bg-red-700 text-red-200 px-3 py-1.5 rounded-lg">🚫 Suspend Wallet</button>
+                      <button onClick={()=>handleFlag(f.id,'dismiss')} className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg">Dismiss</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ══ USERS ══ */}
+        {tab==='users'&&(
+          <div className="space-y-6">
+            <div className="grid grid-cols-5 gap-4">
+              {[{label:'Total',value:users.length||9,icon:'👥'},{label:'Investors',value:users.filter?.(u=>u.role==='INVESTOR').length||4,icon:'💼'},{label:'Issuers',value:users.filter?.(u=>u.role==='ISSUER').length||2,icon:'🏢'},{label:'Auditors',value:users.filter?.(u=>u.role==='AUDITOR').length||1,icon:'🔍'},{label:'Partners',value:users.filter?.(u=>u.role==='PARTNER').length||1,icon:'🤝'}].map((k,i)=><KPI key={i} {...k}/>)}
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="font-semibold mb-4">User Directory</h3>
+              <table className="w-full text-sm"><thead><tr className="text-gray-500 text-xs border-b border-gray-800">{['Wallet','Email','Role','KYC','Joined','Actions'].map(h=><th key={h} className="text-left pb-2 pr-4">{h}</th>)}</tr></thead>
+              <tbody>{(users.length?users:[{id:1,wallet_address:'0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',email:'admin@tokenequityx.co.zw',role:'ADMIN',kyc_status:'APPROVED',created_at:'2026-01-15'},{id:2,wallet_address:'0xce1ebe789e0067f08222e5cd0456a02c7a7c8e90',email:'admin2@tokenequityx.co.zw',role:'ADMIN',kyc_status:'APPROVED',created_at:'2026-01-15'},{id:3,wallet_address:'0x70997970c51812dc3a010c7d01b50e0d17dc79c8',email:'issuer@test.com',role:'ISSUER',kyc_status:'APPROVED',created_at:'2026-02-01'},{id:6,wallet_address:'0x90f79bf6eb2c4f870365e785982e1f101e93b906',email:'investor@test.com',role:'INVESTOR',kyc_status:'PENDING',created_at:'2026-02-20'},{id:7,wallet_address:'0x976ea74026e726554db657fa54763abd0c3a0aa9',email:'auditor@test.com',role:'AUDITOR',kyc_status:'APPROVED',created_at:'2026-02-10'}]).map((u,i)=>(
+                <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                  <td className="py-3 pr-4 font-mono text-xs text-gray-300">{(u.wallet_address||u.wallet||'—').slice(0,14)}…</td>
+                  <td className="py-3 pr-4 text-xs text-gray-300">{u.email||'—'}</td>
+                  <td className="py-3 pr-4"><span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full">{u.role}</span></td>
+                  <td className="py-3 pr-4"><span className={`text-xs px-2 py-0.5 rounded-full ${u.kyc_status==='APPROVED'?'bg-green-900/50 text-green-300':'bg-amber-900/50 text-amber-300'}`}>{u.kyc_status}</span></td>
+                  <td className="py-3 pr-4 text-gray-400 text-xs">{u.created_at?dt(u.created_at):'-'}</td>
+                  <td className="py-3">
+                    <button onClick={()=>{setSelectedUser(u);setUserModalRole(u.role);}} className="text-xs text-blue-400 hover:text-blue-300 mr-2">View</button>
+                    <button onClick={async()=>{const token=localStorage.getItem('token');await fetch(`http://localhost:3001/api/admin/users/${u.id}/suspend`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({suspended:u.account_status!=='SUSPENDED'})});fetchUsers();}}
+                      className={`text-xs ${u.account_status==='SUSPENDED'?'text-green-400 hover:text-green-300':'text-red-400 hover:text-red-300'}`}>
+                      {u.account_status==='SUSPENDED'?'Unsuspend':'Suspend'}
+                    </button>
+                  </td>
+                </tr>))}</tbody></table>
+            </div>
+          </div>
+        )}
+
+        {/* ══ WALLET ══ */}
+        {tab==='wallet'&&(
+          <div className="space-y-6">
+
+            {/* KPI row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <KPI label="Pending Deposits"    value={pendingDeposits}    sub="awaiting confirmation" icon="💰" color={pendingDeposits>0?'text-amber-400':'text-white'}/>
+              <KPI label="Pending Withdrawals" value={pendingWithdrawals} sub="awaiting processing"   icon="🏦" color={pendingWithdrawals>0?'text-amber-400':'text-white'}/>
+              <KPI label="Total Deposits"      value={deposits.length}    sub="all time"              icon="📥"/>
+              <KPI label="Total Withdrawals"   value={withdrawals.length} sub="all time"              icon="📤"/>
+            </div>
+
+            {walletMsg&&<div className={`rounded-xl p-4 border text-sm ${walletMsg.type==='success'?'bg-green-900/40 border-green-700 text-green-300':'bg-red-900/40 border-red-700 text-red-300'}`}>{walletMsg.text}</div>}
+
+            {/* Treasury reconciliation panel */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold">🏛️ Treasury Position</h3>
+                <button onClick={async()=>{
+                  const token=localStorage.getItem('token');
+                  const res=await fetch('http://localhost:3001/api/wallet/admin/treasury',{headers:{Authorization:`Bearer ${token}`}});
+                  const d=await res.json();
+                  if(d.investor_balances) setActionMsg({type:'info',text:`Total investor USD: $${d.investor_balances.total_usd.toFixed(2)} | Fees collected: $${d.fees_collected_usd.toFixed(2)} | Pending deposits: $${d.pending.deposits.total.toFixed(2)} | Pending withdrawals: $${d.pending.withdrawals.total.toFixed(2)}`});
+                }} className="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">Refresh</button>
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                The total investor USD balance shown here must match the actual Stanbic custodial account balance at all times.
+                Any discrepancy indicates an unreconciled transaction. Reconcile daily before processing withdrawals.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+              {/* ── DEPOSITS */}
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold">💰 Deposit Requests</h3>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${pendingDeposits>0?'bg-amber-900/50 text-amber-300':'bg-green-900/50 text-green-300'}`}>{pendingDeposits} pending</span>
+                </div>
+                <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                  Before confirming, verify the matching credit appears in the Stanbic corporate banking portal with the exact reference number shown below.
+                </p>
+                {deposits.length===0&&<p className="text-gray-500 text-sm text-center py-6">No deposit requests yet.</p>}
+                <div className="space-y-3">
+                  {deposits.map((d,i)=>(
+                    <div key={i} className={`rounded-xl p-4 border ${d.status==='PENDING'?'bg-amber-900/10 border-amber-800/40':d.status==='CONFIRMED'?'bg-green-900/10 border-green-800/40':'bg-red-900/10 border-red-800/40'}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <p className="font-semibold text-sm">{d.full_name||d.email}</p>
+                          <p className="text-gray-400 text-xs">{d.email}</p>
+                          <div className="mt-2 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 text-xs">Bank Ref:</span>
+                              <span className="font-mono text-white text-sm font-bold bg-gray-800 px-2 py-0.5 rounded">{d.reference}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 text-xs">Submitted:</span>
+                              <span className="text-xs text-gray-300">{new Date(d.created_at).toLocaleString('en-GB')}</span>
+                            </div>
+                            {d.notes&&<div className="flex items-start gap-2"><span className="text-gray-500 text-xs">Notes:</span><span className="text-xs text-gray-300">{d.notes}</span></div>}
+                          </div>
+                        </div>
+                        <div className="text-right ml-4">
+                          <p className="text-2xl font-bold text-green-400">${parseFloat(d.amount_usd).toFixed(2)}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${d.status==='PENDING'?'bg-amber-900/50 text-amber-300':d.status==='CONFIRMED'?'bg-green-900/50 text-green-300':'bg-red-900/50 text-red-300'}`}>{d.status}</span>
+                        </div>
+                      </div>
+                      {d.status==='PENDING'&&(
+                        <div className="space-y-2">
+                          <div className="bg-blue-900/20 border border-blue-800/40 rounded-lg px-3 py-2 text-xs text-blue-300">
+                            ℹ️ Check Stanbic portal for credit with reference <span className="font-mono font-bold">{d.reference}</span> — amount ${parseFloat(d.amount_usd).toFixed(2)}
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={async()=>{
+                              setWalletLoading(true);setWalletMsg(null);
+                              const token=localStorage.getItem('token');
+                              const res=await fetch(`http://localhost:3001/api/wallet/deposit/${d.id}/confirm`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({})});
+                              const data=await res.json();
+                              setWalletMsg(res.ok?{type:'success',text:data.message||`✅ Deposit confirmed for ${d.email}`}:{type:'error',text:data.error||'Failed'});
+                              setWalletLoading(false);loadAll();
+                            }} disabled={walletLoading} className="flex-1 py-2 rounded-lg text-xs font-bold text-white bg-green-700 hover:bg-green-600 disabled:opacity-40">
+                              ✓ Confirm — Credit Verified on Stanbic
+                            </button>
+                            <button onClick={async()=>{
+                              const reason=window.prompt('Reason for rejection (shown to investor):');
+                              if(reason===null)return;
+                              setWalletLoading(true);setWalletMsg(null);
+                              const token=localStorage.getItem('token');
+                              await fetch(`http://localhost:3001/api/wallet/deposit/${d.id}/reject`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason})});
+                              setWalletMsg({type:'error',text:`Deposit rejected for ${d.email}. Investor notified by email.`});
+                              setWalletLoading(false);loadAll();
+                            }} disabled={walletLoading} className="px-4 py-2 rounded-lg text-xs font-bold text-red-400 bg-red-900/30 hover:bg-red-900/50 border border-red-800 disabled:opacity-40">
+                              ✗ Reject
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {d.status==='CONFIRMED'&&d.confirmed_at&&(
+                        <p className="text-xs text-green-400 mt-1">✓ Confirmed {new Date(d.confirmed_at).toLocaleString('en-GB')}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── WITHDRAWALS */}
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold">🏦 Withdrawal Requests</h3>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${pendingWithdrawals>0?'bg-amber-900/50 text-amber-300':'bg-green-900/50 text-green-300'}`}>{pendingWithdrawals} pending</span>
+                </div>
+                <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                  Initiate the EFT/RTGS from the Stanbic custodial account first, then enter the bank reference number and mark as complete.
+                </p>
+                {withdrawals.length===0&&<p className="text-gray-500 text-sm text-center py-6">No withdrawal requests yet.</p>}
+                <div className="space-y-3">
+                  {withdrawals.map((w,i)=>(
+                    <div key={i} className={`rounded-xl p-4 border ${w.status==='PENDING'?'bg-amber-900/10 border-amber-800/40':w.status==='COMPLETED'?'bg-green-900/10 border-green-800/40':'bg-red-900/10 border-red-800/40'}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <p className="font-semibold text-sm">{w.full_name||w.email}</p>
+                          <p className="text-gray-400 text-xs">{w.email}</p>
+                          <div className="mt-2 space-y-1 text-xs">
+                            <div className="flex gap-2"><span className="text-gray-500">Bank:</span><span className="text-white font-semibold">{w.bank_name}</span></div>
+                            <div className="flex gap-2"><span className="text-gray-500">Account Name:</span><span className="text-white">{w.account_name}</span></div>
+                            <div className="flex gap-2"><span className="text-gray-500">Account No:</span><span className="font-mono text-white font-bold">{w.account_number}</span></div>
+                            {w.branch_code&&<div className="flex gap-2"><span className="text-gray-500">Branch:</span><span className="text-white">{w.branch_code}</span></div>}
+                            <div className="flex gap-2"><span className="text-gray-500">Requested:</span><span className="text-gray-300">{new Date(w.created_at).toLocaleString('en-GB')}</span></div>
+                            {w.tx_reference&&<div className="flex gap-2"><span className="text-gray-500">Bank Ref:</span><span className="font-mono text-green-400">{w.tx_reference}</span></div>}
+                          </div>
+                        </div>
+                        <div className="text-right ml-4">
+                          <p className="text-2xl font-bold text-amber-400">${parseFloat(w.amount_usd).toFixed(2)}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${w.status==='PENDING'?'bg-amber-900/50 text-amber-300':w.status==='COMPLETED'?'bg-green-900/50 text-green-300':'bg-red-900/50 text-red-300'}`}>{w.status}</span>
+                        </div>
+                      </div>
+                      {w.status==='PENDING'&&(
+                        <div className="space-y-2">
+                          <div className="bg-amber-900/20 border border-amber-800/40 rounded-lg px-3 py-2 text-xs text-amber-300">
+                            ⚠️ Initiate EFT/RTGS of ${parseFloat(w.amount_usd).toFixed(2)} to {w.bank_name} account <span className="font-mono font-bold">{w.account_number}</span> ({w.account_name}) from the Stanbic custodial account first, then enter the reference below.
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={async()=>{
+                              const ref=window.prompt(`Enter Stanbic bank transfer reference number for $${w.amount_usd} to ${w.account_name}:`);
+                              if(!ref)return;
+                              setWalletLoading(true);setWalletMsg(null);
+                              const token=localStorage.getItem('token');
+                              const res=await fetch(`http://localhost:3001/api/wallet/withdraw/${w.id}/complete`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({tx_reference:ref})});
+                              const data=await res.json();
+                              setWalletMsg(res.ok?{type:'success',text:data.message||`✅ Withdrawal completed for ${w.email}`}:{type:'error',text:data.error||'Failed'});
+                              setWalletLoading(false);loadAll();
+                            }} disabled={walletLoading} className="flex-1 py-2 rounded-lg text-xs font-bold text-white bg-blue-700 hover:bg-blue-600 disabled:opacity-40">
+                              ✓ Mark Complete — Enter Bank Reference
+                            </button>
+                            <button onClick={async()=>{
+                              const reason=window.prompt('Reason for rejection:');
+                              if(reason===null)return;
+                              setWalletLoading(true);setWalletMsg(null);
+                              const token=localStorage.getItem('token');
+                              await fetch(`http://localhost:3001/api/wallet/withdraw/${w.id}/reject`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason})});
+                              setWalletMsg({type:'info',text:`Withdrawal rejected. Reserved funds returned to ${w.full_name}.`});
+                              setWalletLoading(false);loadAll();
+                            }} disabled={walletLoading} className="px-4 py-2 rounded-lg text-xs font-bold text-red-400 bg-red-900/30 hover:bg-red-900/50 border border-red-800 disabled:opacity-40">
+                              ✗ Reject
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {w.status==='COMPLETED'&&w.processed_at&&(
+                        <p className="text-xs text-green-400 mt-1">✓ Completed {new Date(w.processed_at).toLocaleString('en-GB')} · Ref: {w.tx_reference}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ TOOLS ══ */}
+        {tab==='tools'&&(
+          <div className="space-y-6">
+            <div><h2 className="text-xl font-bold">Acquisition & Outreach Tools</h2><p className="text-gray-500 text-sm mt-1">Recruit issuers and investors, and manage internal staff accounts.</p></div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="font-semibold mb-1">👤 Create Staff Account</h3>
+              <p className="text-gray-500 text-xs mb-4">Create accounts for auditors, DFI partners, compliance officers and additional admins.</p>
+              {staffMsg && <div className={`mb-4 p-3 rounded-xl text-sm border ${staffMsg.type==='success'?'bg-green-900/30 border-green-700 text-green-300':'bg-red-900/30 border-red-700 text-red-300'}`}>{staffMsg.text}</div>}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {[{label:'Full Name',key:'full_name',type:'text',placeholder:'e.g. James Sibanda'},{label:'Email Address',key:'email',type:'email',placeholder:'e.g. jsibanda@tokenequityx.co.zw'},{label:'Temporary Password',key:'password',type:'password',placeholder:'Min 8 characters'}].map(({label,key,type,placeholder})=>(
+                  <div key={key}><label className="text-xs text-gray-400 block mb-1">{label}</label><input type={type} placeholder={placeholder} value={staffForm[key]} onChange={e=>setStaffForm(f=>({...f,[key]:e.target.value}))} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600"/></div>
+                ))}
+                <div>
+                  <label className="text-xs text-gray-400 block mb-2">Role</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{value:'AUDITOR',label:'🔍 Auditor',desc:'Reviews submissions and sets oracle prices'},{value:'DFI',label:'📡 DFI Partner',desc:'Access to DeFi data portal'},{value:'COMPLIANCE_OFFICER',label:'🛡 Compliance',desc:'KYC review and compliance monitoring'},{value:'ADMIN',label:'⚙️ Admin',desc:'Full platform administration access'}].map(opt=>(
+                      <div key={opt.value} onClick={()=>setStaffForm(f=>({...f,role:opt.value}))} className={`cursor-pointer rounded-xl p-3 border transition-all ${staffForm.role===opt.value?'border-blue-500 bg-blue-900/20':'border-gray-700 bg-gray-800/30 hover:border-gray-500'}`}>
+                        <p className="text-xs font-bold">{opt.label}</p><p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <button onClick={createStaff} disabled={staffLoading} className="mt-4 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{background:NAVY}}>{staffLoading?'⏳ Creating…':'✓ Create Account'}</button>
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h3 className="font-semibold mb-1">🏢 Invite an Issuer</h3>
+                <p className="text-gray-500 text-xs mb-4">Send a direct invitation to a company to list their asset.</p>
+                <div className="space-y-3">{[{l:'Company Name',p:'e.g. Bindura Nickel Corporation'},{l:'Contact Person',p:'e.g. John Moyo — CFO'},{l:'Email Address',p:'jmoyo@bnc.co.zw'},{l:'Asset Type',p:'e.g. Mining Equity, REIT, Bond'}].map(({l,p},i)=><div key={i}><label className="text-xs text-gray-400 block mb-1">{l}</label><input placeholder={p} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600"/></div>)}</div>
+                <button onClick={()=>notify('success','Invitation sent!')} className="w-full mt-4 py-3 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>📧 Send Issuer Invitation</button>
+              </div>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h3 className="font-semibold mb-1">💼 Invite an Investor</h3>
+                <p className="text-gray-500 text-xs mb-4">Directly onboard an institutional or accredited investor.</p>
+                <div className="space-y-3">{[{l:'Full Name / Entity',p:'e.g. Old Mutual Zimbabwe'},{l:'Contact Person',p:'e.g. R. Mupfupi — Portfolio Manager'},{l:'Email Address',p:'rmupfupi@oldmutual.co.zw'},{l:'Investor Type',p:'e.g. Institutional, Family Office, Accredited'}].map(({l,p},i)=><div key={i}><label className="text-xs text-gray-400 block mb-1">{l}</label><input placeholder={p} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600"/></div>)}</div>
+                <button onClick={()=>notify('success','Invitation sent!')} className="w-full mt-4 py-3 rounded-xl font-semibold text-white text-sm" style={{background:GREEN}}>📧 Send Investor Invitation</button>
+              </div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="font-semibold mb-4">Platform Referral Links</h3>
+              <div className="space-y-3">{[{label:'Investor Onboarding',url:'https://tokenequityx.co.zw/ref/ADMIN/invest',clicks:248,signups:42},{label:'Issuer Application',url:'https://tokenequityx.co.zw/ref/ADMIN/issue',clicks:87,signups:11},{label:'Platform Overview',url:'https://tokenequityx.co.zw/ref/ADMIN/about',clicks:512,signups:68}].map((l,i)=>(
+                <div key={i} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2"><p className="font-medium text-sm">{l.label}</p><div className="flex gap-3 text-xs text-gray-500"><span>{l.clicks} clicks</span><span className="text-green-400">{l.signups} sign-ups</span></div></div>
+                  <div className="flex items-center gap-2"><code className="flex-1 bg-gray-900 rounded-lg px-3 py-2 text-xs text-gray-300 font-mono">{l.url}</code><button onClick={()=>{navigator.clipboard?.writeText(l.url).catch(()=>{});notify('success','Copied!');}} className="px-3 py-2 rounded-lg text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-white">Copy</button></div>
+                </div>
+              ))}</div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ LEDGER ══ */}
+        {tab==='ledger' && (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-bold">Platform Transaction Ledger</h2>
+              <p className="text-gray-500 text-sm mt-0.5">Complete audit trail of all wallet movements across the platform.</p>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="flex gap-1 flex-wrap">
+                {['ALL','DEPOSIT','WITHDRAWAL','TRADE_BUY','TRADE_SELL','FEE','DIVIDEND','REFUND','ADJUSTMENT'].map(f=>(
+                  <button key={f} onClick={()=>{ setTxFilter(f); setTxPage(1); loadTxHistory(f,1); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${txFilter===f?'bg-blue-600 text-white':'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                    {f==='ALL'?'All Types':f.replace('_',' ')}
+                  </button>
+                ))}
+              </div>
+              <button onClick={()=>loadTxHistory(txFilter, txPage)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-white ml-auto">
+                🔄 Refresh
+              </button>
+            </div>
+
+            {/* Load data button if empty */}
+            {txHistory.length === 0 && !txLoading && (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+                <p className="text-3xl mb-3">📒</p>
+                <p className="font-semibold mb-2">Transaction Ledger</p>
+                <p className="text-gray-500 text-sm mb-4">Click Load to fetch the latest transactions.</p>
+                <button onClick={()=>loadTxHistory('ALL',1)}
+                  className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                  Load Transactions
+                </button>
+              </div>
+            )}
+
+            {txLoading && <div className="text-center py-8 text-gray-500 text-sm">⏳ Loading…</div>}
+
+            {/* Transaction table */}
+            {txHistory.length > 0 && (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-800 bg-gray-800/50">
+                        {['Date','User','Type','Amount','Before','After','Description'].map(h=>(
+                          <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 font-medium">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {txHistory.map((tx,i)=>{
+                        const isCredit = parseFloat(tx.amount_usd) > 0;
+                        const typeColors = {
+                          DEPOSIT:    'bg-green-900/50 text-green-300',
+                          WITHDRAWAL: 'bg-red-900/50 text-red-300',
+                          TRADE_BUY:  'bg-blue-900/50 text-blue-300',
+                          TRADE_SELL: 'bg-purple-900/50 text-purple-300',
+                          FEE:        'bg-amber-900/50 text-amber-300',
+                          DIVIDEND:   'bg-teal-900/50 text-teal-300',
+                          REFUND:     'bg-green-900/50 text-green-300',
+                          ADJUSTMENT: 'bg-gray-700 text-gray-300',
+                        };
+                        return (
+                          <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                            <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
+                              {new Date(tx.created_at).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-medium">{tx.full_name||'—'}</p>
+                              <p className="text-xs text-gray-500">{tx.email||''}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${typeColors[tx.type]||'bg-gray-700 text-gray-300'}`}>
+                                {tx.type?.replace('_',' ')}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-mono font-bold">
+                              <span className={isCredit?'text-green-400':'text-red-400'}>
+                                {isCredit?'+':''}{parseFloat(tx.amount_usd).toFixed(2)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-xs text-gray-400">
+                              ${parseFloat(tx.balance_before||0).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-xs text-gray-300 font-semibold">
+                              ${parseFloat(tx.balance_after||0).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-400 max-w-xs truncate">
+                              {tx.description||'—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Pagination */}
+                <div className="px-4 py-3 border-t border-gray-800 flex items-center justify-between">
+                  <p className="text-xs text-gray-500">Showing {txHistory.length} records · Page {txPage}</p>
+                  <div className="flex gap-2">
+                    <button onClick={()=>{ const p=Math.max(1,txPage-1); setTxPage(p); loadTxHistory(txFilter,p); }}
+                      disabled={txPage===1}
+                      className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-gray-400 hover:text-white disabled:opacity-40">← Prev</button>
+                    <button onClick={()=>{ const p=txPage+1; setTxPage(p); loadTxHistory(txFilter,p); }}
+                      disabled={txHistory.length < TX_PAGE_SIZE}
+                      className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-gray-400 hover:text-white disabled:opacity-40">Next →</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ OFFERINGS ══ */}
+        {tab==='offerings' && (
+          <AdminOfferingsTab NAVY={NAVY} GOLD={GOLD} GREEN={GREEN} RED={RED} notify={notify} />
+        )}
+
+        {/* ══ BLOG ══ */}
+        {tab==='blog' && <AdminBlogTab />}
+
+      </div>
+
+      {/* ── ASSIGN AUDITOR MODAL ── */}
+      {assignModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
+            <h3 className="font-bold text-lg mb-1">Assign Auditor</h3>
+            <p className="text-gray-400 text-sm mb-5">{assignModal.itemName}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Select Auditor</label>
+                <select value={assignNote} onChange={e=>setAssignNote(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-600">
+                  <option value="">— Select an auditor —</option>
+                  {users.filter(u=>u.role==='AUDITOR').map(u=>(
+                    <option key={u.id} value={u.wallet_address||u.wallet||u.id}>{u.email||(u.wallet_address?`${u.wallet_address.slice(0,10)}…`:`Auditor ${u.id}`)} (AUDITOR)</option>
+                  ))}
+                  <option value="J. Sibanda CPA (ICAZ)">J. Sibanda CPA (ICAZ)</option>
+                  <option value="T. Moyo CA(Z)">T. Moyo CA(Z)</option>
+                  <option value="R. Chikwanda CFA">R. Chikwanda CFA</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Instructions to Auditor (optional)</label>
+                <textarea rows={3} placeholder="e.g. Please prioritise — SECZ deadline is 15 April." className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600 resize-none"/>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={()=>{setAssignModal(null);setAssignNote('');}} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
+              <button onClick={()=>assignAuditor(assignModal.item, assignNote||'Pending assignment')} disabled={!assignNote} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{background:NAVY}}>🔍 Assign Auditor</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── USER PROFILE MODAL ── */}
+      {selectedUser && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between"><h2 className="text-lg font-bold">User Profile</h2><button onClick={()=>setSelectedUser(null)} className="text-gray-500 hover:text-white text-xl">✕</button></div>
+            <div className="space-y-2 text-sm">
+              {[['Email',selectedUser.email||'—'],['Wallet',selectedUser.wallet_address?`${selectedUser.wallet_address.slice(0,8)}…${selectedUser.wallet_address.slice(-6)}`:'—'],['Current Role',selectedUser.role],['KYC Status',selectedUser.kyc_status],['Account Status',selectedUser.account_status||'ACTIVE'],['Joined',dt(selectedUser.created_at)],['Last Login',selectedUser.last_login?dt(selectedUser.last_login):'Never']].map(([l,v])=>(
+                <div key={l} className="flex justify-between"><span className="text-gray-400">{l}</span><span className={l==='Current Role'?'text-yellow-400 font-bold':l==='KYC Status'?selectedUser.kyc_status==='APPROVED'?'text-green-400':'text-amber-400':l==='Account Status'?selectedUser.account_status==='SUSPENDED'?'text-red-400':'text-green-400':''}>{v}</span></div>
+              ))}
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-2">Approve Membership As</label>
+              <div className="grid grid-cols-3 gap-2">
+                {['INVESTOR','ISSUER','PARTNER'].map(r=>(
+                  <div key={r} onClick={()=>setUserModalRole(r)} className={`cursor-pointer text-center py-2 rounded-xl border text-xs font-bold transition-all ${userModalRole===r?'border-blue-500 bg-blue-900/30 text-blue-300':'border-gray-700 text-gray-400 hover:border-gray-500'}`}>
+                    {r==='INVESTOR'?'👤':r==='ISSUER'?'🏢':'🤝'} {r}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button disabled={userModalLoading||(userModalRole===selectedUser.role&&selectedUser.kyc_status==='APPROVED')}
+              onClick={async()=>{setUserModalLoading(true);const token=localStorage.getItem('token');await fetch(`http://localhost:3001/api/admin/users/${selectedUser.id}/role`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({role:userModalRole})});await fetchUsers();setSelectedUser(null);setUserModalLoading(false);}}
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40 transition-colors" style={{background:GREEN}}>
+              {userModalLoading?'⏳ Saving…':`✓ Approve as ${userModalRole}`}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

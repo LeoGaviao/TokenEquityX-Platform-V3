@@ -1,0 +1,63 @@
+# render.yaml
+# Place this file in the ROOT of your repository: TokenEquityX-Platform-V3/render.yaml
+# Render will auto-detect this file and configure your services
+
+services:
+  - type: web
+    name: tokenequityx-api
+    runtime: docker
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: ./api
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://tokenequityx.co.zw
+      - key: DB_HOST
+        fromDatabase:
+          name: tokenequityx-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: tokenequityx-db
+          property: port
+      - key: DB_USER
+        fromDatabase:
+          name: tokenequityx-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: tokenequityx-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: tokenequityx-db
+          property: database
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      - key: PLATFORM_FEE_BPS
+        value: 50
+      - key: MAX_KYC_EXPIRY_DAYS
+        value: 365
+      - key: DEFAULT_DAILY_TRADE_LIMIT_USD
+        value: 50000
+      - key: SETUP_COMPLETE
+        value: true
+      - key: MAX_FILE_SIZE_MB
+        value: 10
+      - key: UPLOAD_PATH
+        value: ./uploads
+      # Add these manually in Render dashboard after first deploy:
+      # SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, ADMIN_EMAIL
+      # RPC_URL, CHAIN_ID (when smart contracts are deployed)
+      # Contract addresses (after deployment)
+
+# NOTE: Render free plan does not include managed MySQL.
+# Use Railway for MySQL — see DEPLOYMENT_GUIDE.txt for instructions.
+# The DB_ variables above will be filled manually from your Railway connection string.
