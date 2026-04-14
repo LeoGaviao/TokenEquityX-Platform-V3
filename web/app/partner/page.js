@@ -136,6 +136,7 @@ export default function PartnerDashboard() {
     { label:'Issuer Application',  url: refLinks.issuer_link  || `https://tokenequityx.com/signup?ref=${refLinks.referral_code}&type=issuer` },
   ];
 
+  if (typeof window === 'undefined') return null;
   if (!JSON.parse(localStorage.getItem('user') || '{}')?.role) return null;
 
   return (

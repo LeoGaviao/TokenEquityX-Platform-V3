@@ -724,6 +724,7 @@ api.get('/auditor/completed').then(r => {
     setTimeout(()=>setActionMsg(null), 6000);
   };
 
+  if (typeof window === 'undefined') return null;
   if (!JSON.parse(localStorage.getItem('user') || '{}')?.role) return null;
 
   const pending  = queue.length;
