@@ -21,7 +21,8 @@ async function testConnection() {
     conn.release();
   } catch (err) {
     console.error('❌ MySQL connection error:', err.message);
-    process.exit(1);
+    console.error('⚠️  API running without database — retrying on next request');
+    // Do not exit — let the app stay running and retry connections
   }
 }
 
