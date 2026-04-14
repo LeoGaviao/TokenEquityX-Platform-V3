@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, Suspense } from 'next/navigation';
 import { useAuth } from '../../../hooks/useAuth';
 import { useWebSocket } from '../../../hooks/useWebSocket';
 import api from '../../../lib/api';
 
-export default function TradePage() {
+function TradePageInner() {
   const { user, ready }       = useAuth();
   const searchParams          = useSearchParams();
   const [tokens,    setTokens]    = useState([]);
@@ -275,5 +275,13 @@ export default function TradePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TradePage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-gray-400">Loading...</div>}>
+      <TradePageInner />
+    </Suspense>
   );
 }
