@@ -385,6 +385,7 @@ export default function InvestorDashboard() {
     return Object.entries(result).map(([sym, data]) => ({ ...data, symbol:sym, price:prices[sym]||data.price }));
   })();
 
+  if (typeof window === 'undefined') return null;
   if (!JSON.parse(localStorage.getItem('user') || '{}')?.role) return null;
 
   return (
