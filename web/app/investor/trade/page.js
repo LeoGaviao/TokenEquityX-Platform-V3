@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { useSearchParams, Suspense } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import { useAuth } from '../../../hooks/useAuth';
 import { useWebSocket } from '../../../hooks/useWebSocket';
 import api from '../../../lib/api';
