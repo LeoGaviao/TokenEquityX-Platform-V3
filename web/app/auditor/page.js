@@ -622,6 +622,7 @@ export default function AuditorDashboard() {
   const [actionMsg,  setActionMsg]  = useState(null);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return null;
     const _u = JSON.parse(localStorage.getItem('user') || '{}');
 if (!_u?.role) return;
    
