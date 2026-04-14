@@ -1,10 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, Suspense } from 'next/navigation';
 import { useAuth } from '../../../hooks/useAuth';
 import api from '../../../lib/api';
 
-export default function FinancialDataPage() {
+function FinancialDataPageInner() {
   const { ready }        = useAuth();
   const searchParams     = useSearchParams();
   const [assets,   setAssets]   = useState([]);
@@ -231,5 +231,13 @@ export default function FinancialDataPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function FinancialDataPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-gray-400">Loading...</div>}>
+      <FinancialDataPageInner />
+    </Suspense>
   );
 }
