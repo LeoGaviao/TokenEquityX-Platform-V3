@@ -1,12 +1,6 @@
--- ═══════════════════════════════════════════════════════════════════
--- TokenEquityX V2 — Full Database Schema
--- Run against the 'tokenequityx_v2' database in phpMyAdmin
--- ═══════════════════════════════════════════════════════════════════
 
-CREATE DATABASE IF NOT EXISTS tokenequityx_v3
-  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-USE tokenequityx_v3;
+USE railway;
 
 -- ─── USERS & ROLES ────────────────────────────────────────────────
 
@@ -29,6 +23,8 @@ CREATE TABLE IF NOT EXISTS auth_nonces (
     expires_at  DATETIME     NOT NULL,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+USE railway;
 
 -- ─── KYC ──────────────────────────────────────────────────────────
 
