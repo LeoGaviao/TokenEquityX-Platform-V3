@@ -114,6 +114,7 @@ export default function DefiDashboard() {
     setTimeout(()=>setCopied(false),2000);
   };
 
+  if(typeof window === 'undefined') return null;
   if(!JSON.parse(localStorage.getItem('user')||'{}')?.role)return null;
 
   const KPI=({label,value,sub,icon,color='text-white'})=>(
