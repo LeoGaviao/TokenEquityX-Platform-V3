@@ -559,4 +559,27 @@ router.get('/init', async (req, res) => {
   }
 });
 
+router.get('/reset-passwords', async (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== process.env.SETUP_SECRET) {
+    return res.status(403).json({ error: 'Invalid setup secret' });
+  }
+  try {
+    const hash = '$2b$10$rmUNjpv.hB/.yLNJMMmT1.lDHS1/FmIoKwO3YKOXQ1s4mQp97LCv2';
+    await pool._pool.query(
+      `UPDATE users SET password_hash = $1 WHERE email IN (
+        'admin@tokenequityx.co.zw',
+        'auditor@tokenequityx.co.zw',
+        'issuer@tokenequityx.co.zw',
+        'investor@tokenequityx.co.zw',
+        'partner@tokenequityx.co.zw'
+      )`,
+      [hash]
+    );
+    res.json({ success: true, message: 'All staff passwords reset to Admin@123' });
+  } catch (err) {
+    res.status(500).json({ error: 'Password reset failed: ' + err.message });
+  }
+});
+
 module.exports = router;
