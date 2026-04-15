@@ -18,9 +18,10 @@ app.use(cors({
       process.env.FRONTEND_URL,
       'https://tokenequityx-web.vercel.app',
       'https://tokenequityx.co.zw',
+      'https://www.tokenequityx.co.zw',
       'http://localhost:3000',
     ].filter(Boolean);
-    if (!origin || allowed.includes(origin)) {
+    if (!origin || allowed.some(a => origin === a || origin.endsWith('.vercel.app'))) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
