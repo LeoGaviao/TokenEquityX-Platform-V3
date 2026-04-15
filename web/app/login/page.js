@@ -1,10 +1,9 @@
 'use client';
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [form, setForm]     = useState({ email: '', password: '' });
   const [error, setError]   = useState('');
   const [loading, setLoading]  = useState(false);
@@ -29,7 +28,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res  = await fetch('/api/auth/login', {
+      const res  = await fetch(`${API}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
@@ -58,7 +57,7 @@ if (!data.user.onboarding_complete && !exemptRoles.includes(data.user.role)) {
     try {
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const wallet   = accounts[0];
-      const res  = await fetch('/api/auth/connect-wallet', {
+      const res  = await fetch(`${API}/auth/connect-wallet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wallet })
