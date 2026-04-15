@@ -47,7 +47,7 @@ router.post('/signup', async (req, res) => {
 
     await db.execute(
       `INSERT INTO users (id, wallet, role, kyc_status, email, full_name, password_hash, is_active, onboarding_complete)
-       VALUES (?, ?, 'INVESTOR', 'PENDING', ?, ?, ?, 1, 0)`,
+       VALUES (?, ?, 'INVESTOR', 'PENDING', ?, ?, ?, TRUE, FALSE)`,
       [id, `email_${id.slice(0,8)}`, email.toLowerCase(), full_name, password_hash]
     );
 
@@ -78,7 +78,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
 
     const [rows] = await db.execute(
-      'SELECT * FROM users WHERE email = ? AND is_active = 1', [email.toLowerCase()]
+      'SELECT * FROM users WHERE email = ? AND is_active = TRUE', [email.toLowerCase()]
     );
     if (rows.length === 0)
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -137,7 +137,7 @@ router.post('/role-select', authenticate, async (req, res) => {
 router.post('/complete-onboarding', authenticate, async (req, res) => {
   try {
     await db.execute(
-      'UPDATE users SET onboarding_complete = 1 WHERE id = ?',
+      'UPDATE users SET onboarding_complete = TRUE WHERE id = ?',
       [req.user.userId]
     );
     res.json({ success: true });
@@ -175,7 +175,7 @@ router.post('/connect-wallet', async (req, res) => {
       const id = uuidv4();
       await db.execute(
         `INSERT INTO users (id, wallet, role, kyc_status, is_active)
-         VALUES (?, ?, 'INVESTOR', 'PENDING', 1)`,
+         VALUES (?, ?, 'INVESTOR', 'PENDING', TRUE)`,
         [id, wallet]
       );
       [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [id]);
@@ -217,7 +217,7 @@ router.post('/create-staff', authenticate, requireRole('ADMIN'), async (req, res
 
     await db.execute(
       `INSERT INTO users (id, wallet, role, kyc_status, email, full_name, password_hash, is_active, onboarding_complete)
-       VALUES (?, ?, ?, 'APPROVED', ?, ?, ?, 1, 1)`,
+       VALUES (?, ?, ?, 'APPROVED', ?, ?, ?, TRUE, TRUE)`,
       [id, `staff_${id.slice(0,8)}`, role, email.toLowerCase(), full_name, password_hash]
     );
 
@@ -252,7 +252,7 @@ router.delete('/staff/:id', authenticate, requireRole('ADMIN'), async (req, res)
       return res.status(400).json({ error: 'Cannot deactivate your own account' });
 
     await db.execute(
-      'UPDATE users SET is_active = 0 WHERE id = ? AND role IN (\'ADMIN\',\'AUDITOR\',\'DFI\',\'COMPLIANCE_OFFICER\')',
+      'UPDATE users SET is_active = FALSE WHERE id = ? AND role IN (\'ADMIN\',\'AUDITOR\',\'DFI\',\'COMPLIANCE_OFFICER\')',
       [req.params.id]
     );
     res.json({ success: true });
