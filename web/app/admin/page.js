@@ -949,8 +949,8 @@ export default function AdminDashboard() {
       if(tradeRes.status==='fulfilled')setTrades(tradeRes.value.data||[]);
       if(usersRes.status==='fulfilled')setUsers(usersRes.value.data||[]);
       const token = localStorage.getItem('token');
-      fetch('http://localhost:3001/api/wallet/admin/deposits',{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setDeposits(d);}).catch(()=>{});
-      fetch('http://localhost:3001/api/wallet/admin/withdrawals',{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setWithdrawals(d);}).catch(()=>{});
+      fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001/api'}/wallet/admin/deposits`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setDeposits(d);}).catch(()=>{});
+      fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001/api'}/wallet/admin/withdrawals`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setWithdrawals(d);}).catch(()=>{});
       if(subRes.status==='fulfilled' && subRes.value.data?.length){
         const tokenisationApps = subRes.value.data.filter(s=>s.submission_type==='TOKENISATION_APPLICATION'||s.period==='TOKENISATION_APPLICATION').map(s=>({
           id:s.id,name:s.entity_name||(s.token_symbol+' — Application'),symbol:s.token_symbol,asset_class:'Pending Classification',

@@ -18,17 +18,7 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   response => response,
   error => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      // Only redirect to login if user was previously authenticated
-      // Do not redirect on initial auth check (auth/me) or if already on login page
-      const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
-      const isAuthMe = error.config?.url?.includes('/auth/me');
-      const hasToken = localStorage.getItem('token');
-      if (!isLoginPage && !isAuthMe && hasToken) {
-        localStorage.clear();
-        window.location.href = '/';
-      }
-    }
+    // Do not auto-redirect on 401 — let each page handle its own auth state
     return Promise.reject(error);
   }
 );
