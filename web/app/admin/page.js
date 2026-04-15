@@ -1031,7 +1031,9 @@ export default function AdminDashboard() {
   const pendingDeposits=deposits.filter(d=>d.status==='PENDING').length;
   const pendingWithdrawals=withdrawals.filter(w=>w.status==='PENDING').length;
 
-  if(typeof window === 'undefined') return null;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
   if(!JSON.parse(localStorage.getItem('user')||'{}')?.role) return null;
 
   const KPI=({label,value,sub,icon,color='text-white'})=>(
