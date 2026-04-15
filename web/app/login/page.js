@@ -34,6 +34,7 @@ export default function LoginPage() {
         body: JSON.stringify(form)
       });
       const data = await res.json();
+      console.log('LOGIN RESPONSE:', JSON.stringify(data));
       if (!res.ok) return setError(data.error || 'Login failed');
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
