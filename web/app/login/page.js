@@ -35,14 +35,23 @@ export default function LoginPage() {
       });
       const data = await res.json();
       console.log('LOGIN RESPONSE:', JSON.stringify(data));
+      console.log('res.ok:', res.ok);
       if (!res.ok) return setError(data.error || 'Login failed');
+      console.log('Token:', data.token ? 'EXISTS' : 'MISSING');
+      console.log('User:', JSON.stringify(data.user));
+      console.log('onboarding_complete:', data.user?.onboarding_complete);
+      console.log('role:', data.user?.role);
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      // If onboarding not complete, go there
       const exemptRoles = ['ADMIN','AUDITOR','PARTNER','DFI','COMPLIANCE_OFFICER'];
-if (!data.user.onboarding_complete && !exemptRoles.includes(data.user.role)) {
-  return window.location.href = '/onboarding';
-}
+      const isExempt = exemptRoles.includes(data.user?.role);
+      console.log('isExempt:', isExempt);
+      console.log('onboarding check:', !data.user?.onboarding_complete && !isExempt);
+      if (!data.user?.onboarding_complete && !isExempt) {
+        console.log('Redirecting to onboarding');
+        return window.location.href = '/onboarding';
+      }
+      console.log('Redirecting to role:', data.user?.role);
       redirectByRole(data.user.role);
     } catch {
       setError('Network error. Please try again.');
