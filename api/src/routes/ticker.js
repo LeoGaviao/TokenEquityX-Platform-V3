@@ -11,28 +11,27 @@ router.get('/', async (req, res) => {
         t.current_price_usd,
         t.issued_shares,
         t.market_state,
-        s.legal_name  as company_name,
-        s.sector,
-        s.jurisdiction,
+        COALESCE(s.legal_name, t.company_name) as company_name,
+        t.jurisdiction,
         COALESCE((
           SELECT SUM(tr.total_usdc)
           FROM trades tr
-          WHERE tr.token_id = t.id
-          AND tr.matched_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+          WHERE tr.token_id = CAST(t.id AS VARCHAR)
+          AND tr.matched_at > NOW() - INTERVAL '24 hours'
         ), 0) as volume_24h,
         COALESCE((
           SELECT tr.price FROM trades tr
-          WHERE tr.token_id = t.id
+          WHERE tr.token_id = CAST(t.id AS VARCHAR)
           ORDER BY tr.matched_at DESC LIMIT 1
         ), t.current_price_usd) as last_price,
         COALESCE((
           SELECT tr.price FROM trades tr
-          WHERE tr.token_id = t.id
-          AND tr.matched_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+          WHERE tr.token_id = CAST(t.id AS VARCHAR)
+          AND tr.matched_at < NOW() - INTERVAL '24 hours'
           ORDER BY tr.matched_at DESC LIMIT 1
         ), t.current_price_usd) as price_24h_ago
       FROM tokens t
-      JOIN spvs s ON s.id = t.spv_id
+      LEFT JOIN spvs s ON s.id = t.spv_id
       WHERE t.status IN ('ACTIVE','DRAFT')
       ORDER BY t.created_at DESC
     `);
