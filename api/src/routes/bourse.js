@@ -215,7 +215,7 @@ router.get('/stats', authenticate, async (req, res) => {
          SUM(CASE WHEN role = 'INVESTOR' THEN 1 ELSE 0 END) as investors,
          SUM(CASE WHEN role = 'ISSUER' THEN 1 ELSE 0 END) as issuers,
          SUM(CASE WHEN role = 'PARTNER' THEN 1 ELSE 0 END) as partners
-       FROM users WHERE is_active = 1`
+       FROM users WHERE is_active = TRUE`
     );
 
     const [[submissions]] = await db.execute(

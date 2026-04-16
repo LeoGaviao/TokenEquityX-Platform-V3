@@ -164,17 +164,17 @@ router.get('/candles/:tokenSymbol', async (req, res) => {
         SUM(total_usdc) as volume,
         (SELECT price FROM trades t2
          WHERE t2.token_id = t.token_id
-         AND DATE_FORMAT(t2.matched_at, '%Y-%m-%d %H:00:00') =
-             DATE_FORMAT(t.matched_at, '%Y-%m-%d %H:00:00')
+         AND date_trunc('hour', t2.matched_at) =
+             date_trunc('hour', t.matched_at)
          ORDER BY t2.matched_at ASC LIMIT 1) as open,
         (SELECT price FROM trades t3
          WHERE t3.token_id = t.token_id
-         AND DATE_FORMAT(t3.matched_at, '%Y-%m-%d %H:00:00') =
-             DATE_FORMAT(t.matched_at, '%Y-%m-%d %H:00:00')
+         AND date_trunc('hour', t3.matched_at) =
+             date_trunc('hour', t.matched_at)
          ORDER BY t3.matched_at DESC LIMIT 1) as close
       FROM trades t
       WHERE t.token_id = ?
-      AND t.matched_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
+      AND t.matched_at > NOW() - INTERVAL '7 days'
       GROUP BY DATE_FORMAT(matched_at, '%Y-%m-%d %H:00:00')
       ORDER BY time ASC
     `, [tokens[0].id]);

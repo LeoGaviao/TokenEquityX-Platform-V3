@@ -285,7 +285,7 @@ router.put('/:id/assign',
       await db.execute(`
         UPDATE data_submissions
         SET assigned_auditor = ?, status = 'UNDER_REVIEW',
-            auditor_notes = CONCAT(IFNULL(auditor_notes,''), ' | Assigned to: ', ?)
+            auditor_notes = COALESCE(auditor_notes,'') || ' | Assigned to: ' || ?
         WHERE id = ?
       `, [assignedAuditor, assignedAuditor, req.params.id]);
 

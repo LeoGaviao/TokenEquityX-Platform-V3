@@ -19,7 +19,7 @@ router.get('/', async (req, res) => {
       SELECT id, title, slug, category, summary, author, author_role,
              read_time, featured, published_at, created_at
       FROM blog_posts
-      WHERE published = 1
+      WHERE published = TRUE
       ORDER BY featured DESC, published_at DESC
     `);
     res.json(rows);
@@ -132,8 +132,8 @@ router.put('/:id',
         author      || existing.author,
         author_role || existing.author_role,
         read_time   || existing.read_time,
-        featured !== undefined ? (featured ? 1 : 0) : existing.featured,
-        published !== undefined ? (published ? 1 : 0) : existing.published,
+        featured !== undefined ? (featured ? true : false) : existing.featured,
+        published !== undefined ? (published ? true : false) : existing.published,
         publishedAt,
         req.params.id
       ]);

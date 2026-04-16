@@ -156,7 +156,7 @@ router.get('/claimable', authenticate, async (req, res) => {
       AND dr.claim_deadline > NOW()
       AND dr.id NOT IN (
         SELECT round_id FROM dividend_claims
-        WHERE wallet_address = ? AND claimed = 1
+        WHERE wallet_address = ? AND claimed = TRUE
       )
       ORDER BY dr.created_at DESC
     `, [req.user.userId, walletAddress]);
@@ -408,7 +408,7 @@ router.get('/claimable/:walletAddress', async (req, res) => {
       AND dr.claim_deadline > NOW()
       AND dr.id NOT IN (
         SELECT round_id FROM dividend_claims
-        WHERE wallet_address = ? AND claimed = 1
+        WHERE wallet_address = ? AND claimed = TRUE
       )
       ORDER BY dr.created_at DESC
     `, [userId, req.params.walletAddress.toLowerCase()]);

@@ -152,7 +152,7 @@ router.put('/approve/:kycId',
             reviewer_id     = ?,
             reviewer_notes  = ?,
             kyc_reference   = ?,
-            expires_at      = DATE_ADD(NOW(), INTERVAL ? DAY)
+            expires_at      = NOW() + (? * INTERVAL '1 day')
         WHERE id = ?
       `, [
         req.user.userId,
