@@ -15,7 +15,7 @@ const authenticate = async (req, res, next) => {
 
     // Fetch fresh user data on every request
     const [users] = await db.execute(
-      'SELECT * FROM users WHERE id = ? AND is_active = 1',
+      'SELECT * FROM users WHERE id = ? AND is_active = TRUE',
       [decoded.userId]
     );
     if (users.length === 0) {
