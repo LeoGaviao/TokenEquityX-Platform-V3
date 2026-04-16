@@ -50,17 +50,11 @@ function ConnectButton({ label = 'Access Platform', size = 'lg' }) {
     setError(''); setLoading(true);
     try {
       if (!window.ethereum) { setError('MetaMask not found. Please install MetaMask.'); setLoading(false); return; }
-      setStatus('Connecting…');
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.send('eth_requestAccounts', []);
+      setStatus('Connecting...');
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const wallet   = accounts[0];
-      const signer   = await provider.getSigner();
-      setStatus('Requesting sign-in message…');
-      const { data: nonceData } = await axios.get(`${API}/auth/nonce`, { params: { wallet } });
-      setStatus('Sign in MetaMask…');
-      const signature = await signer.signMessage(nonceData.message);
-      setStatus('Verifying…');
-      const { data: authData } = await axios.post(`${API}/auth/login`, { walletAddress: wallet, signature, nonce: nonceData.nonce });
+      setStatus('Signing in...');
+      const { data: authData } = await axios.post(`${API}/auth/connect-wallet`, { wallet });
       localStorage.setItem('token', authData.token);
       localStorage.setItem('user',  JSON.stringify(authData.user));
       const role = authData.user.role;
@@ -72,7 +66,7 @@ function ConnectButton({ label = 'Access Platform', size = 'lg' }) {
       else                                    window.location.href = '/investor';
     } catch (err) {
       if (!err.response) {
-        setError('Cannot reach the server. Please make sure MySQL and the API (node app.js) are running on port 3001.');
+        setError('Cannot reach the server. Please try again.');
       } else {
         setError(err.response?.data?.error || err.message || 'Login failed.');
       }
