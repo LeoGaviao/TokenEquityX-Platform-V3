@@ -532,6 +532,32 @@ INSERT INTO investor_wallets (user_id, balance_usd, balance_usdc, reserved_usd, 
 ON CONFLICT (user_id) DO NOTHING;
 `;
 
+router.get('/migrate', async (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== process.env.SETUP_SECRET) {
+    return res.status(403).json({ error: 'Invalid setup secret' });
+  }
+  const migrations = [
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS registration_number VARCHAR(100)`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS sector VARCHAR(100)`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS asset_type VARCHAR(50)`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS description TEXT`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS ipfs_doc_hash VARCHAR(100)`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS ticker VARCHAR(20)`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS asset_class VARCHAR(50)`,
+  ];
+  const results = [];
+  for (const sql of migrations) {
+    try {
+      await pool._pool.query(sql);
+      results.push({ ok: true, sql: sql.substring(0, 60) });
+    } catch (err) {
+      results.push({ ok: false, sql: sql.substring(0, 60), error: err.message });
+    }
+  }
+  res.json({ success: true, results });
+});
+
 router.get('/init', async (req, res) => {
   const secret = req.query.secret;
   if (secret !== process.env.SETUP_SECRET) {
