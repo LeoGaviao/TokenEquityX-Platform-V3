@@ -72,18 +72,29 @@ CREATE TABLE IF NOT EXISTS kyc_documents (
 );
 
 CREATE TABLE IF NOT EXISTS spvs (
-  id              SERIAL       NOT NULL PRIMARY KEY,
-  owner_user_id   UUID,
-  legal_name      VARCHAR(255) NOT NULL,
-  registration_no VARCHAR(100),
-  jurisdiction    VARCHAR(100) NOT NULL DEFAULT 'Zimbabwe',
-  spv_type        VARCHAR(50)  NOT NULL DEFAULT 'PRIVATE_LIMITED',
-  address         TEXT,
-  directors       JSONB,
-  status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
-  created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
+  id                  SERIAL       NOT NULL PRIMARY KEY,
+  owner_user_id       UUID,
+  legal_name          VARCHAR(255) NOT NULL,
+  registration_no     VARCHAR(100),
+  registration_number VARCHAR(100),
+  jurisdiction        VARCHAR(100) NOT NULL DEFAULT 'Zimbabwe',
+  spv_type            VARCHAR(50)  NOT NULL DEFAULT 'PRIVATE_LIMITED',
+  sector              VARCHAR(100),
+  asset_type          VARCHAR(50),
+  description         TEXT,
+  ipfs_doc_hash       VARCHAR(100),
+  address             TEXT,
+  directors           JSONB,
+  status              VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+  created_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE spvs ADD COLUMN IF NOT EXISTS sector VARCHAR(100);
+ALTER TABLE spvs ADD COLUMN IF NOT EXISTS asset_type VARCHAR(50);
+ALTER TABLE spvs ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE spvs ADD COLUMN IF NOT EXISTS ipfs_doc_hash VARCHAR(100);
+ALTER TABLE spvs ADD COLUMN IF NOT EXISTS registration_number VARCHAR(100);
 
 CREATE TABLE IF NOT EXISTS tokens (
   id                  SERIAL        NOT NULL PRIMARY KEY,
