@@ -191,10 +191,9 @@ router.get('/recent', async (req, res) => {
   try {
     const [rows] = await db.execute(`
       SELECT t.id, t.quantity, t.price, t.total_usdc,
-             t.matched_at as settled_at,
-             tk.symbol as token_symbol, tk.name as token_name
+             t.matched_at, tk.token_symbol, tk.token_name
       FROM trades t
-      JOIN tokens tk ON tk.id = t.token_id
+      LEFT JOIN tokens tk ON tk.id::VARCHAR = t.token_id
       ORDER BY t.matched_at DESC
       LIMIT ?
     `, [limit]);
@@ -218,10 +217,10 @@ router.get('/history/:walletAddress', async (req, res) => {
     const [rows] = await db.execute(`
       SELECT t.id, t.quantity, t.price, t.total_usdc,
              t.matched_at as settled_at,
-             tk.symbol as token_symbol, tk.name as token_name,
+             tk.token_symbol, tk.token_name,
              o.side
       FROM trades t
-      JOIN tokens tk ON tk.id = t.token_id
+      LEFT JOIN tokens tk ON tk.id::VARCHAR = t.token_id
       JOIN orders o  ON (o.id = t.buy_order_id OR o.id = t.sell_order_id)
                      AND o.user_id = ?
       ORDER BY t.matched_at DESC
