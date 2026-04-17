@@ -62,12 +62,11 @@ router.get('/proposals', async (req, res) => {
     const [rows] = await db.execute(`
       SELECT p.*, t.token_symbol, t.token_name,
              s.legal_name as company_name,
-             u.wallet_address as proposer_wallet,
+             p.proposer as proposer_wallet,
              (SELECT COUNT(*) FROM votes v WHERE v.proposal_id = p.id) as total_votes
       FROM proposals p
       JOIN tokens t  ON t.id = p.token_id
-      JOIN spvs s    ON s.id = t.spv_id
-      JOIN users u   ON u.id = p.created_by
+      LEFT JOIN spvs s ON s.id = t.spv_id
       ORDER BY p.created_at DESC
     `);
     res.json(rows);
@@ -80,10 +79,9 @@ router.get('/proposals', async (req, res) => {
 router.get('/proposals/:tokenSymbol', async (req, res) => {
   try {
     const [rows] = await db.execute(`
-      SELECT p.*, u.wallet_address as proposer_wallet
+      SELECT p.*, p.proposer as proposer_wallet
       FROM proposals p
       JOIN tokens t ON t.id = p.token_id
-      JOIN users u  ON u.id = p.created_by
       WHERE t.token_symbol = ?
       ORDER BY p.created_at DESC
     `, [req.params.tokenSymbol.toUpperCase()]);
