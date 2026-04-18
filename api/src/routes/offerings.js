@@ -34,7 +34,9 @@ router.get('/', authenticate, async (req, res) => {
     const [rows] = await db.execute(`
       SELECT
         po.*,
-        t.token_symbol, t.token_name, t.asset_type, t.current_price_usd, t.market_state,
+        COALESCE(t.token_symbol, t.symbol) as token_symbol,
+        COALESCE(t.token_name, t.name) as token_name,
+        t.asset_type, t.current_price_usd, t.market_state,
         u.full_name AS issuer_name, u.email AS issuer_email,
         COUNT(os.id) AS subscriber_count
       FROM primary_offerings po
@@ -42,8 +44,8 @@ router.get('/', authenticate, async (req, res) => {
       LEFT JOIN users u ON u.id = po.issuer_id
       LEFT JOIN offering_subscriptions os ON os.offering_id = po.id AND os.status = 'CONFIRMED'
       ${whereClause}
-      GROUP BY po.id, t.token_symbol, t.token_name, t.asset_type, t.current_price_usd,
-               t.market_state, u.full_name, u.email
+      GROUP BY po.id, t.token_symbol, t.symbol, t.token_name, t.name, t.asset_type,
+               t.current_price_usd, t.market_state, u.full_name, u.email
       ORDER BY po.created_at DESC
     `, params);
     res.json(rows);
@@ -56,7 +58,10 @@ router.get('/', authenticate, async (req, res) => {
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const [rows] = await db.execute(`
-      SELECT po.*, t.token_symbol, t.token_name, t.asset_type, t.current_price_usd,
+      SELECT po.*,
+             COALESCE(t.token_symbol, t.symbol) as token_symbol,
+             COALESCE(t.token_name, t.name) as token_name,
+             t.asset_type, t.current_price_usd,
              u.full_name AS issuer_name, u.email AS issuer_email
       FROM primary_offerings po
       JOIN tokens t ON t.id = po.token_id
