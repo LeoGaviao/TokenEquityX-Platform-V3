@@ -29,9 +29,10 @@ app.use(cors({
   },
   credentials: true
 }));
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '10mb' }));
 // Serve uploaded files — accessible at /uploads/kyc/filename.pdf etc.
-app.use('/uploads', require('express').static('C:\\xampp\\htdocs\\TokenEquityX-Platform-V3\\api\\uploads'));
+app.use('/uploads', require('express').static(require('path').join(__dirname, 'uploads')));
 
 app.use(express.urlencoded({ extended: true }));
 app.use(logger.requestMiddleware);

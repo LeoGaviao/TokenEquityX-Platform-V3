@@ -111,19 +111,18 @@ router.put('/market-controls/:tokenId',
     try {
       await db.execute(`
         INSERT INTO market_controls
-          (id, token_id, trading_enabled, halted, halt_reason,
+          (token_id, halted, halt_reason,
            daily_volume_cap_usd, max_trade_size_usd)
-        VALUES (UUID(), ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          trading_enabled      = VALUES(trading_enabled),
-          halted               = VALUES(halted),
-          halt_reason          = VALUES(halt_reason),
-          daily_volume_cap_usd = VALUES(daily_volume_cap_usd),
-          max_trade_size_usd   = VALUES(max_trade_size_usd)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (token_id) DO UPDATE SET
+          halted               = EXCLUDED.halted,
+          halt_reason          = EXCLUDED.halt_reason,
+          daily_volume_cap_usd = EXCLUDED.daily_volume_cap_usd,
+          max_trade_size_usd   = EXCLUDED.max_trade_size_usd,
+          updated_at           = NOW()
       `, [
         req.params.tokenId,
-        tradingEnabled !== false ? 1 : 0,
-        halted ? 1 : 0,
+        halted ? true : false,
         haltReason || '',
         dailyVolumeCapUSD || 0,
         maxTradeSizeUSD || 0
