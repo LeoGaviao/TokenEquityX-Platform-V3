@@ -621,7 +621,11 @@ router.get('/migrate', async (req, res) => {
       await pool._pool.query(sql);
       results.push({ ok: true, sql: sql.substring(0, 60) });
     } catch (err) {
-      results.push({ ok: false, sql: sql.substring(0, 60), error: err.message });
+      if (err.message && err.message.includes('already exists')) {
+        results.push({ ok: true, sql: sql.substring(0, 60), note: 'already exists' });
+      } else {
+        results.push({ ok: false, sql: sql.substring(0, 60), error: err.message });
+      }
     }
   }
   res.json({ success: true, results });
@@ -710,6 +714,23 @@ router.get('/test-email', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message, smtpUser: process.env.SMTP_USER || 'NOT SET' });
+  }
+});
+
+router.get('/columns', async (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== process.env.SETUP_SECRET) {
+    return res.status(403).json({ error: 'Invalid setup secret' });
+  }
+  const table = req.query.table || 'data_submissions';
+  try {
+    const result = await pool._pool.query(
+      `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position`,
+      [table]
+    );
+    res.json({ table, columns: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
