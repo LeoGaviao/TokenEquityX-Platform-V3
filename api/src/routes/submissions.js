@@ -216,21 +216,21 @@ router.get('/pending',
       if (req.user.role === 'ADMIN' || req.user.role === 'COMPLIANCE_OFFICER') {
         [rows] = await db.execute(`
           SELECT ds.id, ds.token_symbol, ds.status,
-                 ds.submitted_at as created_at, ds.auditor_notes, ds.updated_at as reviewed_at,
+                 ds.created_at, ds.auditor_notes, ds.updated_at as reviewed_at,
                  ds.submitted_by as issuer_wallet,
                  ds.assigned_auditor, ds.audit_report,
                  ds.listing_type, ds.admin_notes,
                  ds.entity_name
           FROM data_submissions ds
           WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
-          ORDER BY ds.submitted_at ASC
+          ORDER BY ds.created_at ASC
         `);
       } else {
         const auditorId     = req.user.userId;
         const auditorWallet = req.user.wallet || '';
         [rows] = await db.execute(`
           SELECT ds.id, ds.token_symbol, ds.status,
-                 ds.submitted_at as created_at, ds.auditor_notes, ds.updated_at as reviewed_at,
+                 ds.created_at, ds.auditor_notes, ds.updated_at as reviewed_at,
                  ds.submitted_by as issuer_wallet, ds.assigned_auditor,
                  ds.entity_name
           FROM data_submissions ds
