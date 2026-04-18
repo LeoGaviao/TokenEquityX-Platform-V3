@@ -217,10 +217,10 @@ router.get('/pending',
         [rows] = await db.execute(`
           SELECT ds.id, ds.token_symbol, ds.status,
                  ds.created_at, ds.auditor_notes, ds.updated_at as reviewed_at,
-                 ds.submitted_by as issuer_wallet,
+                 ds.issuer_wallet,
                  ds.assigned_auditor, ds.audit_report,
-                 ds.listing_type, ds.admin_notes,
-                 ds.entity_name
+                 ds.admin_notes, ds.entity_name,
+                 ds.reference_number, ds.submission_type
           FROM data_submissions ds
           WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
           ORDER BY ds.created_at ASC
@@ -231,8 +231,8 @@ router.get('/pending',
         [rows] = await db.execute(`
           SELECT ds.id, ds.token_symbol, ds.status,
                  ds.created_at, ds.auditor_notes, ds.updated_at as reviewed_at,
-                 ds.submitted_by as issuer_wallet, ds.assigned_auditor,
-                 ds.entity_name
+                 ds.issuer_wallet, ds.assigned_auditor,
+                 ds.entity_name, ds.reference_number, ds.submission_type
           FROM data_submissions ds
           WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
           AND (ds.assigned_auditor = ? OR ds.assigned_auditor = ? OR ds.assigned_auditor LIKE ?)
