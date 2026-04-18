@@ -236,7 +236,7 @@ router.get('/pending',
           FROM data_submissions ds
           WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
           AND (ds.assigned_auditor = ? OR ds.assigned_auditor = ? OR ds.assigned_auditor LIKE ?)
-          ORDER BY ds.submitted_at ASC
+          ORDER BY ds.created_at ASC
         `, [auditorId, auditorWallet, `%${auditorWallet.slice(0,8)}%`]);
       }
       res.json(rows);
