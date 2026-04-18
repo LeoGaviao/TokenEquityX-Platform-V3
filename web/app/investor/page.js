@@ -1,4 +1,6 @@
 'use client';
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const WS  = process.env.NEXT_PUBLIC_WS_URL  || 'ws://localhost:3001';
 import { useWallet } from '../../hooks/useWallet';
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -174,7 +176,7 @@ export default function InvestorDashboard() {
     setWalletLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:3001/api/wallet/deposit', {
+      const res = await fetch(`${API}/wallet/deposit`, {
         method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
         body: JSON.stringify(depositForm)
       });
@@ -195,7 +197,7 @@ export default function InvestorDashboard() {
     setWalletLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:3001/api/wallet/withdraw', {
+      const res = await fetch(`${API}/wallet/withdraw`, {
         method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
         body: JSON.stringify(withdrawForm)
       });
@@ -275,18 +277,18 @@ export default function InvestorDashboard() {
       const uid = _u?.id || account || 'me';
       const token = localStorage.getItem('token');
 
-      fetch('http://localhost:3001/api/wallet/balance', {
+      fetch(`${API}/wallet/balance`, {
         headers:{ Authorization:`Bearer ${token}` }
       }).then(r=>r.json()).then(d=>{ if(d.balance_usd!==undefined) setWallet(d); }).catch(()=>{});
 
       // Load settlement rail preference
-      fetch('http://localhost:3001/api/wallet/settlement-rail', {
+      fetch(`${API}/wallet/settlement-rail`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       }).then(r=>r.json()).then(d=>{
         if (d.rail) setWallet(w => ({ ...w, balance_usdc: d.balance_usdc||0, settlement_rail: d.rail }));
       }).catch(()=>{});
 
-      fetch('http://localhost:3001/api/wallet/transactions', {
+      fetch(`${API}/wallet/transactions`, {
         headers:{ Authorization:`Bearer ${token}` }
       }).then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setWalletTxns(d); }).catch(()=>{});
 
@@ -310,7 +312,7 @@ export default function InvestorDashboard() {
 
   const connectWS = () => {
     try {
-      const ws = new WebSocket(`ws://localhost:3001`);
+      const ws = new WebSocket(`${WS}`);
       wsRef.current = ws;
       ws.onmessage = (e) => {
         try {
@@ -717,7 +719,7 @@ export default function InvestorDashboard() {
                     onClick={async () => {
                       setRailSaving(true);
                       try {
-                        const res = await fetch('http://localhost:3001/api/wallet/settlement-rail', {
+                        const res = await fetch(`${API}/wallet/settlement-rail`, {
                           method: 'PUT',
                           headers: { Authorization: `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' },
                           body: JSON.stringify({ rail: wallet.settlement_rail })
