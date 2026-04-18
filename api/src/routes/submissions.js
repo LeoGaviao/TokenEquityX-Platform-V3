@@ -189,14 +189,11 @@ router.post('/tokenise',
 router.get('/my', authenticate, async (req, res) => {
   try {
     const [rows] = await db.execute(`
-      SELECT id, token_symbol, period, status, auditor_notes,
-             reviewed_at, created_at, assigned_auditor,
-             JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.referenceNumber')) as reference_number,
-             JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.type')) as submission_type,
-             JSON_UNQUOTE(JSON_EXTRACT(data_json, '$.legalEntityName')) as entity_name,
-             JSON_LENGTH(JSON_EXTRACT(data_json, '$.documents')) as document_count
+      SELECT id, token_symbol, status, auditor_notes,
+             updated_at as reviewed_at, created_at, assigned_auditor,
+             reference_number, submission_type, entity_name, document_count
       FROM data_submissions
-      WHERE submitted_by = ?
+      WHERE issuer_wallet = ?
       ORDER BY created_at DESC
       LIMIT 50
     `, [req.user.userId]);
