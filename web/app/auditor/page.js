@@ -256,7 +256,7 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
             {documents.length === 0 && <p className="text-gray-500 text-sm py-4 text-center">No documents uploaded.</p>}
             {documents.map((doc,i) => {
               const name   = doc.originalName || doc.storedName || `Document ${i+1}`;
-              const url    = doc.url ? `http://localhost:3001${doc.url}` : null;
+              const url    = doc.url ? `${process.env.NEXT_PUBLIC_API_URL?.replace('/api','') || 'http://localhost:3001'}${doc.url}` : null;
               const sizeKb = doc.size ? `${(doc.size/1024).toFixed(0)} KB` : '';
               const ext    = name.split('.').pop()?.toLowerCase();
               const icon   = ext==='pdf'?'📄':['xlsx','xls','csv'].includes(ext)?'📊':['docx','doc'].includes(ext)?'📝':'📎';
@@ -635,7 +635,7 @@ if (!['AUDITOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; retur
     setOfferingLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res   = await fetch('http://localhost:3001/api/offerings', {
+      const res   = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/offerings`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -1107,7 +1107,7 @@ api.get('/auditor/completed').then(r => {
                       setOfferingSubmitting(true);
                       try {
                         const token = localStorage.getItem('token');
-                        const res = await fetch(`http://localhost:3001/api/offerings/${selOffering.id}/auditor-review`, {
+                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/offerings/${selOffering.id}/auditor-review`, {
                           method: 'PUT',
                           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                           body: JSON.stringify(offeringForm)
