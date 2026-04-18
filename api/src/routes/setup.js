@@ -619,4 +619,29 @@ router.get('/reset-passwords', async (req, res) => {
   }
 });
 
+router.get('/test-email', async (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== process.env.SETUP_SECRET) {
+    return res.status(403).json({ error: 'Invalid setup secret' });
+  }
+  const mailer = require('../utils/mailer');
+  try {
+    const result = await mailer.notifyAdminDepositSubmitted({
+      investorName: 'Test Investor',
+      investorEmail: 'test@tokenequityx.co.zw',
+      amount: '100.00',
+      reference: 'TEST-REF-001',
+      depositId: 'test-deposit-id-001'
+    });
+    res.json({
+      success: true,
+      smtpUser: process.env.SMTP_USER || 'NOT SET',
+      smtpHost: process.env.SMTP_HOST || 'NOT SET',
+      result
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, smtpUser: process.env.SMTP_USER || 'NOT SET' });
+  }
+});
+
 module.exports = router;
