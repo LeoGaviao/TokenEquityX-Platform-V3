@@ -855,6 +855,7 @@ export default function AdminDashboard() {
   const [staffForm,setStaffForm]=useState({full_name:'',email:'',password:'',role:'AUDITOR'});
   const [staffMsg,setStaffMsg]=useState(null);
   const [staffLoading,setStaffLoading]=useState(false);
+  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
   // Track which pipeline item has drill-down open
   const [detailItem, setDetailItem] = useState(null);
@@ -983,7 +984,7 @@ export default function AdminDashboard() {
 
   const fetchUsers = async () => {
     const token = localStorage.getItem('token');
-    const res = await fetch('http://localhost:3001/api/admin/users',{headers:{Authorization:`Bearer ${token}`}});
+    const res = await fetch(`${API}/admin/users`,{headers:{Authorization:`Bearer ${token}`}});
     const data = await res.json();
     setUsers(Array.isArray(data)?data:[]);
   };
@@ -993,7 +994,7 @@ export default function AdminDashboard() {
     setStaffLoading(true);setStaffMsg(null);
     try {
       const token=localStorage.getItem('token');
-      const res=await fetch('http://localhost:3001/api/admin/staff',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(staffForm)});
+      const res=await fetch(`${API}/admin/staff`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(staffForm)});
       const data=await res.json();
       if(!res.ok)throw new Error(data.error);
       setStaffMsg({type:'success',text:data.message});
@@ -1011,7 +1012,7 @@ export default function AdminDashboard() {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams({ limit: TX_PAGE_SIZE, offset: (page-1)*TX_PAGE_SIZE });
       if (filter !== 'ALL') params.append('type', filter);
-      const res  = await fetch(`http://localhost:3001/api/wallet/admin/transactions?${params}`, {
+      const res  = await fetch(`${API}/wallet/admin/transactions?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -1421,7 +1422,7 @@ export default function AdminDashboard() {
                   <td className="py-3 pr-4 text-gray-400 text-xs">{u.created_at?dt(u.created_at):'-'}</td>
                   <td className="py-3">
                     <button onClick={()=>{setSelectedUser(u);setUserModalRole(u.role);}} className="text-xs text-blue-400 hover:text-blue-300 mr-2">View</button>
-                    <button onClick={async()=>{const token=localStorage.getItem('token');await fetch(`http://localhost:3001/api/admin/users/${u.id}/suspend`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({suspended:u.account_status!=='SUSPENDED'})});fetchUsers();}}
+                    <button onClick={async()=>{const token=localStorage.getItem('token');await fetch(`${API}/admin/users/${u.id}/suspend`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({suspended:u.account_status!=='SUSPENDED'})});fetchUsers();}}
                       className={`text-xs ${u.account_status==='SUSPENDED'?'text-green-400 hover:text-green-300':'text-red-400 hover:text-red-300'}`}>
                       {u.account_status==='SUSPENDED'?'Unsuspend':'Suspend'}
                     </button>
@@ -1451,7 +1452,7 @@ export default function AdminDashboard() {
                 <h3 className="font-semibold">🏛️ Treasury Position</h3>
                 <button onClick={async()=>{
                   const token=localStorage.getItem('token');
-                  const res=await fetch('http://localhost:3001/api/wallet/admin/treasury',{headers:{Authorization:`Bearer ${token}`}});
+                  const res=await fetch(`${API}/wallet/admin/treasury`,{headers:{Authorization:`Bearer ${token}`}});
                   const d=await res.json();
                   if(d.investor_balances) setActionMsg({type:'info',text:`Total investor USD: $${d.investor_balances.total_usd.toFixed(2)} | Fees collected: $${d.fees_collected_usd.toFixed(2)} | Pending deposits: $${d.pending.deposits.total.toFixed(2)} | Pending withdrawals: $${d.pending.withdrawals.total.toFixed(2)}`});
                 }} className="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">Refresh</button>
@@ -1507,7 +1508,7 @@ export default function AdminDashboard() {
                             <button onClick={async()=>{
                               setWalletLoading(true);setWalletMsg(null);
                               const token=localStorage.getItem('token');
-                              const res=await fetch(`http://localhost:3001/api/wallet/deposit/${d.id}/confirm`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({})});
+                              const res=await fetch(`${API}/wallet/deposit/${d.id}/confirm`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({})});
                               const data=await res.json();
                               setWalletMsg(res.ok?{type:'success',text:data.message||`✅ Deposit confirmed for ${d.email}`}:{type:'error',text:data.error||'Failed'});
                               setWalletLoading(false);loadAll();
@@ -1519,7 +1520,7 @@ export default function AdminDashboard() {
                               if(reason===null)return;
                               setWalletLoading(true);setWalletMsg(null);
                               const token=localStorage.getItem('token');
-                              await fetch(`http://localhost:3001/api/wallet/deposit/${d.id}/reject`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason})});
+                              await fetch(`${API}/wallet/deposit/${d.id}/reject`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason})});
                               setWalletMsg({type:'error',text:`Deposit rejected for ${d.email}. Investor notified by email.`});
                               setWalletLoading(false);loadAll();
                             }} disabled={walletLoading} className="px-4 py-2 rounded-lg text-xs font-bold text-red-400 bg-red-900/30 hover:bg-red-900/50 border border-red-800 disabled:opacity-40">
@@ -1578,7 +1579,7 @@ export default function AdminDashboard() {
                               if(!ref)return;
                               setWalletLoading(true);setWalletMsg(null);
                               const token=localStorage.getItem('token');
-                              const res=await fetch(`http://localhost:3001/api/wallet/withdraw/${w.id}/complete`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({tx_reference:ref})});
+                              const res=await fetch(`${API}/wallet/withdraw/${w.id}/complete`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({tx_reference:ref})});
                               const data=await res.json();
                               setWalletMsg(res.ok?{type:'success',text:data.message||`✅ Withdrawal completed for ${w.email}`}:{type:'error',text:data.error||'Failed'});
                               setWalletLoading(false);loadAll();
@@ -1590,7 +1591,7 @@ export default function AdminDashboard() {
                               if(reason===null)return;
                               setWalletLoading(true);setWalletMsg(null);
                               const token=localStorage.getItem('token');
-                              await fetch(`http://localhost:3001/api/wallet/withdraw/${w.id}/reject`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason})});
+                              await fetch(`${API}/wallet/withdraw/${w.id}/reject`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason})});
                               setWalletMsg({type:'info',text:`Withdrawal rejected. Reserved funds returned to ${w.full_name}.`});
                               setWalletLoading(false);loadAll();
                             }} disabled={walletLoading} className="px-4 py-2 rounded-lg text-xs font-bold text-red-400 bg-red-900/30 hover:bg-red-900/50 border border-red-800 disabled:opacity-40">
@@ -1839,7 +1840,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             <button disabled={userModalLoading||(userModalRole===selectedUser.role&&selectedUser.kyc_status==='APPROVED')}
-              onClick={async()=>{setUserModalLoading(true);const token=localStorage.getItem('token');await fetch(`http://localhost:3001/api/admin/users/${selectedUser.id}/role`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({role:userModalRole})});await fetchUsers();setSelectedUser(null);setUserModalLoading(false);}}
+              onClick={async()=>{setUserModalLoading(true);const token=localStorage.getItem('token');await fetch(`${API}/admin/users/${selectedUser.id}/role`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({role:userModalRole})});await fetchUsers();setSelectedUser(null);setUserModalLoading(false);}}
               className="w-full py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40 transition-colors" style={{background:GREEN}}>
               {userModalLoading?'⏳ Saving…':`✓ Approve as ${userModalRole}`}
             </button>
