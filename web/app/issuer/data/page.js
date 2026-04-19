@@ -97,10 +97,34 @@ function FinancialDataPageInner() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold mb-2">Submit Financial Data</h1>
-      <p className="text-gray-400 text-sm mb-8">
+      <p className="text-gray-400 text-sm mb-4">
         Submit your financial data for auditor review. Once approved, the valuation engine
         will automatically update your token reference price.
       </p>
+
+      {/* Document requirements notice */}
+      <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-4 mb-8">
+        <p className="text-amber-400 font-semibold text-sm mb-2">📋 Required Documents</p>
+        <p className="text-gray-400 text-xs mb-3">
+          Along with your financial data, you are required to upload the following supporting documents.
+          Submissions without the required documents may be delayed or rejected by the auditor.
+        </p>
+        <div className="grid grid-cols-1 gap-1">
+          {[
+            '✅ Certificate of Incorporation / Company Registration',
+            '✅ CR14 — Current Directors and Shareholders',
+            '✅ Tax Clearance Certificate (current)',
+            '✅ Audited Financial Statements (last 2 years minimum)',
+            '✅ Valuation Report (independent, dated within 12 months)',
+            '✅ Directors\' IDs or Passports (all directors)',
+            '✅ Business Proposal / Investment Memorandum',
+            '⬜ Relevant Licences or Regulatory Approvals (if applicable)',
+            '⬜ Material Contracts (if applicable)',
+          ].map((item, i) => (
+            <p key={i} className="text-xs text-gray-300">{item}</p>
+          ))}
+        </div>
+      </div>
 
       {/* Token selector */}
       <div className="card mb-6">
