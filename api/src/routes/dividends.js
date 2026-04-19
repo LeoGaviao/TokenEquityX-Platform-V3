@@ -222,7 +222,7 @@ router.post('/claim', authenticate, requireKYC, async (req, res) => {
 
     // Check not already claimed
     const [existing] = await conn.execute(
-      'SELECT id FROM dividend_claims WHERE round_id = ? AND wallet_address = ? AND claimed = 1',
+      'SELECT id FROM dividend_claims WHERE round_id = ? AND wallet_address = ? AND claimed = TRUE',
       [roundId, walletAddress]
     );
     if (existing.length > 0) {

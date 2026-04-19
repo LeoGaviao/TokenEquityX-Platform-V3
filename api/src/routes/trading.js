@@ -158,7 +158,7 @@ router.get('/candles/:tokenSymbol', async (req, res) => {
 
     const [rows] = await db.execute(`
       SELECT
-        DATE_FORMAT(matched_at, '%Y-%m-%d %H:00:00') as time,
+        date_trunc('hour', t.matched_at) as time,
         MIN(price)      as low,
         MAX(price)      as high,
         SUM(total_usdc) as volume,
@@ -175,7 +175,7 @@ router.get('/candles/:tokenSymbol', async (req, res) => {
       FROM trades t
       WHERE t.token_id = ?
       AND t.matched_at > NOW() - INTERVAL '7 days'
-      GROUP BY DATE_FORMAT(matched_at, '%Y-%m-%d %H:00:00')
+      GROUP BY date_trunc('hour', t.matched_at)
       ORDER BY time ASC
     `, [tokens[0].id]);
 

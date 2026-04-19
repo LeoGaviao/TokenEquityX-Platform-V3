@@ -27,14 +27,14 @@ router.post('/submit', authenticate, upload.array('documents', 5), async (req, r
          id_type, id_number, address_line1, address_line2,
          city, country, investor_tier, accredited_investor, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
-      ON DUPLICATE KEY UPDATE
-        full_name = VALUES(full_name),
-        status    = 'PENDING',
+      ON CONFLICT (user_id) DO UPDATE SET
+        full_name    = EXCLUDED.full_name,
+        status       = 'PENDING',
         submitted_at = NOW()
     `, [
       kycId, req.user.userId, fullName, dateOfBirth, nationality,
       idType, idNumber, addressLine1, addressLine2, city, country,
-      investorTier || 'RETAIL', accreditedInvestor ? 1 : 0
+      investorTier || 'RETAIL', accreditedInvestor ? true : false
     ]);
 
     // Save uploaded documents

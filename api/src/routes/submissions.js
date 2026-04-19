@@ -64,7 +64,7 @@ router.post('/financial',
 
       await db.execute(`
         INSERT INTO data_submissions
-          (id, token_id, token_symbol, submitted_by, period, data_json, status)
+          (id, token_id, token_symbol, issuer_wallet, period, data_json, status)
         VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
       `, [subId, tokenId, tokenSymbol.toUpperCase(), req.user.userId, period, dataJson]);
 
@@ -113,7 +113,7 @@ router.post('/tokenise',
 
     try {
       const [existing] = await db.execute(
-        'SELECT id FROM tokens WHERE symbol = ? OR token_symbol = ?',
+        'SELECT id FROM tokens WHERE token_symbol = ? OR token_symbol = ?',
         [proposedSymbol.toUpperCase(), proposedSymbol.toUpperCase()]
       );
       if (existing.length > 0) {
@@ -153,7 +153,7 @@ router.post('/tokenise',
 
       await db.execute(`
         INSERT INTO data_submissions
-          (id, token_symbol, submitted_by, period, data_json, status)
+          (id, token_symbol, issuer_wallet, period, data_json, status)
         VALUES (?, ?, ?, ?, ?, 'PENDING')
       `, [appId, proposedSymbol.toUpperCase(), req.user.userId, 'TOKENISATION_APPLICATION', dataJson]);
 
@@ -252,7 +252,7 @@ router.get('/:id', authenticate, async (req, res) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
     const sub = rows[0];
-    if (sub.submitted_by !== req.user.userId &&
+    if (sub.issuer_wallet !== req.user.userId &&
         !['ADMIN','AUDITOR','COMPLIANCE_OFFICER'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -306,7 +306,7 @@ router.put('/:id/status',
     try {
       await db.execute(`
         UPDATE data_submissions
-        SET status = ?, auditor_notes = ?, reviewed_by = ?, reviewed_at = NOW()
+        SET status = ?, auditor_notes = ?, reviewed_by = ?, updated_at = NOW()
         WHERE id = ?
       `, [status, notes || null, req.user.userId, req.params.id]);
       res.json({ success: true, status, message: `Submission marked as ${status}` });
@@ -362,7 +362,7 @@ router.put('/:id/audit-report',
       await db.execute(`
         UPDATE data_submissions
         SET audit_report  = ?, status = ?, auditor_notes = ?,
-            reviewed_by   = ?, reviewed_at = NOW()
+            reviewed_by   = ?, updated_at = NOW()
         WHERE id = ?
       `, [
         JSON.stringify(auditReport), newStatus,
@@ -414,30 +414,30 @@ router.put('/:id/admin-approve',
       `, [listingType, req.user.userId, adminNotes || null, req.params.id]);
 
       const [existingToken] = await db.execute(
-        'SELECT id FROM tokens WHERE symbol = ?', [symbol.toUpperCase()]
+        'SELECT id FROM tokens WHERE token_symbol = ?', [symbol.toUpperCase()]
       );
 
       if (existingToken.length > 0) {
         await db.execute(`
           UPDATE tokens
-          SET listing_type = ?, oracle_price = ?, price_usd = ?,
+          SET listing_type = ?, current_price_usd = ?,
               trading_mode = ?, market_state = 'FULL_TRADING',
               status = 'ACTIVE', market_cap = ?, listed_at = NOW(), updated_at = NOW()
-          WHERE symbol = ?
-        `, [listingType, certifiedPrice, certifiedPrice, trading_mode,
+          WHERE token_symbol = ?
+        `, [listingType, certifiedPrice, trading_mode,
             parseFloat(certifiedPrice) * total_supply, symbol.toUpperCase()]);
       } else {
         await db.execute(`
           INSERT INTO tokens
-            (symbol, name, company_name, asset_type, asset_class, issuer_id,
-             total_supply, price_usd, oracle_price, current_price_usd,
+            (token_symbol, token_name, asset_type, asset_class, issuer_id,
+             total_supply, current_price_usd,
              market_cap, trading_mode, market_state, status,
              listing_type, jurisdiction, submission_id, listed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, ?, NOW())
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, ?, NOW())
         `, [
-          symbol.toUpperCase(), sub.entity_name || symbol, sub.entity_name || symbol,
-          sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY', sub.issuer_id || null,
-          total_supply, certifiedPrice, certifiedPrice, certifiedPrice,
+          symbol.toUpperCase(), sub.entity_name || symbol,
+          sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY', sub.issuer_wallet || null,
+          total_supply, certifiedPrice,
           parseFloat(certifiedPrice) * total_supply, trading_mode,
           listingType, sub.jurisdiction || 'Zimbabwe', req.params.id
         ]);

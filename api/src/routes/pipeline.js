@@ -65,7 +65,7 @@ router.post('/submit', authenticate, requireKYC, async (req, res) => {
 
     await db.execute(`
       INSERT INTO data_submissions
-        (id, token_id, token_symbol, submitted_by, period, data_json, status)
+        (id, token_id, token_symbol, issuer_wallet, period, data_json, status)
       VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
     `, [
       submissionId, token.id, tokenSymbol.toUpperCase(),
@@ -147,7 +147,7 @@ router.put('/approve/:submissionId',
 
       await db.execute(`
         UPDATE data_submissions
-        SET status = 'APPROVED', auditor_id = ?, auditor_notes = ?, reviewed_at = NOW()
+        SET status = 'APPROVED', auditor_id = ?, auditor_notes = ?, updated_at = NOW()
         WHERE id = ?
       `, [req.user.userId, auditorNotes || '', req.params.submissionId]);
 
@@ -250,7 +250,7 @@ router.put('/reject/:submissionId',
     try {
       await db.execute(`
         UPDATE data_submissions
-        SET status = 'REJECTED', auditor_id = ?, auditor_notes = ?, reviewed_at = NOW()
+        SET status = 'REJECTED', auditor_id = ?, auditor_notes = ?, updated_at = NOW()
         WHERE id = ?
       `, [req.user.userId, auditorNotes || '', req.params.submissionId]);
 

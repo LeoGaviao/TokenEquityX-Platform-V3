@@ -45,7 +45,7 @@ router.post('/data-submissions', authenticate, async (req, res) => {
     const id = uuidv4();
     await db.execute(`
       INSERT INTO data_submissions
-        (id, token_id, submitted_by, data_type, data_json, ipfs_hash, status)
+        (id, token_id, issuer_wallet, data_type, data_json, ipfs_hash, status)
       VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
     `, [id, tokens[0].id, req.user.userId, dataType, JSON.stringify(dataJson), ipfsHash]);
     res.json({ success: true, submissionId: id });
@@ -64,13 +64,13 @@ router.put('/data-submissions/:id/approve',
       // 1. Mark approved
       await db.execute(`
         UPDATE data_submissions
-        SET status = 'APPROVED', auditor_id = ?, auditor_notes = ?, reviewed_at = NOW()
+        SET status = 'APPROVED', auditor_id = ?, auditor_notes = ?, updated_at = NOW()
         WHERE id = ?
       `, [req.user.userId, notes || '', req.params.id]);
 
       // 2. Fetch submission + token for auto-valuation
       const [rows] = await db.execute(`
-        SELECT ds.*, t.symbol, t.asset_class, t.asset_type,
+        SELECT ds.*, COALESCE(t.token_symbol, t.symbol) as token_symbol, t.asset_class, t.asset_type,
                t.total_supply, t.id as token_id, t.sector
         FROM data_submissions ds
         JOIN tokens t ON t.id = ds.token_id
@@ -162,7 +162,7 @@ router.put('/data-submissions/:id/reject',
     try {
       await db.execute(`
         UPDATE data_submissions
-        SET status = 'REJECTED', auditor_id = ?, auditor_notes = ?, reviewed_at = NOW()
+        SET status = 'REJECTED', auditor_id = ?, auditor_notes = ?, updated_at = NOW()
         WHERE id = ?
       `, [req.user.userId, notes || '', req.params.id]);
       res.json({ success: true });
@@ -179,11 +179,11 @@ router.get('/completed', authenticate, requireRole('AUDITOR','ADMIN'), async (re
       SELECT
         ds.id, ds.token_symbol, ds.period, ds.status,
         ds.entity_name, ds.admin_approved_at as reviewed_at,
-        ds.listing_type, ds.certified_price, ds.admin_notes,
+        ds.listing_type, NULL as certified_price, ds.admin_notes,
         ds.audit_report, ds.assigned_auditor,
         u.email as issuer_email
       FROM data_submissions ds
-      LEFT JOIN users u ON u.id = ds.issuer_id
+      LEFT JOIN users u ON u.wallet_address = ds.issuer_wallet
       WHERE ds.status IN ('AUDITOR_APPROVED','ADMIN_APPROVED','REJECTED')
       AND ds.assigned_auditor = ?
       ORDER BY ds.updated_at DESC

@@ -79,17 +79,19 @@ router.post('/',
       if (existing.length > 0) slug = slug + '-' + Date.now();
 
       const publishedAt = published ? new Date() : null;
-      const [result] = await db.execute(`
+      await db.execute(`
         INSERT INTO blog_posts
           (title, slug, category, summary, body, author, author_role, read_time, featured, published, published_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING id
       `, [
         title, slug, category || 'General', summary, body,
         author, author_role || null, read_time || '5 min',
-        featured ? 1 : 0, published ? 1 : 0, publishedAt
+        featured ? true : false, published ? true : false, publishedAt
       ]);
 
-      res.status(201).json({ success: true, id: result.insertId, slug });
+      const [newPost] = await db.execute('SELECT * FROM blog_posts WHERE slug = ?', [slug]);
+      res.status(201).json({ success: true, id: newPost[0]?.id, slug });
     } catch (err) {
       res.status(500).json({ error: 'Could not create post: ' + err.message });
     }

@@ -40,7 +40,7 @@ router.post('/register', authenticate, requireKYC, async (req, res) => {
       bondId, tokens[0].id, faceValuePerToken,
       couponRateBps || 0, couponFrequencyDays || 90,
       maturityDate, nextCoupon,
-      earlyRedemptionAllowed ? 1 : 0,
+      earlyRedemptionAllowed ? true : false,
       earlyRedemptionPenaltyBps || 0
     ]);
 
