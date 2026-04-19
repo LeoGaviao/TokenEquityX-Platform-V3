@@ -1982,7 +1982,6 @@ export default function AdminDashboard() {
                   { key: 'max_offering_days',         label: 'Max Offering Duration (days)', type: 'number', desc: 'Maximum number of days a primary offering can remain open.' },
                 ].map(({ key, label, type, desc }) => {
                   const current = settings[key]?.value ?? '';
-                  const [local, setLocal] = useState(current);
                   return (
                     <div key={key} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                       <label className="text-sm font-semibold text-white block mb-0.5">{label}</label>
@@ -1990,12 +1989,12 @@ export default function AdminDashboard() {
                       <div className="flex gap-2">
                         <input
                           type={type}
-                          defaultValue={current}
-                          onChange={e => setLocal(e.target.value)}
+                          value={settings[key]?.value ?? ''}
+                          onChange={e => setSettings(s => ({ ...s, [key]: { ...(s[key]||{}), value: e.target.value } }))}
                           className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
                         />
                         <button
-                          onClick={() => handleSaveSetting(key, local || current)}
+                          onClick={() => handleSaveSetting(key, settings[key]?.value ?? '')}
                           className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
                           Save
                         </button>
