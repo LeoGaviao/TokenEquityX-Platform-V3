@@ -230,10 +230,24 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    ['Revenue',         financial.revenue ? fmt(financial.revenue) : null],
-                    ['EBITDA',          financial.ebitda ? fmt(financial.ebitda) : null],
-                    ['Total Assets',    financial.netAssets ? fmt(financial.netAssets) : null],
-                    ['Net Liabilities', financial.netLiabilities ? fmt(financial.netLiabilities) : null],
+                    ['Revenue (TTM)',       financial.revenueTTM ? fmt(financial.revenueTTM) : null],
+                    ['Revenue',            financial.revenue ? fmt(financial.revenue) : null],
+                    ['EBITDA',             financial.ebitda ? fmt(financial.ebitda) : null],
+                    ['Net Income',         financial.netIncome ? fmt(financial.netIncome) : null],
+                    ['Total Assets',       financial.netAssets ? fmt(financial.netAssets) : null],
+                    ['Net Liabilities',    financial.netLiabilities ? fmt(financial.netLiabilities) : null],
+                    ['Total Debt',         financial.totalDebt ? fmt(financial.totalDebt) : null],
+                    ['Cash & Equivalents', financial.cashAndEquivalents ? fmt(financial.cashAndEquivalents) : null],
+                    ['Property Valuation', financial.propertyValuation ? fmt(financial.propertyValuation) : null],
+                    ['Net Operating Income', financial.netOperatingIncome ? fmt(financial.netOperatingIncome) : null],
+                    ['Cap Rate',           financial.capRate ? `${financial.capRate}%` : null],
+                    ['Occupancy Rate',     financial.occupancyRate ? `${financial.occupancyRate}%` : null],
+                    ['Face Value',         financial.faceValue ? fmt(financial.faceValue) : null],
+                    ['Coupon Rate',        financial.couponRate ? `${financial.couponRate}%` : null],
+                    ['Annual Revenue',     financial.annualRevenue ? fmt(financial.annualRevenue) : null],
+                    ['Annual Production',  financial.annualProduction || null],
+                    ['Growth Rate',        financial.growthRatePct ? `${financial.growthRatePct}%` : null],
+                    ['Discount Rate',      financial.discountRatePct ? `${financial.discountRatePct}%` : null],
                     ...Object.entries(financial.operationalKpis||{}).filter(([,v])=>v),
                   ].filter(([,v])=>v).map(([k,v])=>(
                     <div key={k} className="bg-gray-800/60 rounded-lg px-3 py-2">
