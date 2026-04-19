@@ -1162,27 +1162,25 @@ export default function AdminDashboard() {
         <div className="flex items-center justify-between mb-6">
           <div><h1 className="text-2xl font-bold">Platform Overview</h1><p className="text-gray-500 text-sm">Real-time view of all platform activity</p></div>
           <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 flex-wrap items-center">
-            {['overview','pipeline','trading','compliance','users','offerings','settings'].map(t=>(
-              <button key={t} onClick={()=>setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                {t}
-                {t==='pipeline'&&pendingApprovals>0&&<span className="ml-1.5 bg-amber-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingApprovals}</span>}
-                {t==='compliance'&&pendingKYC>0&&<span className="ml-1.5 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingKYC}</span>}
-              </button>
-            ))}
-            {/* More dropdown */}
+            {/* Overview with dropdown */}
             <div className="relative" onMouseLeave={()=>setShowMoreMenu(false)}>
               <button
                 onMouseEnter={()=>setShowMoreMenu(true)}
-                onClick={()=>setShowMoreMenu(m=>!m)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${['wallet','ledger','tools','blog'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                More
+                onClick={()=>{setTab('overview');setShowMoreMenu(m=>!m);}}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab==='overview'||['wallet','ledger','tools','blog'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                Overview
                 {(pendingDeposits+pendingWithdrawals)>0&&<span className="ml-1 bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingDeposits+pendingWithdrawals}</span>}
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <svg className="w-3 h-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
                 </svg>
               </button>
               {showMoreMenu && (
-                <div className="absolute top-full left-0 mt-1 w-40 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                <div className="absolute top-full left-0 mt-1 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <button onClick={()=>{setTab('overview');setShowMoreMenu(false);}}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='overview'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                    Overview
+                  </button>
+                  <div className="border-t border-gray-800 my-1"/>
                   {[
                     {key:'wallet', label:'Wallet', badge:(pendingDeposits+pendingWithdrawals)>0?(pendingDeposits+pendingWithdrawals):null},
                     {key:'ledger', label:'Ledger'},
@@ -1198,6 +1196,14 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
+            {/* Primary tabs */}
+            {['pipeline','trading','compliance','users','offerings','settings'].map(t=>(
+              <button key={t} onClick={()=>setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                {t}
+                {t==='pipeline'&&pendingApprovals>0&&<span className="ml-1.5 bg-amber-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingApprovals}</span>}
+                {t==='compliance'&&pendingKYC>0&&<span className="ml-1.5 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingKYC}</span>}
+              </button>
+            ))}
           </div>
         </div>
 

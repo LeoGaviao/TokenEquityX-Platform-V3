@@ -977,25 +977,24 @@ export default function IssuerDashboard() {
             <span className="ml-2 text-xs bg-purple-900 text-purple-300 px-2 py-0.5 rounded-full">ISSUER</span>
           </div>
           <nav className="flex gap-1 flex-wrap">
-            {['overview','journey','financials','governance','dividends'].map(tab2=>(
-              <button key={tab2} onClick={()=>setTab(tab2)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===tab2?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                {tab2}
-              </button>
-            ))}
-            {/* More dropdown */}
+            {/* Overview with dropdown */}
             <div className="relative" onMouseLeave={()=>setShowIssuerMore(false)}>
               <button
                 onMouseEnter={()=>setShowIssuerMore(true)}
-                onClick={()=>setShowIssuerMore(m=>!m)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${['investors','trading','communications'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                More
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                onClick={()=>{setTab('overview');setShowIssuerMore(m=>!m);}}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab==='overview'||['investors','trading','communications'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                Overview
+                <svg className="w-3 h-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
                 </svg>
               </button>
               {showIssuerMore && (
                 <div className="absolute top-full left-0 mt-1 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <button onClick={()=>{setTab('overview');setShowIssuerMore(false);}}
+                    className={`w-full text-left px-4 py-2.5 text-sm capitalize transition-colors ${tab==='overview'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                    Overview
+                  </button>
+                  <div className="border-t border-gray-800 my-1"/>
                   {['investors','trading','communications'].map(t=>(
                     <button key={t} onClick={()=>{setTab(t);setShowIssuerMore(false);}}
                       className={`w-full text-left px-4 py-2.5 text-sm capitalize transition-colors ${tab===t?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
@@ -1005,6 +1004,13 @@ export default function IssuerDashboard() {
                 </div>
               )}
             </div>
+            {/* Primary tabs */}
+            {['journey','financials','governance','dividends'].map(tab2=>(
+              <button key={tab2} onClick={()=>setTab(tab2)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===tab2?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                {tab2}
+              </button>
+            ))}
           </nav>
           <div className="flex items-center gap-3">
             <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email||'User'}</span>
