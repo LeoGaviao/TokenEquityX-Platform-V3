@@ -6,6 +6,8 @@ const { requireRole, requireKYC } = require('../middleware/roles');
 const { generateDataHash }        = require('../services/dataHash');
 const { calculateValuation }      = require('../services/valuation');
 const { v4: uuidv4 }              = require('uuid');
+const upload = require('../middleware/upload');
+const { uploadToSupabase } = require('../middleware/upload');
 
 // ── DATA SCHEMAS BY ASSET TYPE ────────────────────────────────
 
@@ -25,8 +27,11 @@ function validateFields(assetType, data) {
 }
 
 // POST /api/pipeline/submit — issuer submits financial data
-router.post('/submit', authenticate, requireKYC, async (req, res) => {
-  const { tokenSymbol, dataType, financialData, ipfsHash, periodLabel } = req.body;
+router.post('/submit', authenticate, requireKYC, upload.array('documents', 10), async (req, res) => {
+  const { tokenSymbol, dataType, ipfsHash, periodLabel } = req.body;
+  const financialData = typeof req.body.financialData === 'string'
+    ? JSON.parse(req.body.financialData)
+    : req.body.financialData;
 
   if (!tokenSymbol || !financialData) {
     return res.status(400).json({ error: 'tokenSymbol and financialData required' });
@@ -53,6 +58,19 @@ router.post('/submit', authenticate, requireKYC, async (req, res) => {
       });
     }
 
+    // Upload documents to Supabase
+    const uploadedDocs = [];
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        try {
+          const uploaded = await uploadToSupabase(file, 'pipeline', req.user.userId);
+          uploadedDocs.push(uploaded);
+        } catch (uploadErr) {
+          console.error('Document upload failed:', uploadErr.message);
+        }
+      }
+    }
+
     const dataHash = generateDataHash({
       tokenSymbol: tokenSymbol.toUpperCase(),
       financialData,
@@ -66,14 +84,15 @@ router.post('/submit', authenticate, requireKYC, async (req, res) => {
     await db.execute(`
       INSERT INTO data_submissions
         (token_symbol, entity_name, issuer_wallet, period, submission_type,
-         data_json, status, reference_number)
-      VALUES (?, ?, ?, ?, 'FINANCIAL_DATA', ?, 'PENDING', ?)
+         data_json, document_count, status, reference_number)
+      VALUES (?, ?, ?, ?, 'FINANCIAL_DATA', ?, ?, 'PENDING', ?)
     `, [
       tokenSymbol.toUpperCase(),
       token.name || token.token_name || tokenSymbol.toUpperCase(),
       req.user.userId,
       period,
-      JSON.stringify({ financialData, periodLabel, dataHash }),
+      JSON.stringify({ financialData, periodLabel, dataHash, documents: uploadedDocs }),
+      uploadedDocs.length,
       submissionId,
     ]);
 
