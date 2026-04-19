@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useAuth } from '../../../hooks/useAuth';
@@ -16,6 +16,8 @@ function FinancialDataPageInner() {
   const [loading,  setLoading]  = useState(false);
   const [message,  setMessage]  = useState(null);
   const [formData, setFormData] = useState({});
+  const [docFiles, setDocFiles] = useState([]);
+  const docFileRef = useRef(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -71,11 +73,17 @@ function FinancialDataPageInner() {
     setLoading(true);
     setMessage(null);
     try {
-      await api.post('/pipeline/submit', {
-        tokenSymbol:   symbol,
-        financialData: formData,
-        periodLabel:   new Date().toISOString().slice(0, 7) // YYYY-MM
+      const fd = new FormData();
+      fd.append('tokenSymbol', symbol);
+      fd.append('financialData', JSON.stringify(formData));
+      fd.append('periodLabel', new Date().toISOString().slice(0, 7));
+      if (docFiles.length > 0) {
+        docFiles.forEach(f => fd.append('documents', f));
+      }
+      await api.post('/pipeline/submit', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
+      setDocFiles([]);
       setMessage({ type: 'success', text: 'Financial data submitted for auditor review.' });
       setPreview(null);
       loadHistory();
@@ -165,6 +173,33 @@ function FinancialDataPageInner() {
                 </div>
               )}
 
+              {/* Document Upload */}
+              <div className="border border-gray-700 rounded-xl p-4 mt-2">
+                <p className="text-sm font-semibold text-gray-300 mb-1">📎 Supporting Documents</p>
+                <p className="text-xs text-gray-500 mb-3">
+                  Upload prospectus, audited financials, director IDs, valuation reports, certificates of incorporation. PDF, Word, Excel, JPG, PNG — max 10MB each.
+                </p>
+                <div onClick={() => docFileRef.current?.click()}
+                  className="border-2 border-dashed border-gray-700 hover:border-gray-500 rounded-xl px-4 py-4 text-center cursor-pointer transition-colors">
+                  <p className="text-xl mb-1">📄</p>
+                  <p className="text-sm text-gray-400">Click to upload documents</p>
+                </div>
+                <input ref={docFileRef} type="file" multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                  className="hidden"
+                  onChange={e => setDocFiles(prev => [...prev, ...Array.from(e.target.files)])}/>
+                {docFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {docFiles.map((f, i) => (
+                      <div key={i} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2 text-xs">
+                        <span className="text-gray-300">📄 {f.name}</span>
+                        <button type="button" onClick={() => setDocFiles(docFiles.filter((_, j) => j !== i))}
+                          className="text-red-400 hover:text-red-300 ml-2">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={previewValuation}
                   className="btn-secondary flex-1">
@@ -172,7 +207,7 @@ function FinancialDataPageInner() {
                 </button>
                 <button type="submit" disabled={loading}
                   className="btn-primary flex-1">
-                  {loading ? 'Submitting...' : '📤 Submit'}
+                  {loading ? 'Submitting...' : '📋 Submit'}
                 </button>
               </div>
             </form>
