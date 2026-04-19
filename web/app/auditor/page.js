@@ -55,7 +55,9 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
       .finally(() => setLoading(false));
   }, [item.id]);
 
-  const rawDataJson    = fullData?.data_json || {};
+  const rawDataJson    = typeof fullData?.data_json === 'string'
+    ? (() => { try { return JSON.parse(fullData.data_json); } catch { return {}; } })()
+    : (fullData?.data_json || {});
   const financial      = rawDataJson?.financialData || rawDataJson || {};
   const isTokenisation = item.type === 'TOKENISATION' || financial.type === 'TOKENISATION_APPLICATION';
   const documents      = rawDataJson?.documents || financial.documents || [];

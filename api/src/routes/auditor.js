@@ -177,13 +177,11 @@ router.get('/completed', authenticate, requireRole('AUDITOR','ADMIN'), async (re
   try {
     const [rows] = await db.execute(`
       SELECT
-        ds.id, ds.token_symbol, ds.period, ds.status,
-        ds.entity_name, ds.admin_approved_at as reviewed_at,
+        ds.id, ds.token_symbol, ds.status,
+        ds.entity_name, ds.updated_at as reviewed_at,
         ds.listing_type, NULL as certified_price, ds.admin_notes,
-        ds.audit_report, ds.assigned_auditor,
-        u.email as issuer_email
+        ds.audit_report, ds.assigned_auditor, ds.data_json
       FROM data_submissions ds
-      LEFT JOIN users u ON u.wallet_address = ds.issuer_wallet
       WHERE ds.status IN ('AUDITOR_APPROVED','ADMIN_APPROVED','REJECTED')
       AND ds.assigned_auditor = ?
       ORDER BY ds.updated_at DESC
