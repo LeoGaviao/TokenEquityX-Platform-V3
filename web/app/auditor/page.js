@@ -273,8 +273,8 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
             <p className="text-sm text-gray-400">{documents.length} document{documents.length!==1?'s':''} submitted</p>
             {documents.length === 0 && <p className="text-gray-500 text-sm py-4 text-center">No documents uploaded.</p>}
             {documents.map((doc,i) => {
-              const name   = doc.originalName || doc.storedName || `Document ${i+1}`;
-              const url    = doc.url ? `${process.env.NEXT_PUBLIC_API_URL?.replace('/api','') || 'http://localhost:3001'}${doc.url}` : null;
+              const name   = doc.name || doc.originalName || doc.storedName || `Document ${i+1}`;
+              const url    = doc.url || null;
               const sizeKb = doc.size ? `${(doc.size/1024).toFixed(0)} KB` : '';
               const ext    = name.split('.').pop()?.toLowerCase();
               const icon   = ext==='pdf'?'📄':['xlsx','xls','csv'].includes(ext)?'📊':['docx','doc'].includes(ext)?'📝':'📎';
