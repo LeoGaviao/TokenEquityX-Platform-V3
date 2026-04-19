@@ -306,9 +306,9 @@ router.put('/:id/status',
     try {
       await db.execute(`
         UPDATE data_submissions
-        SET status = ?, auditor_notes = ?, reviewed_by = ?, updated_at = NOW()
+        SET status = ?, auditor_notes = ?, updated_at = NOW()
         WHERE id = ?
-      `, [status, notes || null, req.user.userId, req.params.id]);
+      `, [status, notes || null, req.params.id]);
       res.json({ success: true, status, message: `Submission marked as ${status}` });
     } catch (err) {
       res.status(500).json({ error: 'Could not update status' });
@@ -361,13 +361,12 @@ router.put('/:id/audit-report',
 
       await db.execute(`
         UPDATE data_submissions
-        SET audit_report  = ?, status = ?, auditor_notes = ?,
-            reviewed_by   = ?, updated_at = NOW()
+        SET audit_report = ?, status = ?, auditor_notes = ?, updated_at = NOW()
         WHERE id = ?
       `, [
         JSON.stringify(auditReport), newStatus,
         `${riskRating} risk. ${recommendation}. Price: $${parseFloat(certifiedPrice).toFixed(4)}.${caveats ? ' Caveats: '+caveats : ''}`,
-        req.user.userId, req.params.id,
+        req.params.id,
       ]);
 
       await db.execute(
@@ -429,15 +428,17 @@ router.put('/:id/admin-approve',
       } else {
         await db.execute(`
           INSERT INTO tokens
-            (token_symbol, token_name, asset_type, asset_class, issuer_id,
-             total_supply, current_price_usd,
+            (symbol, name, company_name, token_symbol, token_name,
+             asset_type, asset_class, issuer_id,
+             total_supply, current_price_usd, price_usd,
              market_cap, trading_mode, market_state, status,
              listing_type, jurisdiction, submission_id, listed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, ?, NOW())
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, ?, NOW())
         `, [
+          symbol.toUpperCase(), sub.entity_name || symbol, sub.entity_name || symbol,
           symbol.toUpperCase(), sub.entity_name || symbol,
           sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY', sub.issuer_wallet || null,
-          total_supply, certifiedPrice,
+          total_supply, certifiedPrice, certifiedPrice,
           parseFloat(certifiedPrice) * total_supply, trading_mode,
           listingType, sub.jurisdiction || 'Zimbabwe', req.params.id
         ]);

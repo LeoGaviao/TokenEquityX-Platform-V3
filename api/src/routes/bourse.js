@@ -133,15 +133,20 @@ router.post('/admin-approve', authenticate, requireRole('ADMIN'), async (req, re
     } else {
       // Mock mint: create token record (in production this would call blockchain)
       const [insert_result] = await conn.execute(
-        `INSERT INTO tokens (symbol, name, asset_type, description, issuer_id, total_supply,
-           price_usd, oracle_price, market_cap, trading_mode, market_state, status,
+        `INSERT INTO tokens (symbol, name, company_name, token_symbol, token_name,
+           asset_type, description, issuer_id, total_supply,
+           price_usd, current_price_usd, oracle_price, market_cap,
+           trading_mode, market_state, status,
            jurisdiction, submission_id, listed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, NOW())`,
-        [symbol, name, asset_type, description, sub.issuer_id || null, total_supply,
-         certified_price, certified_price, parseFloat(certified_price) * total_supply,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, NOW())
+         RETURNING id`,
+        [symbol, name, name, symbol, name,
+         asset_type, description, sub.issuer_wallet || null, total_supply,
+         certified_price, certified_price, certified_price,
+         parseFloat(certified_price) * total_supply,
          trading_mode, jurisdiction, submission_id]
       );
-      token_id = insert_result.insertId;
+      token_id = insert_result[0].id;
     }
 
     // Update submission status

@@ -36,29 +36,42 @@ router.post('/register', authenticate, requireKYC, async (req, res) => {
 
     const [spvResult] = await db.execute(`
       INSERT INTO spvs
-        (owner_user_id, legal_name, registration_number,
+        (owner_user_id, legal_name, registration_no, registration_number,
          jurisdiction, sector, asset_type, description, ipfs_doc_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING id
     `, [
-      req.user.userId, legalName, registrationNumber,
+      req.user.userId, legalName, registrationNumber, registrationNumber,
       jurisdiction || 'Zimbabwe', sector || 'OTHER', assetType || 'EQUITY', description || null, ipfsDocHash || null
     ]);
     const spvId = spvResult[0].id;
 
     const [tokenResult] = await db.execute(`
       INSERT INTO tokens
-        (spv_id, symbol, name, token_name, token_symbol, ticker,
-         asset_type, authorised_shares, nominal_value_cents,
-         market_state, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT')
+        (spv_id, symbol, name, company_name, token_name, token_symbol, ticker,
+         asset_type, asset_class, authorised_shares, issued_shares, nominal_value_cents,
+         total_supply, price_usd, current_price_usd, oracle_price,
+         market_state, status, jurisdiction)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT', ?)
       RETURNING id
     `, [
       spvId,
-      tokenSymbol.toUpperCase(), tokenName,
-      tokenName, tokenSymbol.toUpperCase(),
+      tokenSymbol.toUpperCase(),
+      tokenName,
+      legalName,
+      tokenName,
+      tokenSymbol.toUpperCase(),
       (ticker || tokenSymbol).toUpperCase(),
-      assetType || 'EQUITY', parseInt(authorisedShares) || 1000000, parseInt(nominalValueCents) || 100
+      assetType || 'EQUITY',
+      assetType || 'EQUITY',
+      parseInt(authorisedShares) || 1000000,
+      parseInt(authorisedShares) || 1000000,
+      parseInt(nominalValueCents) || 100,
+      parseInt(authorisedShares) || 1000000,
+      (parseInt(nominalValueCents) || 100) / 100,
+      (parseInt(nominalValueCents) || 100) / 100,
+      (parseInt(nominalValueCents) || 100) / 100,
+      jurisdiction || 'Zimbabwe'
     ]);
     const tokenId = tokenResult[0].id;
 

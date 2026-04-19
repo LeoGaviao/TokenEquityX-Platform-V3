@@ -28,9 +28,9 @@ router.post('/submit', authenticate, upload.array('documents', 5), async (req, r
          city, country, investor_tier, accredited_investor, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
       ON CONFLICT (user_id) DO UPDATE SET
-        full_name    = EXCLUDED.full_name,
-        status       = 'PENDING',
-        submitted_at = NOW()
+        full_name  = EXCLUDED.full_name,
+        status     = 'PENDING',
+        updated_at = NOW()
     `, [
       kycId, req.user.userId, fullName, dateOfBirth, nationality,
       idType, idNumber, addressLine1, addressLine2, city, country,

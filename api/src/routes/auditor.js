@@ -117,7 +117,7 @@ router.put('/data-submissions/:id/approve',
           await db.execute(`
             INSERT INTO oracle_prices (token_symbol, price, data_hash, set_by, source, status)
             VALUES (?, ?, ?, ?, 'AUTO_VALUATION', 'APPROVED')
-          `, [sub.symbol, pricePerToken.toFixed(6), dataHash, req.user.userId]);
+          `, [sub.token_symbol, pricePerToken.toFixed(6), dataHash, req.user.userId]);
         } catch {}
 
         // 7. Audit log
@@ -126,7 +126,7 @@ router.put('/data-submissions/:id/approve',
             INSERT INTO audit_logs (action, performed_by, target_entity, details)
             VALUES ('AUTO_VALUATION_TRIGGERED', ?, ?, ?)
           `, [
-            req.user.userId, sub.symbol,
+            req.user.userId, sub.token_symbol,
             `Auto-valuation: ${assetType} | Price: $${pricePerToken.toFixed(4)} | Hash: ${dataHash}`
           ]);
         } catch {}
