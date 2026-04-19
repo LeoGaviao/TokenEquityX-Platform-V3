@@ -55,14 +55,16 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
       .finally(() => setLoading(false));
   }, [item.id]);
 
-  const financial      = fullData?.data_json || {};
+  const rawDataJson    = fullData?.data_json || {};
+  const financial      = rawDataJson?.financialData || rawDataJson || {};
   const isTokenisation = item.type === 'TOKENISATION' || financial.type === 'TOKENISATION_APPLICATION';
-  const documents      = financial.documents || [];
+  const documents      = rawDataJson?.documents || financial.documents || [];
 
   // Fetch engine reference price when financial data is available
   useEffect(() => {
     if (!fullData || !item.token) return;
-    const financialData = fullData.data_json || {};
+    const rawData = fullData.data_json || {};
+    const financialData = rawData?.financialData || rawData || {};
     const hasData = financialData && (
       financialData.revenueTTM || financialData.faceValue ||
       financialData.propertyValuation || financialData.totalResourceTonnes || financialData.annualRevenue
