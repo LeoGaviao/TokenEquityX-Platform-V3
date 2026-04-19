@@ -65,12 +65,16 @@ router.post('/submit', authenticate, requireKYC, async (req, res) => {
 
     await db.execute(`
       INSERT INTO data_submissions
-        (id, token_id, token_symbol, issuer_wallet, period, data_json, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
+        (token_symbol, entity_name, issuer_wallet, period, submission_type,
+         data_json, status, reference_number)
+      VALUES (?, ?, ?, ?, 'FINANCIAL_DATA', ?, 'PENDING', ?)
     `, [
-      submissionId, token.id, tokenSymbol.toUpperCase(),
-      req.user.userId, period,
+      tokenSymbol.toUpperCase(),
+      token.name || token.token_name || tokenSymbol.toUpperCase(),
+      req.user.userId,
+      period,
       JSON.stringify({ financialData, periodLabel, dataHash }),
+      submissionId,
     ]);
 
     try {
