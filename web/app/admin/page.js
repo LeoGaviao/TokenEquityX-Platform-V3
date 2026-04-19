@@ -960,7 +960,7 @@ export default function AdminDashboard() {
           reference:s.reference_number,status:s.status,assigned_auditor:s.assigned_auditor||null,
           audit_report:s.audit_report?(typeof s.audit_report==='string'?JSON.parse(s.audit_report):s.audit_report):null,
           contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
-          docs:Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})),
+          docs:(() => { try { const d = typeof s.data_json === 'string' ? JSON.parse(s.data_json) : (s.data_json||{}); return (d.documents||[]).map(doc=>({name:doc.name||'Document',url:doc.url||null,size:doc.size||0,status:'uploaded'})); } catch { return Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})); }})(),
           auditor:s.assigned_auditor||'Pending assignment',partner:'None',
           notes:`Ref: ${s.reference_number||s.id} · Status: ${s.status} · Documents: ${s.document_count||0}`,
           isNewApplication:true,
@@ -971,7 +971,7 @@ export default function AdminDashboard() {
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:s.assigned_auditor||'Pending assignment',
           reference:s.reference_number,status:s.status,assigned_auditor:s.assigned_auditor||null,
           contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
-          docs:Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})),
+          docs:(() => { try { const d = typeof s.data_json === 'string' ? JSON.parse(s.data_json) : (s.data_json||{}); return (d.documents||[]).map(doc=>({name:doc.name||'Document',url:doc.url||null,size:doc.size||0,status:'uploaded'})); } catch { return Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})); }})(),
           auditor:s.assigned_auditor||'Pending assignment',partner:'None',
           notes:`Financial data submission. Period: ${s.period}. Status: ${s.status}.`,
           isNewApplication:true,
@@ -1215,8 +1215,16 @@ export default function AdminDashboard() {
                                 <div className="flex items-center gap-2">
                                   <span>{d.status==='uploaded'?'✅':'⏳'}</span>
                                   <span className="text-xs text-gray-300">{d.name}</span>
+                                  {d.size > 0 && <span className="text-xs text-gray-600">{(d.size/1024).toFixed(0)} KB</span>}
                                 </div>
-                                {d.status==='uploaded'&&<button className="text-xs text-blue-400 hover:text-blue-300">View</button>}
+                                {d.url ? (
+                                  <a href={d.url} target="_blank" rel="noopener noreferrer"
+                                    className="text-xs text-blue-400 hover:text-blue-300 bg-blue-900/30 px-2 py-1 rounded">
+                                    View
+                                  </a>
+                                ) : d.status==='uploaded' ? (
+                                  <button className="text-xs text-gray-500 cursor-not-allowed">No URL</button>
+                                ) : null}
                               </div>
                             ))}
                           </div>
