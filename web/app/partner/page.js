@@ -3,6 +3,7 @@ import { useWallet } from '../../hooks/useWallet';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
+import Inbox from '../../components/ui/Inbox';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 const NAVY = '#1A3C5E';
@@ -165,6 +166,7 @@ export default function PartnerDashboard() {
           </nav>
           <div className="flex items-center gap-3">
             <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email || 'User'}</span>
+            <Inbox token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} />
             <button onClick={()=>{localStorage.clear();window.location.href='/'}}
               className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg">Disconnect</button>
           </div>

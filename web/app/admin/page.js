@@ -3,6 +3,7 @@ import { useWallet } from '../../hooks/useWallet';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
+import Inbox from '../../components/ui/Inbox';
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
@@ -1152,6 +1153,7 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-4">
           <p className="text-gray-400 text-sm font-mono">{now.toLocaleTimeString('en-GB')}</p>
           <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.id||'Admin'}</span>
+          <Inbox token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} />
           <button onClick={()=>{localStorage.clear();window.location.href='/';}} className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1 rounded-lg">Disconnect</button>
         </div>
       </div>

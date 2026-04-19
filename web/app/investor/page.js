@@ -2,6 +2,7 @@
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 const WS  = process.env.NEXT_PUBLIC_WS_URL  || 'ws://localhost:3001';
 import { useWallet } from '../../hooks/useWallet';
+import Inbox from '../../components/ui/Inbox';
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
@@ -486,6 +487,7 @@ export default function InvestorDashboard() {
           </nav>
           <div className="flex items-center gap-3">
             <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email || 'User'}</span>
+            <Inbox token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} />
             <button onClick={()=>{localStorage.clear();window.location.href='/'}}
               className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg">
               Disconnect
