@@ -48,13 +48,15 @@ router.post('/register', authenticate, requireKYC, async (req, res) => {
 
     const [tokenResult] = await db.execute(`
       INSERT INTO tokens
-        (spv_id, token_name, token_symbol, ticker,
+        (spv_id, symbol, name, token_name, token_symbol, ticker,
          asset_type, authorised_shares, nominal_value_cents,
          market_state, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT')
       RETURNING id
     `, [
-      spvId, tokenName, tokenSymbol.toUpperCase(),
+      spvId,
+      tokenSymbol.toUpperCase(), tokenName,
+      tokenName, tokenSymbol.toUpperCase(),
       (ticker || tokenSymbol).toUpperCase(),
       assetType || 'EQUITY', parseInt(authorisedShares) || 1000000, parseInt(nominalValueCents) || 100
     ]);
