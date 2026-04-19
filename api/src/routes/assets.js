@@ -34,30 +34,31 @@ router.post('/register', authenticate, requireKYC, async (req, res) => {
       return res.status(409).json({ error: 'Token symbol already taken' });
     }
 
-    const spvId   = uuidv4();
-    const tokenId = uuidv4();
-
-    await db.execute(`
+    const [spvResult] = await db.execute(`
       INSERT INTO spvs
-        (id, owner_user_id, legal_name, registration_number,
+        (owner_user_id, legal_name, registration_number,
          jurisdiction, sector, asset_type, description, ipfs_doc_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id
     `, [
-      spvId, req.user.userId, legalName, registrationNumber,
+      req.user.userId, legalName, registrationNumber,
       jurisdiction || 'Zimbabwe', sector || 'OTHER', assetType || 'EQUITY', description || null, ipfsDocHash || null
     ]);
+    const spvId = spvResult[0].id;
 
-    await db.execute(`
+    const [tokenResult] = await db.execute(`
       INSERT INTO tokens
-        (id, spv_id, token_name, token_symbol, ticker,
+        (spv_id, token_name, token_symbol, ticker,
          asset_type, authorised_shares, nominal_value_cents,
          market_state, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT')
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT')
+      RETURNING id
     `, [
-      tokenId, spvId, tokenName, tokenSymbol.toUpperCase(),
+      spvId, tokenName, tokenSymbol.toUpperCase(),
       (ticker || tokenSymbol).toUpperCase(),
       assetType || 'EQUITY', parseInt(authorisedShares) || 1000000, parseInt(nominalValueCents) || 100
     ]);
+    const tokenId = tokenResult[0].id;
 
     await db.execute(
       'UPDATE users SET role = ? WHERE id = ? AND role = ?',
