@@ -614,6 +614,45 @@ router.get('/migrate', async (req, res) => {
       submitted_at        TIMESTAMP     NOT NULL DEFAULT NOW(),
       updated_at          TIMESTAMP     NOT NULL DEFAULT NOW()
     )`,
+    `CREATE TABLE IF NOT EXISTS platform_settings (
+      id            SERIAL        NOT NULL PRIMARY KEY,
+      key           VARCHAR(100)  NOT NULL UNIQUE,
+      value         TEXT          NOT NULL,
+      description   TEXT,
+      updated_by    UUID,
+      updated_at    TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES
+       ('compliance_fee_usd', '1500.00', 'TokenEquityX standard compliance review fee in USD'),
+       ('auditor_fee_min_usd', '1500.00', 'Minimum auditor fee in USD'),
+       ('auditor_fee_max_usd', '10000.00', 'Maximum auditor fee in USD'),
+       ('applications_meeting_day', 'Tuesday', 'Day of the week when application review meetings are held'),
+       ('platform_name', 'TokenEquityX', 'Platform display name')
+     ON CONFLICT (key) DO NOTHING`,
+    `CREATE TABLE IF NOT EXISTS application_fees (
+      id                  SERIAL        NOT NULL PRIMARY KEY,
+      submission_id       INTEGER       NOT NULL,
+      token_symbol        VARCHAR(20)   NOT NULL,
+      issuer_wallet       UUID,
+      compliance_fee_usd  NUMERIC(20,2) NOT NULL DEFAULT 1500.00,
+      auditor_fee_usd     NUMERIC(20,2) NOT NULL DEFAULT 0,
+      total_fee_usd       NUMERIC(20,2) NOT NULL DEFAULT 0,
+      status              VARCHAR(30)   NOT NULL DEFAULT 'PENDING_APPROVAL',
+      approved_by         UUID,
+      approved_at         TIMESTAMP,
+      rejection_reason    TEXT,
+      fee_deposit_ref     VARCHAR(200),
+      fee_confirmed_by    UUID,
+      fee_confirmed_at    TIMESTAMP,
+      auditor_assigned    VARCHAR(255),
+      created_at          TIMESTAMP     NOT NULL DEFAULT NOW(),
+      updated_at          TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS application_status VARCHAR(30) DEFAULT 'PENDING_REVIEW'`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS rejection_reason TEXT`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS auditor_fee_usd NUMERIC(20,2) DEFAULT 0`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS fee_status VARCHAR(30) DEFAULT 'NOT_REQUIRED'`,
   ];
   const results = [];
   for (const sql of migrations) {

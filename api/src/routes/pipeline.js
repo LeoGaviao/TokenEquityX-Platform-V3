@@ -103,6 +103,31 @@ router.post('/submit', authenticate, requireKYC, upload.array('documents', 10), 
       );
     } catch {}
 
+    // Send application received email
+    try {
+      const [userRows] = await db.execute(
+        'SELECT full_name, email FROM users WHERE id = ?', [req.user.userId]
+      );
+      const issuer = userRows[0] || {};
+      const [settingsRows] = await db.execute(
+        "SELECT value FROM platform_settings WHERE key = 'applications_meeting_day'"
+      );
+      const meetingDay = settingsRows[0]?.value || 'Tuesday';
+      if (issuer.email) {
+        const mailer = require('../utils/mailer');
+        await mailer.notifyIssuerApplicationReceived({
+          issuerEmail:     issuer.email,
+          issuerName:      issuer.full_name || 'Issuer',
+          tokenSymbol:     tokenSymbol.toUpperCase(),
+          entityName:      token.name || token.token_name || tokenSymbol.toUpperCase(),
+          referenceNumber: submissionId,
+          meetingDay,
+        }).catch(err => console.error('Email failed:', err.message));
+      }
+    } catch (emailErr) {
+      console.error('Application received email failed:', emailErr.message);
+    }
+
     logger.info('Financial data submitted', { submissionId, tokenSymbol, assetType: token.asset_type });
 
     res.json({

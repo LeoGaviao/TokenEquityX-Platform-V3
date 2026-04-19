@@ -208,7 +208,80 @@ async function notifyInvestorWithdrawalRejected({ investorEmail, investorName, a
   return send(investorEmail, subject, html);
 }
 
+// ── Application received
+async function notifyIssuerApplicationReceived({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber, meetingDay }) {
+  const subject = `📋 Application Received — ${entityName} (${tokenSymbol})`;
+  const html = baseTemplate('Application Received', `
+    <p>Dear ${issuerName},</p>
+    <p>Thank you for submitting your tokenisation application for <strong>${entityName}</strong> (proposed symbol: <strong>${tokenSymbol}</strong>).</p>
+    <p>We confirm that your application has been received and is currently under preliminary review by the TokenEquityX compliance team.</p>
+    <div class="detail-row"><span>Reference Number</span><span style="font-family:monospace">${referenceNumber}</span></div>
+    <div class="detail-row"><span>Entity Name</span><span>${entityName}</span></div>
+    <div class="detail-row"><span>Token Symbol</span><span>${tokenSymbol}</span></div>
+    <div class="detail-row"><span>Status</span><span class="warning">⏳ Under Review</span></div>
+    <p style="margin-top:16px;">Applications are reviewed at our weekly Applications Appraisal Meeting held every <strong>${meetingDay}</strong>. You will be notified of the outcome following the next meeting.</p>
+    <p>If you have any questions in the meantime, please contact us at <a href="mailto:${ADMIN}" style="color:#C8972B">${ADMIN}</a>.</p>
+    <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Application →</a>
+  `);
+  return send(issuerEmail, subject, html);
+}
+
+// ── Application approved — fee invoice
+async function notifyIssuerApplicationApproved({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber, complianceFee, auditorFee, totalFee }) {
+  const subject = `✅ Application Approved — Please Deposit Application Fee`;
+  const html = baseTemplate('Application Approved', `
+    <p>Dear ${issuerName},</p>
+    <p>We are pleased to inform you that your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}) has been approved at our Applications Appraisal Meeting.</p>
+    <p>To proceed to the audit and compliance review stage, please deposit the application fee to your TokenEquityX platform wallet.</p>
+    <div class="amount">$${parseFloat(totalFee).toFixed(2)} USD</div>
+    <div class="detail-row"><span>Compliance Review Fee</span><span>$${parseFloat(complianceFee).toFixed(2)} USD</span></div>
+    <div class="detail-row"><span>Auditor Fee</span><span>$${parseFloat(auditorFee).toFixed(2)} USD</span></div>
+    <div class="detail-row"><span>Total Due</span><span style="font-weight:bold">$${parseFloat(totalFee).toFixed(2)} USD</span></div>
+    <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber}</span></div>
+    <p style="margin-top:16px;"><strong>Payment Instructions:</strong> Log into your TokenEquityX dashboard, navigate to your wallet, and make a deposit of <strong>$${parseFloat(totalFee).toFixed(2)} USD</strong>. Use your reference number <strong>${referenceNumber}</strong> as the payment reference.</p>
+    <p>Once your deposit is confirmed by our team, an auditor will be assigned to your application and the review process will commence.</p>
+    <a href="${PLATFORM}/investor" class="btn btn-gold">Go to My Wallet →</a>
+  `);
+  return send(issuerEmail, subject, html);
+}
+
+// ── Application rejected
+async function notifyIssuerApplicationRejected({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber, reason }) {
+  const subject = `❌ Application Update — ${entityName} (${tokenSymbol})`;
+  const html = baseTemplate('Application Not Approved', `
+    <p>Dear ${issuerName},</p>
+    <p>Thank you for your interest in listing <strong>${entityName}</strong> (${tokenSymbol}) on the TokenEquityX platform.</p>
+    <p>Following review at our Applications Appraisal Meeting, we regret to inform you that your application has not been approved at this time.</p>
+    <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber}</span></div>
+    <div class="detail-row"><span>Reason</span><span class="danger">${reason || 'Does not meet current listing criteria'}</span></div>
+    <p style="margin-top:16px;">You are welcome to address the concerns raised and resubmit your application. If you would like to discuss the outcome in more detail, please contact us at <a href="mailto:${ADMIN}" style="color:#C8972B">${ADMIN}</a>.</p>
+    <a href="${PLATFORM}/issuer" class="btn">Contact Support →</a>
+  `);
+  return send(issuerEmail, subject, html);
+}
+
+// ── Fee received — auditor assigned
+async function notifyIssuerFeeReceivedAuditorAssigned({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber, auditorName, estimatedDays }) {
+  const subject = `🔍 Audit Commencing — ${entityName} (${tokenSymbol})`;
+  const html = baseTemplate('Audit & Compliance Review Commencing', `
+    <p>Dear ${issuerName},</p>
+    <p>Your application fee has been received and confirmed. An auditor has been assigned to your application and the review process is now underway.</p>
+    <div class="detail-row"><span>Entity</span><span>${entityName}</span></div>
+    <div class="detail-row"><span>Token Symbol</span><span>${tokenSymbol}</span></div>
+    <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber}</span></div>
+    <div class="detail-row"><span>Assigned Auditor</span><span>${auditorName || 'TokenEquityX Auditor'}</span></div>
+    <div class="detail-row"><span>Status</span><span class="warning">🔍 Under Audit Review</span></div>
+    <p style="margin-top:16px;">The auditor will review your financial data and supporting documents. You may be contacted to provide additional information. The review is typically completed within <strong>${estimatedDays || '10'} business days</strong>.</p>
+    <a href="${PLATFORM}/issuer" class="btn btn-gold">Track Your Application →</a>
+  `);
+  return send(issuerEmail, subject, html);
+}
+
 module.exports = {
+  notifyIssuerApplicationReceived,
+  notifyIssuerApplicationApproved,
+  notifyIssuerApplicationRejected,
+  notifyIssuerFeeReceivedAuditorAssigned,
   notifyAdminDepositSubmitted,
   notifyInvestorDepositConfirmed,
   notifyInvestorDepositRejected,
