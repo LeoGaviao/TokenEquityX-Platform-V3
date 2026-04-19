@@ -653,6 +653,20 @@ router.get('/migrate', async (req, res) => {
     `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS rejection_reason TEXT`,
     `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS auditor_fee_usd NUMERIC(20,2) DEFAULT 0`,
     `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS fee_status VARCHAR(30) DEFAULT 'NOT_REQUIRED'`,
+    `CREATE TABLE IF NOT EXISTS messages (
+      id            SERIAL        NOT NULL PRIMARY KEY,
+      sender_id     UUID,
+      recipient_id  UUID          NOT NULL,
+      subject       VARCHAR(255)  NOT NULL,
+      body          TEXT          NOT NULL,
+      type          VARCHAR(30)   NOT NULL DEFAULT 'SYSTEM',
+      category      VARCHAR(50),
+      reference_id  VARCHAR(100),
+      is_read       BOOLEAN       NOT NULL DEFAULT FALSE,
+      is_deleted    BOOLEAN       NOT NULL DEFAULT FALSE,
+      created_at    TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id, is_deleted, is_read)`,
   ];
   const results = [];
   for (const sql of migrations) {
