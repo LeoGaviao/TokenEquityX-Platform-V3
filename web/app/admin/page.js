@@ -838,6 +838,17 @@ export default function AdminDashboard() {
     {id:1,title:'Unusual volume pattern — ACME',desc:'Wallet 0x7f4a…b2c1 placed 14 orders in 3 minutes, total USD 48,000. Possible wash trading.',time:'Today 08:47 AM',system:'MarketController'},
   ]);
   const [tab,setTab]=useState('overview');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [settings, setSettings] = useState({});
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [appFeeModal, setAppFeeModal] = useState(null);
+  const [rejectModal, setRejectModal] = useState(null);
+  const [feeConfirmModal, setFeeConfirmModal] = useState(null);
+  const [auditorFeeInput, setAuditorFeeInput] = useState('2500');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [auditorEmailInput, setAuditorEmailInput] = useState('');
+  const [auditorNameInput, setAuditorNameInput] = useState('');
   const [deposits,setDeposits]=useState([]);
   const [withdrawals,setWithdrawals]=useState([]);
   const [walletLoading,setWalletLoading]=useState(false);
@@ -940,6 +951,17 @@ export default function AdminDashboard() {
     return()=>clearInterval(tick);
   }, [ready]);
 
+  useEffect(() => {
+    if (tab !== 'settings') return;
+    setSettingsLoading(true);
+    const token = localStorage.getItem('token');
+    fetch(`${API}/settings`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d && typeof d === 'object') setSettings(d); })
+      .catch(() => {})
+      .finally(() => setSettingsLoading(false));
+  }, [tab]);
+
   const loadAll = async () => {
     try {
       const[tokRes,tradeRes,usersRes,subRes]=await Promise.allSettled([
@@ -1005,6 +1027,72 @@ export default function AdminDashboard() {
   };
 
   const notify=(type,text)=>{setActionMsg({type,text});setTimeout(()=>setActionMsg(null),3500);};
+
+  const handleApproveApplication = async () => {
+    if (!appFeeModal) return;
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API}/settings/applications/${appFeeModal.id}/approve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auditor_fee_usd: auditorFeeInput, notes: appFeeModal.notes || '' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      notify('success', `✅ Application approved. Fee invoice sent to issuer. Total: $${data.totalFee}`);
+      setPipeline(p => p.map(i => i.id === appFeeModal.id ? { ...i, application_status: 'APPROVED', fee_status: 'PENDING_PAYMENT' } : i));
+      setAppFeeModal(null); setAuditorFeeInput('2500');
+    } catch(e) { notify('error', e.message || 'Could not approve application'); }
+  };
+
+  const handleRejectApplication = async () => {
+    if (!rejectModal || !rejectionReason) return;
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API}/settings/applications/${rejectModal.id}/reject`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: rejectionReason }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      notify('error', '❌ Application rejected. Issuer notified by email.');
+      setPipeline(p => p.map(i => i.id === rejectModal.id ? { ...i, application_status: 'REJECTED' } : i));
+      setRejectModal(null); setRejectionReason('');
+    } catch(e) { notify('error', e.message || 'Could not reject application'); }
+  };
+
+  const handleConfirmFee = async () => {
+    if (!feeConfirmModal || !auditorEmailInput) return;
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API}/settings/applications/${feeConfirmModal.id}/confirm-fee`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auditor_email: auditorEmailInput, auditor_name: auditorNameInput, estimated_days: 10 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      notify('success', '✅ Fee confirmed. Auditor assigned. Issuer notified.');
+      setPipeline(p => p.map(i => i.id === feeConfirmModal.id ? { ...i, application_status: 'FEE_CONFIRMED', fee_status: 'PAID', assigned_auditor: auditorEmailInput } : i));
+      setFeeConfirmModal(null); setAuditorEmailInput(''); setAuditorNameInput('');
+    } catch(e) { notify('error', e.message || 'Could not confirm fee'); }
+  };
+
+  const handleSaveSetting = async (key, value) => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API}/settings/${key}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setSettings(s => ({ ...s, [key]: { ...s[key], value } }));
+      setSettingsSaved(true); setTimeout(() => setSettingsSaved(false), 2000);
+    } catch(e) { notify('error', e.message || 'Could not save setting'); }
+  };
 
   const loadTxHistory = async (filter = 'ALL', page = 1) => {
     setTxLoading(true);
@@ -1073,15 +1161,43 @@ export default function AdminDashboard() {
 
         <div className="flex items-center justify-between mb-6">
           <div><h1 className="text-2xl font-bold">Platform Overview</h1><p className="text-gray-500 text-sm">Real-time view of all platform activity</p></div>
-          <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 flex-wrap">
-            {['overview','pipeline','trading','compliance','users','wallet','ledger','offerings','tools','blog'].map(t=>(
+          <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 flex-wrap items-center">
+            {['overview','pipeline','trading','compliance','users','offerings','settings'].map(t=>(
               <button key={t} onClick={()=>setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
                 {t}
                 {t==='pipeline'&&pendingApprovals>0&&<span className="ml-1.5 bg-amber-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingApprovals}</span>}
                 {t==='compliance'&&pendingKYC>0&&<span className="ml-1.5 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingKYC}</span>}
-                {t==='wallet'&&(pendingDeposits+pendingWithdrawals)>0&&<span className="ml-1.5 bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingDeposits+pendingWithdrawals}</span>}
               </button>
             ))}
+            {/* More dropdown */}
+            <div className="relative" onMouseLeave={()=>setShowMoreMenu(false)}>
+              <button
+                onMouseEnter={()=>setShowMoreMenu(true)}
+                onClick={()=>setShowMoreMenu(m=>!m)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${['wallet','ledger','tools','blog'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                More
+                {(pendingDeposits+pendingWithdrawals)>0&&<span className="ml-1 bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingDeposits+pendingWithdrawals}</span>}
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              {showMoreMenu && (
+                <div className="absolute top-full left-0 mt-1 w-40 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                  {[
+                    {key:'wallet', label:'Wallet', badge:(pendingDeposits+pendingWithdrawals)>0?(pendingDeposits+pendingWithdrawals):null},
+                    {key:'ledger', label:'Ledger'},
+                    {key:'tools',  label:'Tools'},
+                    {key:'blog',   label:'Blog'},
+                  ].map(item=>(
+                    <button key={item.key} onClick={()=>{setTab(item.key);setShowMoreMenu(false);}}
+                      className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${tab===item.key?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                      <span className="capitalize">{item.label}</span>
+                      {item.badge&&<span className="bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full">{item.badge}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1231,6 +1347,46 @@ export default function AdminDashboard() {
                         </div>
                         <div className="bg-gray-800/50 rounded-xl p-4">
                           <h4 className="font-semibold text-sm mb-3 text-gray-300">📝 Actions</h4>
+
+                          {/* Application fee workflow status */}
+                          {item.isNewApplication && (
+                            <div className="mb-3">
+                              {item.application_status === 'APPROVED' && item.fee_status === 'PENDING_PAYMENT' && (
+                                <div className="bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2 mb-2">
+                                  <p className="text-amber-300 text-xs font-bold">💳 Awaiting Fee Payment</p>
+                                  <p className="text-gray-400 text-xs mt-0.5">Invoice sent to issuer. Confirm once payment received.</p>
+                                  <button onClick={()=>setFeeConfirmModal(item)}
+                                    className="mt-2 w-full py-1.5 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-600 text-white">
+                                    ✅ Confirm Fee Received
+                                  </button>
+                                </div>
+                              )}
+                              {item.application_status === 'FEE_CONFIRMED' && (
+                                <div className="bg-green-900/20 border border-green-800/50 rounded-lg px-3 py-2 mb-2">
+                                  <p className="text-green-300 text-xs font-bold">✅ Fee Paid — Under Review</p>
+                                  <p className="text-gray-400 text-xs mt-0.5">Auditor assigned: {item.assigned_auditor}</p>
+                                </div>
+                              )}
+                              {item.application_status === 'REJECTED' && (
+                                <div className="bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2 mb-2">
+                                  <p className="text-red-300 text-xs font-bold">❌ Application Rejected</p>
+                                </div>
+                              )}
+                              {(!item.application_status || item.application_status === 'PENDING') && (
+                                <div className="flex gap-2 mb-2">
+                                  <button onClick={()=>setAppFeeModal(item)}
+                                    className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-white">
+                                    ✅ Approve at Meeting
+                                  </button>
+                                  <button onClick={()=>setRejectModal(item)}
+                                    className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-red-900/50 hover:bg-red-900/70 text-red-300 border border-red-800">
+                                    ❌ Reject
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {item.assigned_auditor && (
                             <div className="bg-blue-900/30 border border-blue-800/50 rounded-lg px-3 py-2 mb-3">
                               <p className="text-blue-300 text-xs font-semibold">🔍 Assigned Auditor</p>
@@ -1793,6 +1949,108 @@ export default function AdminDashboard() {
         {/* ══ BLOG ══ */}
         {tab==='blog' && <AdminBlogTab />}
 
+        {/* ══ SETTINGS ══ */}
+        {tab==='settings' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-1">Platform Settings</h2>
+              <p className="text-gray-500 text-sm">Configure fees, meeting schedules, and platform-wide defaults.</p>
+            </div>
+
+            {settingsSaved && (
+              <div className="bg-green-900/40 border border-green-700 text-green-300 rounded-xl px-4 py-3 text-sm">✅ Setting saved successfully.</div>
+            )}
+
+            {settingsLoading ? (
+              <div className="text-center py-12 text-gray-500">
+                <p className="text-3xl mb-2">⏳</p><p>Loading settings…</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {[
+                  { key: 'compliance_fee_usd',      label: 'Compliance Fee (USD)',         type: 'number', desc: 'Platform compliance fee charged per tokenisation application.' },
+                  { key: 'applications_meeting_day', label: 'Application Review Day',       type: 'text',   desc: 'Day of week when applications are reviewed (e.g. Tuesday).' },
+                  { key: 'platform_fee_bps',         label: 'Trading Fee (basis points)',   type: 'number', desc: 'Platform trading fee in basis points (e.g. 50 = 0.50%).' },
+                  { key: 'min_investment_usd',        label: 'Minimum Investment (USD)',     type: 'number', desc: 'Minimum investor subscription amount in USD.' },
+                  { key: 'kyc_expiry_days',           label: 'KYC Expiry (days)',            type: 'number', desc: 'Number of days before KYC approval expires and must be renewed.' },
+                  { key: 'max_offering_days',         label: 'Max Offering Duration (days)', type: 'number', desc: 'Maximum number of days a primary offering can remain open.' },
+                ].map(({ key, label, type, desc }) => {
+                  const current = settings[key]?.value ?? '';
+                  const [local, setLocal] = useState(current);
+                  return (
+                    <div key={key} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                      <label className="text-sm font-semibold text-white block mb-0.5">{label}</label>
+                      <p className="text-xs text-gray-500 mb-3">{desc}</p>
+                      <div className="flex gap-2">
+                        <input
+                          type={type}
+                          defaultValue={current}
+                          onChange={e => setLocal(e.target.value)}
+                          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                        />
+                        <button
+                          onClick={() => handleSaveSetting(key, local || current)}
+                          className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
+                          Save
+                        </button>
+                      </div>
+                      {settings[key]?.updated_at && (
+                        <p className="text-xs text-gray-600 mt-2">Last updated: {dt(settings[key].updated_at)}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Applications with fee status */}
+            <div>
+              <h3 className="text-lg font-bold mb-3">Application Fee Status</h3>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800 text-gray-500 text-xs uppercase">
+                      {['Token','Entity','App Status','Fee Status','Compliance Fee','Auditor Fee','Total','Assigned Auditor'].map(h=>(
+                        <th key={h} className="text-left px-4 py-3">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pipeline.filter(p => p.isNewApplication).map(item => (
+                      <tr key={item.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                        <td className="px-4 py-3 font-bold text-blue-300">{item.symbol}</td>
+                        <td className="px-4 py-3 text-gray-300">{item.name}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            item.application_status === 'APPROVED' ? 'bg-blue-900/50 text-blue-300' :
+                            item.application_status === 'FEE_CONFIRMED' ? 'bg-green-900/50 text-green-300' :
+                            item.application_status === 'REJECTED' ? 'bg-red-900/50 text-red-300' :
+                            'bg-gray-800 text-gray-400'
+                          }`}>{item.application_status || 'PENDING'}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            item.fee_status === 'PAID' ? 'bg-green-900/50 text-green-300' :
+                            item.fee_status === 'PENDING_PAYMENT' ? 'bg-amber-900/50 text-amber-300' :
+                            'bg-gray-800 text-gray-400'
+                          }`}>{item.fee_status || '—'}</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-300">$1,500</td>
+                        <td className="px-4 py-3 text-gray-300">{item.auditor_fee_usd ? `$${item.auditor_fee_usd}` : '—'}</td>
+                        <td className="px-4 py-3 text-yellow-400 font-semibold">{item.auditor_fee_usd ? `$${1500+parseFloat(item.auditor_fee_usd)}` : '—'}</td>
+                        <td className="px-4 py-3 text-gray-400 text-xs">{item.assigned_auditor || '—'}</td>
+                      </tr>
+                    ))}
+                    {pipeline.filter(p => p.isNewApplication).length === 0 && (
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-600">No applications yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* ── ASSIGN AUDITOR MODAL ── */}
@@ -1822,6 +2080,93 @@ export default function AdminDashboard() {
             <div className="flex gap-3 mt-5">
               <button onClick={()=>{setAssignModal(null);setAssignNote('');}} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
               <button onClick={()=>assignAuditor(assignModal.item, assignNote||'Pending assignment')} disabled={!assignNote} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{background:NAVY}}>🔍 Assign Auditor</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── APPROVE APPLICATION MODAL ── */}
+      {appFeeModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
+            <h3 className="font-bold text-lg mb-1">Approve Application at Tuesday Meeting</h3>
+            <p className="text-gray-400 text-sm mb-5">{appFeeModal.name} · {appFeeModal.symbol}</p>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Auditor Fee (USD) <span className="text-red-400">*</span></label>
+                <input type="number" value={auditorFeeInput} onChange={e=>setAuditorFeeInput(e.target.value)}
+                  placeholder="e.g. 2500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"/>
+              </div>
+              <div className="bg-gray-800/60 rounded-xl p-4 text-sm space-y-2">
+                <div className="flex justify-between"><span className="text-gray-400">Platform Compliance Fee</span><span className="text-white">$1,500</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Auditor Fee</span><span className="text-white">${parseFloat(auditorFeeInput||0).toLocaleString()}</span></div>
+                <div className="flex justify-between border-t border-gray-700 pt-2 font-bold"><span className="text-gray-300">Total Invoice</span><span className="text-yellow-400">${(1500+parseFloat(auditorFeeInput||0)).toLocaleString()}</span></div>
+              </div>
+              <p className="text-xs text-gray-500">Issuer will receive a fee invoice by email. On payment confirmation, you assign the auditor.</p>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={()=>{setAppFeeModal(null);setAuditorFeeInput('2500');}} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
+              <button onClick={handleApproveApplication} disabled={!auditorFeeInput}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{background:GREEN}}>
+                ✅ Approve & Send Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REJECT APPLICATION MODAL ── */}
+      {rejectModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
+            <h3 className="font-bold text-lg mb-1">Reject Application</h3>
+            <p className="text-gray-400 text-sm mb-5">{rejectModal.name} · {rejectModal.symbol}</p>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Rejection Reason <span className="text-red-400">*</span></label>
+              <textarea rows={4} value={rejectionReason} onChange={e=>setRejectionReason(e.target.value)}
+                placeholder="e.g. Insufficient audited financials. Please resubmit once 3 years of audited accounts are available."
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-600 resize-none"/>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">The issuer will receive an email with this reason.</p>
+            <div className="flex gap-3 mt-5">
+              <button onClick={()=>{setRejectModal(null);setRejectionReason('');}} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
+              <button onClick={handleRejectApplication} disabled={!rejectionReason}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-40">
+                ❌ Reject & Notify Issuer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CONFIRM FEE MODAL ── */}
+      {feeConfirmModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
+            <h3 className="font-bold text-lg mb-1">Confirm Fee Received & Assign Auditor</h3>
+            <p className="text-gray-400 text-sm mb-5">{feeConfirmModal.name} · {feeConfirmModal.symbol}</p>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Auditor Email <span className="text-red-400">*</span></label>
+                <input type="email" value={auditorEmailInput} onChange={e=>setAuditorEmailInput(e.target.value)}
+                  placeholder="auditor@firm.co.zw"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Auditor Name (for issuer email)</label>
+                <input type="text" value={auditorNameInput} onChange={e=>setAuditorNameInput(e.target.value)}
+                  placeholder="e.g. J. Sibanda CPA (ICAZ)"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"/>
+              </div>
+              <p className="text-xs text-gray-500">Confirming fee will set status to UNDER_REVIEW and notify the issuer that their auditor has been assigned.</p>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={()=>{setFeeConfirmModal(null);setAuditorEmailInput('');setAuditorNameInput('');}} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
+              <button onClick={handleConfirmFee} disabled={!auditorEmailInput}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{background:GREEN}}>
+                ✅ Confirm & Assign Auditor
+              </button>
             </div>
           </div>
         </div>
