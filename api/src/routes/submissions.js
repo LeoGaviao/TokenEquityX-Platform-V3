@@ -3,6 +3,7 @@ const router  = require('express').Router();
 const db      = require('../db/pool');
 const logger  = require('../utils/logger');
 const upload  = require('../middleware/upload');
+const { uploadToSupabase } = require('../middleware/upload');
 const { authenticate }            = require('../middleware/auth');
 const { requireRole, requireKYC } = require('../middleware/roles');
 const { v4: uuidv4 }              = require('uuid');
@@ -39,16 +40,20 @@ router.post('/financial',
 
       const subId = uuidv4();
 
-      const uploadedDocs = req.files ? req.files.map(f => ({
-        originalName: f.originalname,
-        storedName:   f.filename,
-        path:         f.path,
-        size:         f.size,
-        mimetype:     f.mimetype,
-        url:          `/uploads/financials/${f.filename}`,
-      })) : [];
+      // Upload documents to Supabase Storage
+      const uploadedDocs = [];
+      if (req.files && req.files.length > 0) {
+        for (const file of req.files) {
+          try {
+            const uploaded = await uploadToSupabase(file, 'submissions', req.user.userId);
+            uploadedDocs.push(uploaded);
+          } catch (uploadErr) {
+            console.error('Document upload failed:', uploadErr.message);
+          }
+        }
+      }
 
-      const dataJson = JSON.stringify({
+      const financialData = {
         revenue:                  revenue || null,
         ebitda:                   ebitda || null,
         netAssets:                netAssets || null,
@@ -56,17 +61,27 @@ router.post('/financial',
         operationalKpis:          operationalKpis ? JSON.parse(operationalKpis) : {},
         managementStatement:      managementStatement || null,
         distributionAnnouncement: distributionAnnouncement || null,
-        documents:                uploadedDocs,
-        submittedAt:              new Date().toISOString(),
+      };
+
+      const dataJson = JSON.stringify({
+        financialData,
+        documents:  uploadedDocs,
+        submittedAt: new Date().toISOString(),
       });
 
-      const tokenId = tokens.length > 0 ? tokens[0].id : null;
+      const entityName = tokens.length > 0
+        ? (tokens[0].name || tokens[0].token_name || tokenSymbol.toUpperCase())
+        : tokenSymbol.toUpperCase();
 
       await db.execute(`
         INSERT INTO data_submissions
-          (id, token_id, token_symbol, issuer_wallet, period, data_json, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
-      `, [subId, tokenId, tokenSymbol.toUpperCase(), req.user.userId, period, dataJson]);
+          (token_symbol, entity_name, issuer_wallet, period, submission_type,
+           data_json, document_count, status, reference_number)
+        VALUES (?, ?, ?, ?, 'FINANCIAL_DATA', ?, ?, 'PENDING', ?)
+      `, [
+        tokenSymbol.toUpperCase(), entityName, req.user.userId, period,
+        dataJson, uploadedDocs.length, subId,
+      ]);
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
@@ -85,7 +100,7 @@ router.post('/financial',
         tokenSymbol:       tokenSymbol.toUpperCase(),
         period,
         documentsUploaded: uploadedDocs.length,
-        documents:         uploadedDocs.map(d => ({ name: d.originalName, url: d.url })),
+        documents:         uploadedDocs.map(d => ({ name: d.name, url: d.url })),
         message:           `Financial data submitted successfully for ${period}. Your auditor will review within 5 business days.`,
       });
     } catch (err) {
@@ -175,7 +190,7 @@ router.post('/tokenise',
         referenceNumber:   parsed.referenceNumber,
         proposedSymbol:    proposedSymbol.toUpperCase(),
         documentsUploaded: uploadedDocs.length,
-        documents:         uploadedDocs.map(d => ({ name: d.originalName, url: d.url })),
+        documents:         uploadedDocs.map(d => ({ name: d.name, url: d.url })),
         message:           `Tokenisation application submitted. Reference: ${parsed.referenceNumber}. Our compliance team will contact you within 5 business days.`,
       });
     } catch (err) {
@@ -581,5 +596,19 @@ router.delete('/:id',
     }
   }
 );
+
+// GET /api/submissions/:id/document-url?path=folder/filename
+// Generates a fresh signed URL for a document (signed URLs expire)
+router.get('/:id/document-url', authenticate, async (req, res) => {
+  const { path: filePath } = req.query;
+  if (!filePath) return res.status(400).json({ error: 'path is required' });
+  try {
+    const { getSignedUrl } = require('../middleware/upload');
+    const url = await getSignedUrl(filePath, 3600); // 1 hour
+    res.json({ url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
