@@ -5,6 +5,7 @@ const { matchOrders } = require('../services/matching');
 const { authenticate }            = require('../middleware/auth');
 const { requireKYC }              = require('../middleware/roles');
 const { v4: uuidv4 }              = require('uuid');
+const { sendMessage }             = require('../utils/messenger');
 
 // POST /api/trading/order — place an order
 router.post('/order', authenticate, requireKYC, async (req, res) => {
@@ -46,6 +47,34 @@ router.post('/order', authenticate, requireKYC, async (req, res) => {
 
     // Run matching engine
     await matchOrders(tokens[0].id, db);
+
+    // Notify buyer and seller
+    try {
+      const [tradeRows] = await db.execute(
+        'SELECT t.*, o1.user_id as buyer_id, o2.user_id as seller_id FROM trades t JOIN orders o1 ON o1.id = t.buy_order_id JOIN orders o2 ON o2.id = t.sell_order_id WHERE t.id = (SELECT MAX(id) FROM trades WHERE token_id = ?)',
+        [tokens[0].id]
+      );
+      if (tradeRows.length > 0) {
+        const trade = tradeRows[0];
+        const sym = tokenSymbol.toUpperCase();
+        if (trade.buyer_id) {
+          await sendMessage({
+            recipientId: trade.buyer_id,
+            subject:     `🟢 Buy Order Executed — ${sym}`,
+            body:        `Your buy order for ${trade.quantity} ${sym} tokens at $${parseFloat(trade.price).toFixed(4)} per token has been executed. Total: $${parseFloat(trade.total_usdc).toFixed(2)} USD.`,
+            type:        'SYSTEM', category: 'TRADING',
+          }).catch(() => {});
+        }
+        if (trade.seller_id) {
+          await sendMessage({
+            recipientId: trade.seller_id,
+            subject:     `🔴 Sell Order Executed — ${sym}`,
+            body:        `Your sell order for ${trade.quantity} ${sym} tokens at $${parseFloat(trade.price).toFixed(4)} per token has been executed. Total: $${parseFloat(trade.total_usdc).toFixed(2)} USD.`,
+            type:        'SYSTEM', category: 'TRADING',
+          }).catch(() => {});
+        }
+      }
+    } catch {}
 
     res.json({
       success:    true,

@@ -8,6 +8,7 @@ const { calculateValuation }      = require('../services/valuation');
 const { v4: uuidv4 }              = require('uuid');
 const upload = require('../middleware/upload');
 const { uploadToSupabase } = require('../middleware/upload');
+const { sendMessage } = require('../utils/messenger');
 
 // ── DATA SCHEMAS BY ASSET TYPE ────────────────────────────────
 
@@ -124,6 +125,14 @@ router.post('/submit', authenticate, requireKYC, upload.array('documents', 10), 
           meetingDay,
         }).catch(err => console.error('Email failed:', err.message));
       }
+      await sendMessage({
+        recipientId: req.user.userId,
+        subject:     `Application Received — ${tokenSymbol.toUpperCase()}`,
+        body:        `Your tokenisation application for ${token.name || token.token_name || tokenSymbol.toUpperCase()} has been received and will be reviewed at the next Applications Appraisal Meeting (every ${meetingDay}). Reference: ${submissionId}`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+        referenceId: submissionId,
+      });
     } catch (emailErr) {
       console.error('Application received email failed:', emailErr.message);
     }

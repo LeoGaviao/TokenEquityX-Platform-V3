@@ -6,6 +6,7 @@ const db      = require('../db/pool');
 const mailer  = require('../utils/mailer');
 const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roles');
+const { sendMessage }  = require('../utils/messenger');
 
 // ── GET /api/settings — get all platform settings
 router.get('/', authenticate, requireRole('ADMIN'), async (req, res) => {
@@ -98,6 +99,15 @@ router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), asy
       }).catch(err => console.error('Email failed:', err.message));
     }
 
+    await sendMessage({
+      recipientId: sub.issuer_wallet,
+      subject:     `✅ Application Approved — Fee Invoice`,
+      body:        `Your application for ${sub.entity_name || sub.token_symbol} has been approved. Please deposit the application fee of $${totalFee.toFixed(2)} USD to your platform wallet. Compliance fee: $${complianceFee.toFixed(2)}, Auditor fee: $${auditorFee.toFixed(2)}. Reference: ${sub.reference_number || sub.id}`,
+      type:        'SYSTEM',
+      category:    'APPLICATION',
+      referenceId: String(req.params.id),
+    }).catch(() => {});
+
     res.json({
       success: true,
       message: 'Application approved. Fee invoice sent to issuer.',
@@ -149,6 +159,15 @@ router.post('/applications/:id/reject', authenticate, requireRole('ADMIN'), asyn
         reason,
       }).catch(err => console.error('Email failed:', err.message));
     }
+
+    await sendMessage({
+      recipientId: sub.issuer_wallet,
+      subject:     `❌ Application Not Approved`,
+      body:        `Your application for ${sub.entity_name || sub.token_symbol} was not approved at this time. Reason: ${reason}. You may resubmit after addressing the concerns raised.`,
+      type:        'SYSTEM',
+      category:    'APPLICATION',
+      referenceId: String(req.params.id),
+    }).catch(() => {});
 
     res.json({ success: true, message: 'Application rejected. Issuer notified by email.' });
   } catch (err) {
@@ -206,6 +225,15 @@ router.post('/applications/:id/confirm-fee', authenticate, requireRole('ADMIN'),
         estimatedDays:   estimated_days || 10,
       }).catch(err => console.error('Email failed:', err.message));
     }
+
+    await sendMessage({
+      recipientId: sub.issuer_wallet,
+      subject:     `🔍 Audit Commencing — ${sub.token_symbol}`,
+      body:        `Your application fee has been received and confirmed. ${auditor_name || auditor_email} has been assigned as your auditor. The review is expected to take approximately ${estimated_days || 10} business days.`,
+      type:        'SYSTEM',
+      category:    'APPLICATION',
+      referenceId: String(req.params.id),
+    }).catch(() => {});
 
     res.json({ success: true, message: 'Fee confirmed. Auditor assigned. Issuer notified.' });
   } catch (err) {

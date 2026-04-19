@@ -16,6 +16,7 @@ const db     = require('../db/pool');
 const logger = require('../utils/logger');
 const { authenticate }            = require('../middleware/auth');
 const { requireRole, requireKYC } = require('../middleware/roles');
+const { sendMessage }             = require('../utils/messenger');
 
 const WHT_RESIDENT     = 0.10; // 10% — Zimbabwe residents
 const WHT_NON_RESIDENT = 0.15; // 15% — non-residents
@@ -118,6 +119,24 @@ router.post('/create',
 
       await conn.commit();
       logger.info('Dividend round created', { roundId: result.insertId, tokenSymbol });
+
+      // Notify all token holders
+      try {
+        const [holders] = await db.execute(
+          'SELECT DISTINCT user_id FROM token_holdings WHERE token_id = ? AND balance > 0',
+          [token.id]
+        );
+        for (const holder of holders) {
+          await sendMessage({
+            recipientId: holder.user_id,
+            subject:     `💰 Dividend Declared — ${tokenSymbol.toUpperCase()}`,
+            body:        `A dividend of $${parseFloat(amountPerToken).toFixed(6)} per token has been declared for ${tokenSymbol.toUpperCase()}. Log in to your dashboard to claim your dividend before the deadline.`,
+            type:        'SYSTEM',
+            category:    'DIVIDEND',
+          }).catch(() => {});
+        }
+      } catch {}
+
       res.json({
         success: true,
         roundId: result.insertId,
@@ -332,6 +351,14 @@ router.post('/claim', authenticate, requireKYC, async (req, res) => {
     `, [netAmount, withholding, roundId]);
 
     await conn.commit();
+
+    await sendMessage({
+      recipientId: req.user.userId,
+      subject:     `✅ Dividend Claimed — $${netAmount.toFixed(2)} USD`,
+      body:        `Your dividend claim has been processed. Gross amount: $${grossAmount.toFixed(2)}, Withholding tax (${(whtRate*100).toFixed(0)}%): $${withholding.toFixed(2)}, Net credited to wallet: $${netAmount.toFixed(2)} USD.`,
+      type:        'SYSTEM',
+      category:    'DIVIDEND',
+    }).catch(() => {});
 
     logger.info('Dividend claimed', {
       userId: req.user.userId, roundId,

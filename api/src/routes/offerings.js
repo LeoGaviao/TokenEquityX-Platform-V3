@@ -9,6 +9,7 @@ const router = require('express').Router();
 const db     = require('../db/pool');
 const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roles');
+const { sendMessage }  = require('../utils/messenger');
 
 const ISSUANCE_FEE_RATE = 0.02; // 2%
 
@@ -389,6 +390,17 @@ router.post('/:id/subscribe',
       ]);
 
       await conn.commit();
+
+      // Notify issuer of new subscription
+      await sendMessage({
+        recipientId: offering.issuer_id,
+        subject:     `📈 New Subscription — ${offering.token_symbol || 'Your Offering'}`,
+        body:        `A new subscription of $${parseFloat(subscribeAmount).toFixed(2)} USD has been received for your offering. Total raised so far: $${(parseFloat(offering.total_raised_usd) + subscribeAmount).toFixed(2)} USD.`,
+        type:        'SYSTEM',
+        category:    'OFFERING',
+        referenceId: String(req.params.id),
+      }).catch(() => {});
+
       res.json({
         success: true,
         subscription_id: subResult.insertId,
@@ -531,6 +543,16 @@ router.post('/:id/close',
       );
 
       await conn.commit();
+
+      await sendMessage({
+        recipientId: offering.issuer_id,
+        subject:     `🎉 Offering Closed — Funds Disbursed`,
+        body:        `Your primary offering has closed successfully. Total raised: $${totalRaised.toFixed(2)} USD. Net proceeds after fees: $${netProceeds.toFixed(2)} USD. Your tokens are now live for secondary market trading.`,
+        type:        'SYSTEM',
+        category:    'OFFERING',
+        referenceId: String(req.params.id),
+      }).catch(() => {});
+
       res.json({
         success: true,
         summary: {
@@ -633,5 +655,27 @@ router.get('/:id/subscriptions',
     }
   }
 );
+
+router.post('/:id/send-progress', authenticate, requireRole('ADMIN', 'ISSUER'), async (req, res) => {
+  try {
+    const [offerings] = await db.execute('SELECT * FROM primary_offerings WHERE id = ?', [req.params.id]);
+    if (offerings.length === 0) return res.status(404).json({ error: 'Offering not found' });
+    const offering = offerings[0];
+    const pct = offering.target_raise_usd > 0
+      ? ((parseFloat(offering.total_raised_usd) / parseFloat(offering.target_raise_usd)) * 100).toFixed(1)
+      : 0;
+    await sendMessage({
+      recipientId: offering.issuer_id,
+      subject:     `📊 Offering Progress Update`,
+      body:        `Your offering has raised $${parseFloat(offering.total_raised_usd).toFixed(2)} USD of the $${parseFloat(offering.target_raise_usd).toFixed(2)} USD target (${pct}%). ${offering.tokens_subscribed} tokens subscribed so far.`,
+      type:        'SYSTEM',
+      category:    'OFFERING',
+      referenceId: String(req.params.id),
+    });
+    res.json({ success: true, message: 'Progress update sent to issuer.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;

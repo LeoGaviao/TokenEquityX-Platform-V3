@@ -9,6 +9,7 @@ const { authenticate } = require('../../middleware/auth');
 const { requireRole }  = require('../../middleware/roles');
 const { v4: uuidv4 }   = require('uuid');
 const mailer           = require('../../utils/mailer');
+const { sendMessage }  = require('../../utils/messenger');
 
 // ════════════════════════════════════════════════════════
 // INVESTOR — BALANCE
@@ -314,6 +315,15 @@ router.put('/deposit/:id/confirm',
         reference:     dep.reference,
       }).catch(() => {});
 
+      await sendMessage({
+        recipientId: dep.user_id,
+        subject:     `✅ Deposit Confirmed — $${parseFloat(dep.amount_usd).toFixed(2)} USD`,
+        body:        `Your deposit of $${parseFloat(dep.amount_usd).toFixed(2)} USD has been verified and credited to your wallet. Reference: ${dep.reference}. Your updated wallet balance is $${newBal.toFixed(2)} USD.`,
+        type:        'SYSTEM',
+        category:    'WALLET',
+        referenceId: String(req.params.id),
+      }).catch(() => {});
+
       res.json({
         success:    true,
         newBalance: newBal,
@@ -465,6 +475,15 @@ router.put('/withdraw/:id/complete',
         txReference:   tx_reference,
       }).catch(() => {});
 
+      await sendMessage({
+        recipientId: wr.user_id,
+        subject:     `✅ Withdrawal Completed — $${parseFloat(wr.amount_usd).toFixed(2)} USD`,
+        body:        `Your withdrawal of $${parseFloat(wr.amount_usd).toFixed(2)} USD has been processed and sent to your bank account at ${wr.bank_name || 'your bank'}. Bank reference: ${tx_reference || 'N/A'}.`,
+        type:        'SYSTEM',
+        category:    'WALLET',
+        referenceId: String(req.params.id),
+      }).catch(() => {});
+
       res.json({
         success: true,
         message: `✅ $${wr.amount_usd} withdrawal completed for ${wr.full_name}. Bank ref: ${tx_reference}. Investor notified by email.`,
@@ -515,6 +534,15 @@ router.put('/withdraw/:id/reject',
         investorName:  wr.full_name,
         amount:        wr.amount_usd,
         reason:        reason || 'Please contact support for details',
+      }).catch(() => {});
+
+      await sendMessage({
+        recipientId: wr.user_id,
+        subject:     `❌ Withdrawal Request Rejected`,
+        body:        `Your withdrawal request of $${parseFloat(wr.amount_usd).toFixed(2)} USD could not be processed. Reason: ${reason || 'Not specified'}. Your wallet balance has been restored.`,
+        type:        'SYSTEM',
+        category:    'WALLET',
+        referenceId: String(req.params.id),
       }).catch(() => {});
 
       res.json({ success: true, message: `Withdrawal rejected. Reserved funds released back to ${wr.full_name}'s available balance.` });

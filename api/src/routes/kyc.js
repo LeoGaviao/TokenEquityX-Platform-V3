@@ -5,6 +5,7 @@ const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roles');
 const upload           = require('../middleware/upload');
 const { v4: uuidv4 }   = require('uuid');
+const { sendMessage }  = require('../utils/messenger');
 
 // POST /api/kyc/submit — investor submits KYC
 router.post('/submit', authenticate, upload.array('documents', 5), async (req, res) => {
@@ -167,6 +168,15 @@ router.put('/approve/:kycId',
         ['APPROVED', records[0].user_id]
       );
 
+      await sendMessage({
+        recipientId: records[0].user_id,
+        subject:     `✅ KYC Approved`,
+        body:        `Your identity verification (KYC) has been approved. You now have full access to all platform features including investing and trading.`,
+        type:        'SYSTEM',
+        category:    'KYC',
+        referenceId: req.params.kycId,
+      }).catch(() => {});
+
       logger.info('KYC approved', {
         kycId:      req.params.kycId,
         reviewerId: req.user.userId
@@ -205,6 +215,14 @@ router.put('/reject/:kycId',
           'UPDATE users SET kyc_status = ? WHERE id = ?',
           ['REJECTED', records[0].user_id]
         );
+        await sendMessage({
+          recipientId: records[0].user_id,
+          subject:     `❌ KYC Not Approved`,
+          body:        `Your identity verification submission could not be approved at this time. Reason: ${reviewerNotes || 'Please resubmit with clearer documents'}. Please resubmit your KYC documents.`,
+          type:        'SYSTEM',
+          category:    'KYC',
+          referenceId: req.params.kycId,
+        }).catch(() => {});
       }
 
       res.json({ success: true, message: 'KYC rejected' });
