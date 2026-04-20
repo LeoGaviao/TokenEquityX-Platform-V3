@@ -208,7 +208,8 @@ export default function AssetDetailPage() {
   // live price via WS
   useEffect(() => {
     try {
-      const ws = new WebSocket('ws://localhost:3001');
+      const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+      const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
       ws.onmessage = (e) => {
         try {
