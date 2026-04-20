@@ -422,12 +422,12 @@ router.get('/history/:tokenSymbol', async (req, res) => {
   try {
     const [rows] = await db.execute(`
       SELECT v.*,
-             t.token_symbol, t.token_name, t.asset_type,
+             t.token_name, t.asset_type,
              s.legal_name as company_name
       FROM valuations v
-      JOIN tokens t ON t.id = v.token_id
-      JOIN spvs s   ON s.id = v.spv_id
-      WHERE t.token_symbol = ?
+      JOIN tokens t ON t.token_symbol = v.token_symbol
+      JOIN spvs s   ON s.id = t.spv_id
+      WHERE v.token_symbol = ?
       ORDER BY v.created_at DESC
       LIMIT 20
     `, [req.params.tokenSymbol.toUpperCase()]);
