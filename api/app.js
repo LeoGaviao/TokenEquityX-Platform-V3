@@ -79,6 +79,7 @@ app.use('/api/offerings', require('./src/routes/offerings'));
 app.use('/api/blog', require('./src/routes/blog'));
 app.use('/api/settings', require('./src/routes/settings'));
 app.use('/api/messages', require('./src/routes/messages'));
+app.use('/api/profile',  require('./src/routes/profile'));
 // ─── 404 HANDLER ──────────────────────────────────────────────────
 
 // Handle multer/upload errors cleanly
