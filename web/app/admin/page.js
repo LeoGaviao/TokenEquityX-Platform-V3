@@ -798,22 +798,11 @@ const PIPELINE_STAGES=[
 ];
 const REVENUE_COLORS=[NAVY,GOLD,GREEN,TEAL,'#7c3aed','#db2777','#ea580c'];
 
-const mockPipeline=[
-  {id:1,name:'Acme Mining Ltd',symbol:'ACME',asset_class:'Mining',stages:{spv:true,kyc:true,docs:true,auditor:true,contract:true,secz:false,live:false},amount_target:2000000,amount_raised:0,submitted:'2026-03-10',analyst:'R. Moyo',contacts:[{name:'James Ncube',role:'CEO',email:'jncube@acmemining.co.zw',phone:'+263 77 234 5678'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'KYC Package — Directors',status:'uploaded'},{name:'Prospectus Draft',status:'uploaded'},{name:'Audited Financials 2025',status:'uploaded'},{name:'SECZ Application Form',status:'pending'}],auditor:'J. Sibanda CPA',partner:'Stanbic Ref. Desk',notes:'Awaiting SECZ sandbox application. All technical requirements met.'},
-  {id:2,name:'Harare CBD REIT',symbol:'HCPR',asset_class:'Real Estate',stages:{spv:true,kyc:true,docs:true,auditor:false,contract:false,secz:false,live:false},amount_target:5000000,amount_raised:0,submitted:'2026-03-14',analyst:'T. Chikwanda',contacts:[{name:'Rudo Mhuriro',role:'Portfolio Manager',email:'rmhuriro@hararereit.co.zw',phone:'+263 71 345 6789'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'KYC Package — Directors',status:'uploaded'},{name:'Prospectus Draft',status:'uploaded'},{name:'Property Valuation Reports',status:'uploaded'},{name:'Audited Financials 2025',status:'pending'}],auditor:'Pending assignment',partner:'None',notes:'Auditor review pending — waiting for Q4 2025 audited financials from KPMG.'},
-  {id:3,name:'Great Dyke Minerals',symbol:'GDMR',asset_class:'Mining',stages:{spv:true,kyc:true,docs:false,auditor:false,contract:false,secz:false,live:false},amount_target:3000000,amount_raised:0,submitted:'2026-03-18',analyst:'R. Moyo',contacts:[{name:'Tinashe Gumbo',role:'Technical Director',email:'tgumbo@greatdyke.co.zw',phone:'+263 77 456 7890'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'KYC Package — Directors',status:'uploaded'},{name:'JORC Resource Report',status:'pending'},{name:'Prospectus Draft',status:'pending'},{name:'Feasibility Study',status:'pending'}],auditor:'Pending assignment',partner:'None',notes:'Issuer has not uploaded JORC report or prospectus. Follow up required.'},
-  {id:4,name:'ZimInfra Bond 2027',symbol:'ZWIB',asset_class:'Bond',stages:{spv:true,kyc:true,docs:true,auditor:true,contract:true,secz:true,live:true},amount_target:1500000,amount_raised:1250000,submitted:'2026-02-28',analyst:'S. Dube',contacts:[{name:'Wellington Choto',role:'CFO',email:'wchoto@ziminfra.co.zw',phone:'+263 71 234 5678'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'Bond Prospectus',status:'uploaded'},{name:'Government Guarantee Certificate',status:'uploaded'},{name:'SECZ Listing Certificate',status:'uploaded'},{name:'Audited Financials 2025',status:'uploaded'}],auditor:'J. Sibanda CPA',partner:'Stanbic Ref. Desk',notes:'Fully live. First quarterly coupon payment due April 2026.'},
-  {id:5,name:'SunPower Energy SPV',symbol:'SPVR',asset_class:'Infrastructure',stages:{spv:true,kyc:false,docs:false,auditor:false,contract:false,secz:false,live:false},amount_target:4000000,amount_raised:0,submitted:'2026-03-20',analyst:'Pending',contacts:[{name:'Admire Chisvo',role:'CEO',email:'achisvo@sunpower.co.zw',phone:'+263 77 567 8901'}],docs:[{name:'SPV Registration Certificate',status:'uploaded'},{name:'KYC Package — Directors',status:'pending'},{name:'EIA Certificate',status:'pending'},{name:'Prospectus Draft',status:'pending'}],auditor:'Pending assignment',partner:'None',notes:'KYC submitted but incomplete — missing certified copies of director IDs.'},
-];
+const mockPipeline = [];
 
-const mockVolChart=Array.from({length:14},(_,i)=>({day:`${i+1} Mar`,volume:Math.floor(50000+Math.random()*200000),fees:Math.floor(250+Math.random()*1000)}));
-const mockRevBreakdown=[{name:'Trading Fees',value:15200},{name:'Platform Fees',value:50000},{name:'Issuance Fees',value:25000},{name:'Valuation Svcs',value:20000},{name:'KYC Fees',value:25000}];
-const mockAlerts=[
-  {id:1,type:'warning',msg:'HCPR auditor review pending for 4 days',time:'10:42 AM'},
-  {id:2,type:'info',msg:'ACME — SECZ approval document submitted',time:'09:17 AM'},
-  {id:3,type:'error',msg:'Oracle price for GDMR has not updated in 72 hours',time:'Yesterday'},
-  {id:4,type:'success',msg:'ZimInfra Bond fully deployed',time:'Yesterday'},
-];
+const mockVolChart = [];
+const mockRevBreakdown = [];
+const mockAlerts = [];
 const ALERT_STYLES={warning:'bg-amber-900/40 border-amber-700 text-amber-300',error:'bg-red-900/40 border-red-700 text-red-300',success:'bg-green-900/40 border-green-700 text-green-300',info:'bg-blue-900/40 border-blue-700 text-blue-300'};
 const ALERT_ICONS={warning:'⚠️',error:'🚨',success:'✅',info:'ℹ️'};
 
@@ -826,15 +815,11 @@ export default function AdminDashboard() {
   const [userModalRole,setUserModalRole]=useState('');
   const [userModalLoading,setUserModalLoading]=useState(false);
   const [trades,setTrades]=useState([]);
-  const [pipeline,setPipeline]=useState(mockPipeline);
+  const [pipeline,setPipeline]=useState([]);
   const [selPipeline,setSelPipeline]=useState(null);
   const [assignModal,setAssignModal]=useState(null);
   const [assignNote,setAssignNote]=useState('');
-  const [kycItems,setKycItems]=useState([
-    {id:1,name:'Tendai Moyo',wallet:'0x3f7a…c4d2',type:'Accredited Investor',submitted:'2026-03-26',docs:'3/3',risk:'LOW'},
-    {id:2,name:'Rudo Investments Ltd',wallet:'0x8b2c…a1f9',type:'Institutional',submitted:'2026-03-25',docs:'4/5',risk:'MEDIUM'},
-    {id:3,name:'Chikwanda Family Off.',wallet:'0x1d9e…7b3c',type:'Family Office',submitted:'2026-03-24',docs:'5/5',risk:'LOW'},
-  ]);
+  const [kycItems,setKycItems]=useState([]);
   const [flaggedTxns,setFlaggedTxns]=useState([
     {id:1,title:'Unusual volume pattern — ACME',desc:'Wallet 0x7f4a…b2c1 placed 14 orders in 3 minutes, total USD 48,000. Possible wash trading.',time:'Today 08:47 AM',system:'MarketController'},
   ]);
@@ -965,14 +950,31 @@ export default function AdminDashboard() {
 
   const loadAll = async () => {
     try {
-      const[tokRes,tradeRes,usersRes,subRes]=await Promise.allSettled([
+      const token = localStorage.getItem('token');
+      const[tokRes,tradeRes,usersRes,subRes,txRes]=await Promise.allSettled([
         api.get('/assets'), api.get('/trading/recent?limit=20'),
         api.get('/admin/users'), api.get('/submissions/pending'),
+        fetch(`${API}/wallet/admin/transactions?limit=100`,{headers:{Authorization:`Bearer ${token}`}}),
       ]);
       if(tokRes.status==='fulfilled')setTokens(tokRes.value.data||[]);
       if(tradeRes.status==='fulfilled')setTrades(tradeRes.value.data||[]);
       if(usersRes.status==='fulfilled')setUsers(usersRes.value.data||[]);
-      const token = localStorage.getItem('token');
+      if(txRes.status==='fulfilled'){
+        try{
+          const txData=await txRes.value.json();
+          if(Array.isArray(txData)&&txData.length>0){
+            const byDay={};
+            txData.forEach(tx=>{
+              const day=new Date(tx.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+              if(!byDay[day])byDay[day]={day,volume:0,fees:0};
+              byDay[day].volume+=parseFloat(tx.amount_usd||0);
+              byDay[day].fees+=parseFloat(tx.fee_usd||0);
+            });
+            const chartData=Object.values(byDay).slice(-14);
+            if(chartData.length>0)mockVolChart.splice(0,mockVolChart.length,...chartData);
+          }
+        }catch{}
+      }
       fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001/api'}/wallet/admin/deposits`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setDeposits(d);}).catch(()=>{});
       fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001/api'}/wallet/admin/withdrawals`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setWithdrawals(d);}).catch(()=>{});
       if(subRes.status==='fulfilled' && subRes.value.data?.length){
@@ -999,7 +1001,7 @@ export default function AdminDashboard() {
           notes:`Financial data submission. Period: ${s.period}. Status: ${s.status}.`,
           isNewApplication:true,
         }));
-        setPipeline([...tokenisationApps,...financialSubs,...mockPipeline]);
+        setPipeline([...tokenisationApps,...financialSubs]);
       }
     } catch(e){console.error(e);}
     finally{setLoading(false);}
@@ -1115,7 +1117,7 @@ export default function AdminDashboard() {
   const liveListings=pipeline.filter(p=>p.stages.live).length;
   const pendingApprovals=pipeline.filter(p=>!p.stages.live).length;
   const totalAUM=pipeline.filter(p=>p.stages.live).reduce((a,p)=>a+p.amount_raised,0);
-  const totalFeesMTD=mockRevBreakdown.reduce((a,r)=>a+r.value,0);
+  const totalFeesMTD=mockRevBreakdown.length>0?mockRevBreakdown.reduce((a,r)=>a+r.value,0):0;
   const totalUsers=users.length||9;
   const pendingKYC=kycItems.length;
   const pendingDeposits=deposits.filter(d=>d.status==='PENDING').length;
@@ -1224,6 +1226,9 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <h3 className="font-semibold mb-4">Volume & Fees — Last 14 Days</h3>
+                {mockVolChart.length===0?(
+                  <div className="flex items-center justify-center h-40 text-gray-600 text-xs">No trading volume data yet.</div>
+                ):(
                 <ResponsiveContainer width="100%" height={240}>
                   <AreaChart data={mockVolChart}>
                     <defs>
@@ -1238,21 +1243,28 @@ export default function AdminDashboard() {
                     <Area type="monotone" dataKey="fees" stroke={GOLD} fill="url(#feeG)" strokeWidth={2} name="Fees"/>
                   </AreaChart>
                 </ResponsiveContainer>
+                )}
               </div>
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <h3 className="font-semibold mb-4">Revenue Mix MTD</h3>
+                {mockRevBreakdown.length===0?(
+                  <div className="flex items-center justify-center h-32 text-gray-600 text-xs">No revenue data yet.</div>
+                ):(
+                <>
                 <ResponsiveContainer width="100%" height={180}>
                   <PieChart><Pie data={mockRevBreakdown} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>{mockRevBreakdown.map((_,i)=><Cell key={i} fill={REVENUE_COLORS[i]}/>)}</Pie><Tooltip contentStyle={{background:'#111827',border:'1px solid #374151',borderRadius:8}} formatter={v=>[`$${v.toLocaleString()}`,'Revenue']}/></PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-1.5 mt-2">{mockRevBreakdown.map((r,i)=><div key={i} className="flex items-center justify-between text-xs"><div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm" style={{background:REVENUE_COLORS[i]}}/><span className="text-gray-400">{r.name}</span></div><span className="text-white font-medium">${r.value.toLocaleString()}</span></div>)}</div>
+                </>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               <div className="xl:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <div className="flex items-center justify-between mb-4"><h3 className="font-semibold">Live Listings</h3><button onClick={()=>setTab('pipeline')} className="text-xs text-blue-400 hover:text-blue-300">Pipeline →</button></div>
                 <table className="w-full text-sm"><thead><tr className="text-gray-500 text-xs border-b border-gray-800">{['Token','Class','Price','24h Vol','Raised'].map(h=><th key={h} className="text-left pb-2 font-medium pr-4">{h}</th>)}</tr></thead>
-                <tbody>{(tokens.length?tokens:mockPipeline.filter(p=>p.stages.live)).map((t,i)=>(
-                  <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer" onClick={()=>{setSelPipeline(mockPipeline.find(p=>p.symbol===(t.symbol||'ZWIB')));setTab('pipeline');}}>
+                <tbody>{tokens.map((t,i)=>(
+                  <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer" onClick={()=>setTab('pipeline')}>
                     <td className="py-3 pr-4"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold" style={{background:NAVY}}>{(t.symbol||'Z')[0]}</div><div><p className="font-medium">{t.symbol||'ZWIB'}</p><p className="text-gray-500 text-xs">{t.company_name||t.name}</p></div></div></td>
                     <td className="py-3 pr-4"><span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full">{t.asset_class||t.asset_type||'Bond'}</span></td>
                     <td className="py-3 pr-4 font-mono">${parseFloat(t.oracle_price||t.current_price_usd||1).toFixed(4)}</td>
@@ -1262,7 +1274,18 @@ export default function AdminDashboard() {
               </div>
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <h3 className="font-semibold mb-4">System Alerts</h3>
-                <div className="space-y-2">{mockAlerts.map(a=><div key={a.id} className={`rounded-lg p-3 border text-xs ${ALERT_STYLES[a.type]}`}><div className="flex items-start gap-2"><span>{ALERT_ICONS[a.type]}</span><div><p>{a.msg}</p><p className="opacity-60 mt-0.5">{a.time}</p></div></div></div>)}</div>
+                <div className="space-y-2">
+                  {mockAlerts.length===0?(
+                    <p className="text-gray-600 text-xs text-center py-4">No alerts at this time.</p>
+                  ):mockAlerts.map(a=>(
+                    <div key={a.id} className={`rounded-lg p-3 border text-xs ${ALERT_STYLES[a.type]}`}>
+                      <div className="flex items-start gap-2">
+                        <span>{ALERT_ICONS[a.type]}</span>
+                        <div><p>{a.msg}</p><p className="opacity-60 mt-0.5">{a.time}</p></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1502,7 +1525,11 @@ export default function AdminDashboard() {
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="font-semibold mb-4">Daily Volume</h3>
+              {mockVolChart.length===0?(
+                <div className="flex items-center justify-center h-40 text-gray-600 text-xs">No trading volume data yet.</div>
+              ):(
               <ResponsiveContainer width="100%" height={220}><BarChart data={mockVolChart}><CartesianGrid strokeDasharray="3 3" stroke="#1f2937"/><XAxis dataKey="day" tick={{fill:'#6b7280',fontSize:10}} tickLine={false}/><YAxis tick={{fill:'#6b7280',fontSize:10}} tickLine={false} tickFormatter={v=>`$${(v/1000).toFixed(0)}K`}/><Tooltip contentStyle={{background:'#111827',border:'1px solid #374151',borderRadius:8}} formatter={v=>[`$${v.toLocaleString()}`,'Volume']}/><Bar dataKey="volume" fill={NAVY} radius={[4,4,0,0]}/></BarChart></ResponsiveContainer>
+              )}
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="font-semibold mb-4">Recent Trades</h3>

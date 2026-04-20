@@ -617,12 +617,6 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
 }
 
 
-const mockCompleted = [
-  { issuer:'ZimInfra Bond', symbol:'ZWIB', period:'Q4 2025', reviewed:'15 Jan 2026', outcome:'APPROVED', oracle_set:'$1.0050', notes:'All data verified. Bond pricing model within 0.5% of submission.' },
-  { issuer:'Harare CBD REIT', symbol:'HCPR', period:'Q4 2025', reviewed:'10 Jan 2026', outcome:'APPROVED', oracle_set:'$1.0020', notes:'Minor correction to cap rate applied. Resubmission not required.' },
-  { issuer:'Great Dyke Minerals', symbol:'GDMR', period:'Q3 2025', reviewed:'05 Oct 2025', outcome:'REJECTED', oracle_set:'—', notes:'Resource estimate methodology not JORC-compliant. Resubmission required.' },
-];
-
 export default function AuditorDashboard() {
   const { account, user, ready } = useWallet();
   const router = useRouter();
