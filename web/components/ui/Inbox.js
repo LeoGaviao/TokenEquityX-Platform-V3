@@ -34,6 +34,10 @@ export default function Inbox({ token }) {
   const [selected, setSelected] = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [tab,      setTab]      = useState('inbox');
+  const [composing,   setComposing]   = useState(false);
+  const [composeForm, setComposeForm] = useState({ recipientEmail: '', subject: '', body: '' });
+  const [sending,     setSending]     = useState(false);
+  const [composeMsg,  setComposeMsg]  = useState('');
   const panelRef = useRef(null);
 
   const headers = { Authorization: `Bearer ${token}` };
@@ -99,6 +103,48 @@ export default function Inbox({ token }) {
     } catch {}
   }
 
+  async function sendComposedMessage() {
+    if (!composeForm.recipientEmail || !composeForm.subject || !composeForm.body) {
+      setComposeMsg('Please fill in all fields.');
+      return;
+    }
+    setSending(true);
+    setComposeMsg('');
+    try {
+      // Look up recipient by email
+      const lookupRes = await fetch(`${API}/auth/staff-list`, { headers });
+      const staff = await lookupRes.json();
+      const recipient = Array.isArray(staff)
+        ? staff.find(u => u.email?.toLowerCase() === composeForm.recipientEmail.toLowerCase())
+        : null;
+      if (!recipient) {
+        setComposeMsg('❌ Recipient not found. Please check the email address.');
+        setSending(false);
+        return;
+      }
+      const res = await fetch(`${API}/messages`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipientId: recipient.id,
+          subject:     composeForm.subject,
+          body:        composeForm.body,
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setComposeMsg('✅ Message sent successfully.');
+        setComposeForm({ recipientEmail: '', subject: '', body: '' });
+        setTimeout(() => { setComposing(false); setComposeMsg(''); setTab('sent'); fetchMessages(); }, 1500);
+      } else {
+        setComposeMsg('❌ ' + (data.error || 'Failed to send message.'));
+      }
+    } catch (err) {
+      setComposeMsg('❌ Network error. Please try again.');
+    }
+    setSending(false);
+  }
+
   async function markAllRead() {
     try {
       await fetch(`${API}/messages/read-all`, { method: 'PUT', headers });
@@ -135,8 +181,14 @@ export default function Inbox({ token }) {
               {unread > 0 && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{unread} unread</span>}
             </div>
             <div className="flex items-center gap-2">
-              {unread > 0 && tab === 'inbox' && (
+              {!composing && unread > 0 && tab === 'inbox' && (
                 <button onClick={markAllRead} className="text-xs text-blue-400 hover:text-blue-300">Mark all read</button>
+              )}
+              {!composing && (
+                <button onClick={() => { setComposing(true); setSelected(null); setComposeMsg(''); }}
+                  className="text-xs bg-blue-700 hover:bg-blue-600 text-white px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1">
+                  ✏️ Compose
+                </button>
               )}
               <button onClick={() => setOpen(false)} className="text-gray-500 hover:text-white">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -156,7 +208,45 @@ export default function Inbox({ token }) {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {selected ? (
+            {composing ? (
+              <div className="p-4 space-y-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-white text-sm">New Message</h3>
+                  <button onClick={() => { setComposing(false); setComposeMsg(''); }}
+                    className="text-xs text-gray-500 hover:text-white">Cancel</button>
+                </div>
+                {composeMsg && (
+                  <div className={`text-xs px-3 py-2 rounded-lg ${composeMsg.startsWith('✅') ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-300'}`}>
+                    {composeMsg}
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">To (email address) *</label>
+                  <input type="email" value={composeForm.recipientEmail}
+                    onChange={e => setComposeForm(f => ({...f, recipientEmail: e.target.value}))}
+                    placeholder="user@tokenequityx.co.zw"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Subject *</label>
+                  <input type="text" value={composeForm.subject}
+                    onChange={e => setComposeForm(f => ({...f, subject: e.target.value}))}
+                    placeholder="Message subject"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Message *</label>
+                  <textarea rows={6} value={composeForm.body}
+                    onChange={e => setComposeForm(f => ({...f, body: e.target.value}))}
+                    placeholder="Write your message here..."
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 resize-none"/>
+                </div>
+                <button onClick={sendComposedMessage} disabled={sending}
+                  className="w-full py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 disabled:opacity-50 transition-colors">
+                  {sending ? 'Sending...' : '📤 Send Message'}
+                </button>
+              </div>
+            ) : selected ? (
               <div className="p-4">
                 <button onClick={() => setSelected(null)} className="text-xs text-blue-400 hover:text-blue-300 mb-3 flex items-center gap-1">
                   ← Back to inbox
