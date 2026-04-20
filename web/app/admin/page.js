@@ -1154,6 +1154,7 @@ export default function AdminDashboard() {
           <p className="text-gray-400 text-sm font-mono">{now.toLocaleTimeString('en-GB')}</p>
           <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.id||'Admin'}</span>
           <Inbox token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} />
+          <button onClick={()=>window.location.href='/profile'} className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1 rounded-lg">Profile</button>
           <button onClick={()=>{localStorage.clear();window.location.href='/';}} className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1 rounded-lg">Disconnect</button>
         </div>
       </div>
