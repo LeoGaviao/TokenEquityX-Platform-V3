@@ -417,8 +417,10 @@ router.put('/:id/admin-approve',
       if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
 
       const sub            = rows[0];
-      const auditReport    = sub.audit_report ? JSON.parse(sub.audit_report) : {};
-      const certifiedPrice = auditReport.certifiedPrice || 1.0;
+      const auditReport    = sub.audit_report
+        ? (typeof sub.audit_report === 'string' ? JSON.parse(sub.audit_report) : sub.audit_report)
+        : {};
+      const certifiedPrice = parseFloat(auditReport.certifiedPrice || 1.0);
       const symbol         = tokenSymbol || sub.token_symbol;
       const trading_mode   = listingType === 'GREENFIELD_P2P' ? 'P2P_ONLY' : 'FULL_TRADING';
       const total_supply   = sub.total_supply || 1000000;
