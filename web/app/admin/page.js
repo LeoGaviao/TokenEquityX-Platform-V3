@@ -982,7 +982,7 @@ export default function AdminDashboard() {
           id:s.id,name:s.entity_name||(s.token_symbol+' — Application'),symbol:s.token_symbol,asset_class:'Pending Classification',
           stages:{spv:false,kyc:false,docs:(s.document_count||0)>0,auditor:!!s.assigned_auditor,contract:false,secz:s.status==='ADMIN_APPROVED',live:false},
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:'Pending assignment',
-          reference:s.reference_number,status:s.status,assigned_auditor:s.assigned_auditor||null,
+          reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,
           audit_report:s.audit_report?(typeof s.audit_report==='string'?JSON.parse(s.audit_report):s.audit_report):null,
           contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
           docs:(() => { try { const d = typeof s.data_json === 'string' ? JSON.parse(s.data_json) : (s.data_json||{}); return (d.documents||[]).map(doc=>({name:doc.name||'Document',url:doc.url||null,size:doc.size||0,status:'uploaded'})); } catch { return Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})); }})(),
@@ -991,10 +991,10 @@ export default function AdminDashboard() {
           isNewApplication:true,
         }));
         const financialSubs = subRes.value.data.filter(s=>s.submission_type!=='TOKENISATION_APPLICATION'&&s.period!=='TOKENISATION_APPLICATION').map(s=>({
-          id:s.id,name:`${s.token_symbol} — ${s.period} Financial Submission`,symbol:s.token_symbol,asset_class:'Financial Data',
+          id:s.id,name:`${s.token_symbol} — ${s.entity_name||s.token_symbol}`,symbol:s.token_symbol,asset_class:'Financial Data',
           stages:{spv:true,kyc:true,docs:true,auditor:!!s.assigned_auditor,contract:false,secz:false,live:false},
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:s.assigned_auditor||'Pending assignment',
-          reference:s.reference_number,status:s.status,assigned_auditor:s.assigned_auditor||null,
+          reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,
           contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
           docs:(() => { try { const d = typeof s.data_json === 'string' ? JSON.parse(s.data_json) : (s.data_json||{}); return (d.documents||[]).map(doc=>({name:doc.name||'Document',url:doc.url||null,size:doc.size||0,status:'uploaded'})); } catch { return Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})); }})(),
           auditor:s.assigned_auditor||'Pending assignment',partner:'None',

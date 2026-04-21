@@ -233,7 +233,8 @@ router.get('/pending',
                  ds.assigned_auditor, ds.audit_report,
                  ds.admin_notes, ds.entity_name,
                  ds.reference_number, ds.submission_type,
-                 ds.data_json
+                 ds.data_json, ds.application_status, ds.fee_status,
+                 ds.rejection_reason
           FROM data_submissions ds
           WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
           ORDER BY ds.created_at ASC
@@ -246,7 +247,7 @@ router.get('/pending',
                  ds.created_at, ds.auditor_notes, ds.updated_at as reviewed_at,
                  ds.issuer_wallet, ds.assigned_auditor,
                  ds.entity_name, ds.reference_number, ds.submission_type,
-                 ds.data_json
+                 ds.data_json, ds.application_status, ds.fee_status
           FROM data_submissions ds
           WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
           AND (ds.assigned_auditor = ? OR ds.assigned_auditor = ? OR ds.assigned_auditor LIKE ?)
