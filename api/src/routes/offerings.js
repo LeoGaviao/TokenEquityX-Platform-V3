@@ -102,9 +102,18 @@ router.post('/',
       if (tokens.length === 0) { await conn.rollback(); return res.status(404).json({ error: 'Token not found' }); }
       const token = tokens[0];
 
-      if (req.user.role !== 'ADMIN' && token.issuer_id !== req.user.userId) {
-        await conn.rollback();
-        return res.status(403).json({ error: 'You are not the issuer of this token' });
+      // Verify token belongs to this issuer via issuer_id OR via SPV ownership
+      if (req.user.role !== 'ADMIN') {
+        const [spvCheck] = await db.execute(
+          'SELECT s.owner_user_id FROM spvs s JOIN tokens t ON t.spv_id = s.id WHERE t.id = ?',
+          [token_id]
+        );
+        const isOwnerViaSpv = spvCheck.length > 0 && spvCheck[0].owner_user_id === req.user.userId;
+        const isOwnerViaIssuerId = token.issuer_id === req.user.userId;
+        if (!isOwnerViaSpv && !isOwnerViaIssuerId) {
+          await conn.rollback();
+          return res.status(403).json({ error: 'You are not the issuer of this token' });
+        }
       }
 
       // No duplicate open/pending offering
@@ -126,7 +135,7 @@ router.post('/',
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_APPROVAL')
       `, [
         token_id,
-        token.issuer_id || req.user.userId,
+        req.user.userId,
         offering_price_usd, target_raise_usd,
         min_subscription_usd || 100,
         max_subscription_usd || null,
