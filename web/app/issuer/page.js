@@ -748,6 +748,7 @@ function IssuerOfferingTab({ notify }) {
     min_subscription_usd:'100', max_subscription_usd:'',
     total_tokens_offered:'', subscription_deadline:'', offering_rationale:''
   });
+  const notify = (type, text) => alert(text);
   const API  = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
   const hdrs = () => ({ Authorization:`Bearer ${localStorage.getItem('token')}`, 'Content-Type':'application/json' });
   const fmt  = n => { const v=parseFloat(n||0); if(v>=1e6) return `$${(v/1e6).toFixed(2)}M`; if(v>=1e3) return `$${(v/1e3).toFixed(1)}K`; return `$${v.toFixed(2)}`; };
@@ -862,7 +863,7 @@ function IssuerOfferingTab({ notify }) {
             <label className="text-xs text-gray-400 block mb-1">Token *</label>
             <select value={form.token_id} onChange={e=>setForm(f=>({...f,token_id:e.target.value}))} className={inputCls}>
               <option value="">— Select your token —</option>
-              {tokens.map(t=><option key={t.id} value={t.id}>{t.symbol} — {t.name||t.company_name}</option>)}
+              {tokens.map(t=><option key={t.id} value={t.id}>{t.token_symbol||t.symbol} — {t.token_name||t.name||t.company_name}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
