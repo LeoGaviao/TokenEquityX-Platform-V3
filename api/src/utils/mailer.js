@@ -227,20 +227,34 @@ async function notifyIssuerApplicationReceived({ issuerEmail, issuerName, tokenS
 }
 
 // ── Application approved — fee invoice
-async function notifyIssuerApplicationApproved({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber, complianceFee, auditorFee, totalFee }) {
-  const subject = `✅ Application Approved — Please Deposit Application Fee`;
+async function notifyIssuerApplicationApproved({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber, complianceFee, auditorName, auditorEmail, paymentRef, bankName, bankAccountName, bankAccountNo, bankBranch, bankSwift }) {
+  const subject = `✅ Application Approved — ${entityName} (${tokenSymbol})`;
   const html = baseTemplate('Application Approved', `
     <p>Dear ${issuerName},</p>
     <p>We are pleased to inform you that your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}) has been approved at our Applications Appraisal Meeting.</p>
-    <p>To proceed to the audit and compliance review stage, please deposit the application fee to your TokenEquityX platform wallet.</p>
-    <div class="amount">$${parseFloat(totalFee).toFixed(2)} USD</div>
-    <div class="detail-row"><span>Compliance Review Fee</span><span>$${parseFloat(complianceFee).toFixed(2)} USD</span></div>
-    <div class="detail-row"><span>Auditor Fee</span><span>$${parseFloat(auditorFee).toFixed(2)} USD</span></div>
-    <div class="detail-row"><span>Total Due</span><span style="font-weight:bold">$${parseFloat(totalFee).toFixed(2)} USD</span></div>
-    <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber}</span></div>
-    <p style="margin-top:16px;"><strong>Payment Instructions:</strong> Log into your TokenEquityX dashboard, navigate to your wallet, and make a deposit of <strong>$${parseFloat(totalFee).toFixed(2)} USD</strong>. Use your reference number <strong>${referenceNumber}</strong> as the payment reference.</p>
-    <p>Once your deposit is confirmed by our team, an auditor will be assigned to your application and the review process will commence.</p>
-    <a href="${PLATFORM}/investor" class="btn btn-gold">Go to My Wallet →</a>
+    <div class="amount">$${parseFloat(complianceFee).toFixed(2)} USD</div>
+    <p style="text-align:center;color:#6b7280;font-size:13px;margin-top:0;">TokenEquityX Compliance Review Fee</p>
+
+    <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Bank Payment Details</h3>
+    <div class="detail-row"><span>Bank</span><span>${bankName}</span></div>
+    <div class="detail-row"><span>Account Name</span><span>${bankAccountName}</span></div>
+    <div class="detail-row"><span>Account Number</span><span style="font-family:monospace">${bankAccountNo}</span></div>
+    <div class="detail-row"><span>Branch</span><span>${bankBranch}</span></div>
+    <div class="detail-row"><span>SWIFT Code</span><span style="font-family:monospace">${bankSwift}</span></div>
+    <div class="detail-row"><span>Payment Reference</span><span style="font-family:monospace;font-weight:bold;color:#C8972B">${paymentRef}</span></div>
+    <p style="margin-top:12px;font-size:13px;color:#ef4444;"><strong>Important:</strong> Please use the payment reference exactly as shown above. Payments without the correct reference cannot be matched to your application.</p>
+
+    <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Nominated Auditor</h3>
+    <div class="detail-row"><span>Auditor</span><span>${auditorName}</span></div>
+    <div class="detail-row"><span>Email</span><span>${auditorEmail}</span></div>
+    <p style="margin-top:8px;font-size:13px;color:#6b7280;">Your nominated auditor has been notified of this assignment. Please contact them directly to agree the audit scope and fee. TokenEquityX does not set or regulate the auditor's independent fee.</p>
+
+    <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Next Steps</h3>
+    <p>1. Pay the compliance fee of <strong>$${parseFloat(complianceFee).toFixed(2)} USD</strong> using the bank details above with reference <strong>${paymentRef}</strong></p>
+    <p>2. Contact your auditor at <strong>${auditorEmail}</strong> to agree scope and fee</p>
+    <p>3. Once your compliance fee is confirmed, the formal review process commences</p>
+
+    <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Application →</a>
   `);
   return send(issuerEmail, subject, html);
 }

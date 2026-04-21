@@ -1038,13 +1038,13 @@ export default function AdminDashboard() {
       const res = await fetch(`${API}/settings/applications/${appFeeModal.id}/approve`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auditor_fee_usd: auditorFeeInput, notes: appFeeModal.notes || '' }),
+        body: JSON.stringify({ auditor_email: auditorEmailInput, auditor_name: auditorNameInput, notes: appFeeModal.notes || '' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      notify('success', `✅ Application approved. Fee invoice sent to issuer. Total: $${data.totalFee}`);
+      notify('success', `✅ Application approved. Compliance fee: $${data.complianceFee}. Ref: ${data.paymentRef}. Auditor notified: ${data.auditorEmail}`);
       setPipeline(p => p.map(i => i.id === appFeeModal.id ? { ...i, application_status: 'APPROVED', fee_status: 'PENDING_PAYMENT' } : i));
-      setAppFeeModal(null); setAuditorFeeInput('2500');
+      setAppFeeModal(null); setAuditorEmailInput(''); setAuditorNameInput('');
     } catch(e) { notify('error', e.message || 'Could not approve application'); }
   };
 
@@ -2010,6 +2010,12 @@ export default function AdminDashboard() {
                   { key: 'min_investment_usd',        label: 'Minimum Investment (USD)',     type: 'number', desc: 'Minimum investor subscription amount in USD.' },
                   { key: 'kyc_expiry_days',           label: 'KYC Expiry (days)',            type: 'number', desc: 'Number of days before KYC approval expires and must be renewed.' },
                   { key: 'max_offering_days',         label: 'Max Offering Duration (days)', type: 'number', desc: 'Maximum number of days a primary offering can remain open.' },
+                  { key: 'bank_name',           label: 'Bank Name',              type: 'text',   desc: 'Bank for compliance fee payments.' },
+                  { key: 'bank_account_name',   label: 'Account Name',           type: 'text',   desc: 'Account name for payments.' },
+                  { key: 'bank_account_number', label: 'Account Number',         type: 'text',   desc: 'Bank account number.' },
+                  { key: 'bank_branch',         label: 'Branch',                 type: 'text',   desc: 'Bank branch name.' },
+                  { key: 'bank_swift_code',     label: 'SWIFT Code',             type: 'text',   desc: 'SWIFT/BIC code for international payments.' },
+                  { key: 'bank_reference_prefix', label: 'Payment Ref Prefix',   type: 'text',   desc: 'Prefix for auto-generated payment references (e.g. TEXZ-APP).' },
                 ].map(({ key, label, type, desc }) => {
                   const current = settings[key]?.value ?? '';
                   return (
@@ -2127,24 +2133,31 @@ export default function AdminDashboard() {
             <h3 className="font-bold text-lg mb-1">Approve Application at Tuesday Meeting</h3>
             <p className="text-gray-400 text-sm mb-5">{appFeeModal.name} · {appFeeModal.symbol}</p>
             <div className="space-y-4">
+              <div className="bg-gray-800/60 rounded-lg px-3 py-2">
+                <p className="text-xs text-gray-400">Compliance fee to invoice issuer (fixed)</p>
+                <p className="text-xl font-bold text-yellow-400">$1,500.00 USD</p>
+              </div>
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Auditor Fee (USD) <span className="text-red-400">*</span></label>
-                <input type="number" value={auditorFeeInput} onChange={e=>setAuditorFeeInput(e.target.value)}
-                  placeholder="e.g. 2500"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"/>
+                <label className="text-xs text-gray-400 block mb-1">Nominated Auditor Email *</label>
+                <input type="email" value={auditorEmailInput}
+                  onChange={e => setAuditorEmailInput(e.target.value)}
+                  placeholder="auditor@tokenequityx.co.zw"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
               </div>
-              <div className="bg-gray-800/60 rounded-xl p-4 text-sm space-y-2">
-                <div className="flex justify-between"><span className="text-gray-400">Platform Compliance Fee</span><span className="text-white">$1,500</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Auditor Fee</span><span className="text-white">${parseFloat(auditorFeeInput||0).toLocaleString()}</span></div>
-                <div className="flex justify-between border-t border-gray-700 pt-2 font-bold"><span className="text-gray-300">Total Invoice</span><span className="text-yellow-400">${(1500+parseFloat(auditorFeeInput||0)).toLocaleString()}</span></div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Auditor Name</label>
+                <input type="text" value={auditorNameInput}
+                  onChange={e => setAuditorNameInput(e.target.value)}
+                  placeholder="e.g. John Moyo CPA"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
               </div>
-              <p className="text-xs text-gray-500">Issuer will receive a fee invoice by email. On payment confirmation, you assign the auditor.</p>
+              <p className="text-xs text-gray-500">The auditor will be notified and will contact the issuer directly to agree scope and fee. TokenEquityX only charges the compliance review fee.</p>
             </div>
             <div className="flex gap-3 mt-5">
-              <button onClick={()=>{setAppFeeModal(null);setAuditorFeeInput('2500');}} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
-              <button onClick={handleApproveApplication} disabled={!auditorFeeInput}
+              <button onClick={()=>{setAppFeeModal(null);setAuditorEmailInput('');setAuditorNameInput('');}} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
+              <button onClick={handleApproveApplication} disabled={!auditorEmailInput}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{background:GREEN}}>
-                ✅ Approve & Send Invoice
+                ✅ Approve & Notify Auditor
               </button>
             </div>
           </div>

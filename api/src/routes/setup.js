@@ -628,7 +628,13 @@ router.get('/migrate', async (req, res) => {
        ('auditor_fee_min_usd', '1500.00', 'Minimum auditor fee in USD'),
        ('auditor_fee_max_usd', '10000.00', 'Maximum auditor fee in USD'),
        ('applications_meeting_day', 'Tuesday', 'Day of the week when application review meetings are held'),
-       ('platform_name', 'TokenEquityX', 'Platform display name')
+       ('platform_name', 'TokenEquityX', 'Platform display name'),
+       ('bank_name', 'Stanbic Bank Zimbabwe', 'Bank name for compliance fee payments'),
+       ('bank_account_name', 'TokenEquityX Ltd', 'Account name for compliance fee payments'),
+       ('bank_account_number', 'TBC', 'Account number for compliance fee payments'),
+       ('bank_branch', 'Harare Main Branch', 'Bank branch for compliance fee payments'),
+       ('bank_swift_code', 'SBICZWHX', 'SWIFT code for diaspora payments'),
+       ('bank_reference_prefix', 'TEXZ-APP', 'Prefix for auto-generated payment references')
      ON CONFLICT (key) DO NOTHING`,
     `CREATE TABLE IF NOT EXISTS application_fees (
       id                  SERIAL        NOT NULL PRIMARY KEY,

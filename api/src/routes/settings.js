@@ -40,8 +40,8 @@ router.put('/:key', authenticate, requireRole('ADMIN'), async (req, res) => {
 // ── POST /api/settings/applications/:id/approve
 // Admin approves application at Tuesday meeting, sets auditor fee, sends fee invoice email
 router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), async (req, res) => {
-  const { auditor_fee_usd, notes } = req.body;
-  if (!auditor_fee_usd) return res.status(400).json({ error: 'auditor_fee_usd is required' });
+  const { auditor_email, auditor_name, notes } = req.body;
+  if (!auditor_email) return res.status(400).json({ error: 'auditor_email is required' });
 
   try {
     // Get compliance fee from settings
@@ -49,8 +49,6 @@ router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), asy
       "SELECT value FROM platform_settings WHERE key = 'compliance_fee_usd'"
     );
     const complianceFee = parseFloat(settingsRows[0]?.value || 1500);
-    const auditorFee    = parseFloat(auditor_fee_usd);
-    const totalFee      = complianceFee + auditorFee;
 
     // Get submission details
     const [subRows] = await db.execute(
@@ -59,16 +57,23 @@ router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), asy
     if (subRows.length === 0) return res.status(404).json({ error: 'Submission not found' });
     const sub = subRows[0];
 
+    // Fetch bank payment details from settings
+    const [bankRows] = await db.execute(
+      "SELECT key, value FROM platform_settings WHERE key IN ('bank_name','bank_account_name','bank_account_number','bank_branch','bank_swift_code','bank_reference_prefix')"
+    );
+    const bankSettings = {};
+    bankRows.forEach(r => { bankSettings[r.key] = r.value; });
+    const paymentRef = `${bankSettings.bank_reference_prefix || 'TEXZ-APP'}-${sub.reference_number?.substring(0,8).toUpperCase() || sub.id}`;
+
     // Update submission status
     await db.execute(
       `UPDATE data_submissions SET
          application_status = 'APPROVED',
-         auditor_fee_usd = ?,
          fee_status = 'PENDING_PAYMENT',
          admin_notes = ?,
          updated_at = NOW()
        WHERE id = ?`,
-      [auditorFee, notes || null, req.params.id]
+      [notes || null, req.params.id]
     );
 
     // Create application fee record
@@ -76,7 +81,13 @@ router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), asy
       `INSERT INTO application_fees
          (submission_id, token_symbol, issuer_wallet, compliance_fee_usd, auditor_fee_usd, total_fee_usd, status, approved_by, approved_at)
        VALUES (?, ?, ?, ?, ?, ?, 'PENDING_PAYMENT', ?, NOW())`,
-      [req.params.id, sub.token_symbol, sub.issuer_wallet, complianceFee, auditorFee, totalFee, req.user.userId]
+      [req.params.id, sub.token_symbol, sub.issuer_wallet, complianceFee, 0, complianceFee, req.user.userId]
+    );
+
+    // Update submission with assigned auditor
+    await db.execute(
+      `UPDATE data_submissions SET assigned_auditor = ?, updated_at = NOW() WHERE id = ?`,
+      [auditor_email, req.params.id]
     );
 
     // Get issuer details
@@ -88,32 +99,55 @@ router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), asy
     // Send approval email with fee invoice
     if (issuer.email) {
       await mailer.notifyIssuerApplicationApproved({
-        issuerEmail:    issuer.email,
-        issuerName:     issuer.full_name || 'Issuer',
-        tokenSymbol:    sub.token_symbol,
-        entityName:     sub.entity_name || sub.token_symbol,
+        issuerEmail:     issuer.email,
+        issuerName:      issuer.full_name || 'Issuer',
+        tokenSymbol:     sub.token_symbol,
+        entityName:      sub.entity_name || sub.token_symbol,
         referenceNumber: sub.reference_number || sub.id,
         complianceFee,
-        auditorFee,
-        totalFee,
+        auditorFee:      0,
+        totalFee:        complianceFee,
+        auditorName:     auditor_name || auditor_email,
+        auditorEmail:    auditor_email,
+        paymentRef,
+        bankName:        bankSettings.bank_name || 'Stanbic Bank Zimbabwe',
+        bankAccountName: bankSettings.bank_account_name || 'TokenEquityX Ltd',
+        bankAccountNo:   bankSettings.bank_account_number || 'TBC',
+        bankBranch:      bankSettings.bank_branch || 'Harare Main Branch',
+        bankSwift:       bankSettings.bank_swift_code || 'SBICZWHX',
       }).catch(err => console.error('Email failed:', err.message));
     }
 
     await sendMessage({
       recipientId: sub.issuer_wallet,
-      subject:     `✅ Application Approved — Fee Invoice`,
-      body:        `Your application for ${sub.entity_name || sub.token_symbol} has been approved. Please deposit the application fee of $${totalFee.toFixed(2)} USD to your platform wallet. Compliance fee: $${complianceFee.toFixed(2)}, Auditor fee: $${auditorFee.toFixed(2)}. Reference: ${sub.reference_number || sub.id}`,
+      subject:     `✅ Application Approved — ${sub.entity_name || sub.token_symbol}`,
+      body:        `Your tokenisation application has been approved at our Applications Appraisal Meeting.\n\nCOMPLIANCE FEE PAYMENT\nPlease pay the TokenEquityX compliance fee of $${complianceFee.toFixed(2)} USD via bank transfer:\nBank: ${bankSettings.bank_name || 'Stanbic Bank Zimbabwe'}\nAccount Name: ${bankSettings.bank_account_name || 'TokenEquityX Ltd'}\nAccount Number: ${bankSettings.bank_account_number || 'TBC'}\nBranch: ${bankSettings.bank_branch || 'Harare Main Branch'}\nSwift: ${bankSettings.bank_swift_code || 'SBICZWHX'}\nPayment Reference: ${paymentRef}\n\nNOMINATED AUDITOR\nYour nominated auditor is ${auditor_name || auditor_email} (${auditor_email}). Please contact them directly to agree the scope and fee for the audit. The auditor has been notified and will be in touch.\n\nOnce your compliance fee payment is confirmed, the review process will formally commence.`,
       type:        'SYSTEM',
       category:    'APPLICATION',
       referenceId: String(req.params.id),
     }).catch(() => {});
 
+    // Notify auditor of assignment
+    const [auditorRows] = await db.execute(
+      'SELECT id, full_name, email FROM users WHERE email = ?', [auditor_email]
+    );
+    if (auditorRows.length > 0) {
+      await sendMessage({
+        recipientId: auditorRows[0].id,
+        subject:     `🔍 New Audit Assignment — ${sub.token_symbol}`,
+        body:        `You have been nominated as the auditor for ${sub.entity_name || sub.token_symbol} (${sub.token_symbol}).\n\nThe issuer has been notified and will contact you directly to agree the audit scope and fee. Once agreed, please proceed with the review and submit your findings through the auditor dashboard.\n\nReference: ${sub.reference_number || sub.id}\nIssuer contact will reach out to you at: ${issuer.email || 'via platform'}`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+        referenceId: String(req.params.id),
+      }).catch(() => {});
+    }
+
     res.json({
       success: true,
-      message: 'Application approved. Fee invoice sent to issuer.',
+      message: `Application approved. Fee invoice sent to issuer. ${auditor_name || auditor_email} notified as nominated auditor.`,
       complianceFee,
-      auditorFee,
-      totalFee,
+      paymentRef,
+      auditorEmail: auditor_email,
     });
   } catch (err) {
     res.status(500).json({ error: 'Could not approve application: ' + err.message });
