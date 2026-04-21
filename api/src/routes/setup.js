@@ -681,6 +681,14 @@ router.get('/migrate', async (req, res) => {
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivation_requested BOOLEAN NOT NULL DEFAULT FALSE`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivation_reason TEXT`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS listing_type VARCHAR(30)`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS admin_approved_by UUID`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS admin_approved_at TIMESTAMP`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS listing_type VARCHAR(30)`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS trading_mode VARCHAR(30) DEFAULT 'P2P_ONLY'`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS listed_at TIMESTAMP`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS submission_id INTEGER`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS issuer_id UUID`,
   ];
   const results = [];
   for (const sql of migrations) {
