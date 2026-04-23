@@ -98,17 +98,18 @@ router.post('/',
       await conn.beginTransaction();
 
       // Verify token belongs to this issuer (unless admin)
-      const [tokens] = await conn.execute('SELECT * FROM tokens WHERE id = ?', [token_id]);
+      const [tokens] = await conn.execute(
+        `SELECT t.*, s.owner_user_id FROM tokens t
+         LEFT JOIN spvs s ON s.id = t.spv_id
+         WHERE t.id = ?`,
+        [token_id]
+      );
       if (tokens.length === 0) { await conn.rollback(); return res.status(404).json({ error: 'Token not found' }); }
       const token = tokens[0];
 
       // Verify token belongs to this issuer via issuer_id OR via SPV ownership
       if (req.user.role !== 'ADMIN') {
-        const [spvCheck] = await db.execute(
-          'SELECT s.owner_user_id FROM spvs s JOIN tokens t ON t.spv_id = s.id WHERE t.id = ?',
-          [token_id]
-        );
-        const isOwnerViaSpv = spvCheck.length > 0 && spvCheck[0].owner_user_id === req.user.userId;
+        const isOwnerViaSpv      = token.owner_user_id === req.user.userId;
         const isOwnerViaIssuerId = token.issuer_id === req.user.userId;
         if (!isOwnerViaSpv && !isOwnerViaIssuerId) {
           await conn.rollback();

@@ -125,7 +125,9 @@ router.get('/all', async (req, res) => {
       SELECT t.id, t.token_name, t.token_symbol, t.ticker,
              t.asset_type, t.current_price_usd, t.market_state,
              t.issued_shares, t.authorised_shares, t.status,
-             s.legal_name, s.jurisdiction, s.sector
+             t.spv_id, t.issuer_id,
+             s.legal_name as company_name, s.jurisdiction, s.sector,
+             s.owner_user_id
       FROM tokens t
       JOIN spvs s ON s.id = t.spv_id
       WHERE t.status IN ('ACTIVE', 'DRAFT')
