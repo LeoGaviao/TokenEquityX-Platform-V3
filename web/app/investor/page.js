@@ -371,18 +371,33 @@ export default function InvestorDashboard() {
     } catch {}
   };
 
-  const symbols = Object.keys(MARKET_DATA);
-  const portfolio = symbols.map(sym => {
-    const md = MARKET_DATA[sym];
-    const holding = holdings.find(h=>h.symbol===sym);
-    const qty = holding?.balance || (sym==='ZWIB'?500:sym==='HCPR'?1000:sym==='ACME'?750:0);
-    const price = prices[sym] || md.price;
+  const portfolio = holdings.filter(h => parseFloat(h.balance) > 0).map(h => {
+    const sym   = h.symbol || h.token_symbol || '';
+    const md    = MARKET_DATA[sym] || {};
+    const price = prices[sym] || parseFloat(h.current_price_usd || h.oracle_price || md.price || 1);
+    const qty   = parseFloat(h.balance || 0);
+    const cost  = qty * parseFloat(h.average_cost_usd || price);
     const value = qty * price;
-    const cost  = qty * (price * 0.97);
     const pnl   = value - cost;
-    const pnlPct = cost > 0 ? (pnl/cost)*100 : 0;
-    return { ...md, symbol:sym, qty, price, value, cost, pnl, pnlPct };
-  }).filter(p => p.qty > 0);
+    const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
+    return {
+      symbol:     sym,
+      name:       h.name || md.name || sym,
+      company:    h.name || md.name || sym,
+      asset_class: h.asset_type || md.asset_class || 'Equity',
+      price,
+      qty,
+      value,
+      cost,
+      pnl,
+      pnlPct,
+      change24h:  parseFloat(h.change24h || md.change24h || 0),
+      volume24h:  parseFloat(h.volume24h || md.volume24h || 0),
+      yield_pa:   md.yield_pa || 0,
+      chart:      md.chart || Array.from({length:30},(_,i)=>({ t:`Day ${i+1}`, p: price })),
+      market_state: h.market_state || 'FULL_TRADING',
+    };
+  });
 
   const totalValue   = portfolio.reduce((a,p)=>a+p.value,0);
   const totalCost    = portfolio.reduce((a,p)=>a+p.cost,0);
@@ -911,8 +926,8 @@ export default function InvestorDashboard() {
               ))}
             </div>
 
-            {activeAsset && MARKET_DATA[activeAsset] && (() => {
-              const md = MARKET_DATA[activeAsset];
+            {activeAsset && (() => {
+              const md = MARKET_DATA[activeAsset] || portfolio.find(p=>p.symbol===activeAsset) || {};
               return (
                 <div className="bg-gray-900 border border-blue-800/50 rounded-xl p-6 space-y-6">
                   <div className="flex items-center justify-between">
