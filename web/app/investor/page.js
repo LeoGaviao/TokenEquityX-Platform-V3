@@ -821,83 +821,42 @@ export default function InvestorDashboard() {
 
             {/* Primary Offerings */}
             {offeringsLoaded && offerings.length > 0 && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-bold text-lg">🏦 Open Primary Offerings</h3>
-                    <p className="text-gray-500 text-xs mt-0.5">Invest directly in new token issuances at the primary offering price</p>
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">🏦 Primary Market</span>
+                    <span className="text-xs bg-green-900/40 text-green-300 border border-green-700/40 px-2 py-0.5 rounded-full">{offerings.length} open</span>
                   </div>
+                  <button onClick={()=>setTab('market')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
                 </div>
-                <div className="space-y-4">
+                <div className="flex gap-3 overflow-x-auto pb-2" style={{scrollbarWidth:'none'}}>
                   {offerings.map(o => (
-                    <div key={o.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-bold text-white">{o.token_symbol}</span>
-                            <span className="text-xs bg-green-900/40 text-green-300 px-2 py-0.5 rounded-full border border-green-700/50">OPEN</span>
-                          </div>
-                          <p className="text-sm text-gray-400 mb-3">{o.token_name || o.token_symbol}</p>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <div><p className="text-xs text-gray-500">Offering Price</p><p className="font-semibold text-white">${parseFloat(o.offering_price_usd).toFixed(4)}</p></div>
-                            <div><p className="text-xs text-gray-500">Target Raise</p><p className="font-semibold text-white">${parseFloat(o.target_raise_usd).toLocaleString()}</p></div>
-                            <div><p className="text-xs text-gray-500">Raised So Far</p><p className="font-semibold text-green-400">${parseFloat(o.total_raised_usd || 0).toLocaleString()}</p></div>
-                            <div><p className="text-xs text-gray-500">Deadline</p><p className="font-semibold text-white">{new Date(o.subscription_deadline).toLocaleDateString('en-GB')}</p></div>
-                          </div>
-                          {parseFloat(o.target_raise_usd) > 0 && (
-                            <div className="mt-3">
-                              <div className="flex justify-between text-xs text-gray-500 mb-1">
-                                <span>Progress</span>
-                                <span>{((parseFloat(o.total_raised_usd || 0) / parseFloat(o.target_raise_usd)) * 100).toFixed(1)}%</span>
-                              </div>
-                              <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                                <div className="h-full bg-green-500 rounded-full" style={{width: `${Math.min(100, (parseFloat(o.total_raised_usd || 0) / parseFloat(o.target_raise_usd)) * 100)}%`}}/>
-                              </div>
-                            </div>
-                          )}
-                          {o.min_subscription_usd && (
-                            <p className="text-xs text-gray-600 mt-2">Min: ${parseFloat(o.min_subscription_usd).toLocaleString()} · Max: {o.max_subscription_usd ? `$${parseFloat(o.max_subscription_usd).toLocaleString()}` : 'No limit'}</p>
-                          )}
-                        </div>
+                    <div key={o.id}
+                      onClick={() => { setSelOffering(selOffering?.id === o.id ? null : o); setTab('market'); }}
+                      className="flex-shrink-0 cursor-pointer rounded-xl p-3 transition-all"
+                      style={{
+                        minWidth: '160px', maxWidth: '180px',
+                        border: selOffering?.id === o.id ? '2px solid #22c55e' : '1px solid rgba(75,85,99,0.5)',
+                        background: selOffering?.id === o.id ? 'rgba(34,197,94,0.08)' : 'rgba(31,41,55,0.5)',
+                      }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-white text-sm">{o.token_symbol}</span>
+                        <span className="text-xs bg-green-900/40 text-green-300 px-1.5 py-0.5 rounded text-[10px]">OPEN</span>
                       </div>
-                      {selOffering?.id === o.id ? (
-                        <div className="mt-4 pt-4 border-t border-gray-700">
-                          <p className="text-sm font-semibold text-white mb-2">Subscribe to {o.token_symbol}</p>
-                          <div className="flex gap-3">
-                            <div className="flex-1">
-                              <label className="text-xs text-gray-400 block mb-1">Amount (USD) *</label>
-                              <input type="number" value={subAmount}
-                                onChange={e => setSubAmount(e.target.value)}
-                                placeholder={`Min $${parseFloat(o.min_subscription_usd || 0).toLocaleString()}`}
-                                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"/>
-                            </div>
-                            {subAmount && parseFloat(subAmount) > 0 && (
-                              <div className="flex-1">
-                                <label className="text-xs text-gray-400 block mb-1">Tokens You Will Receive</label>
-                                <p className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-semibold text-green-400">
-                                  {(parseFloat(subAmount) / parseFloat(o.offering_price_usd)).toLocaleString(undefined, {maximumFractionDigits: 2})} tokens
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex gap-3 mt-3">
-                            <button onClick={() => { setSelOffering(null); setSubAmount(''); }}
-                              className="flex-1 py-2 rounded-lg text-sm bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
-                            <button onClick={() => subscribeToOffering(o.id)} disabled={subLoading}
-                              className="flex-1 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50">
-                              {subLoading ? 'Processing...' : '✅ Confirm Subscription'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button onClick={() => { setSelOffering(o); setSubAmount(''); }}
-                          className="mt-4 w-full py-2.5 rounded-xl text-sm font-semibold bg-green-700 hover:bg-green-600 text-white transition-colors">
-                          🏦 Subscribe to This Offering
-                        </button>
-                      )}
+                      <p className="text-gray-400 text-xs mb-2 truncate">{o.issuer_name || o.token_name || o.token_symbol}</p>
+                      <p className="text-white font-semibold text-base mb-1">${parseFloat(o.offering_price_usd).toFixed(4)}</p>
+                      <div className="h-1 bg-gray-700 rounded-full mb-1">
+                        <div className="h-1 bg-green-500 rounded-full"
+                          style={{width:`${Math.min(100,(parseFloat(o.total_raised_usd||0)/parseFloat(o.target_raise_usd))*100)}%`}}/>
+                      </div>
+                      <p className="text-gray-500 text-[10px]">
+                        ${(parseFloat(o.total_raised_usd||0)/1000).toFixed(0)}K of ${(parseFloat(o.target_raise_usd)/1000).toFixed(0)}K
+                      </p>
+                      <p className="text-gray-600 text-[10px] mt-0.5">Closes {new Date(o.subscription_deadline).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</p>
                     </div>
                   ))}
                 </div>
+                <p className="text-xs text-gray-600 mt-2">Click an offering card to subscribe on the Market tab.</p>
               </div>
             )}
 
@@ -1114,7 +1073,7 @@ export default function InvestorDashboard() {
                 <span className="text-sm font-semibold">📈 Secondary Market</span>
                 <span className="text-xs text-gray-500">Full order book trading</span>
               </div>
-              <button onClick={()=>router.push('/investor/trade')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
+              <button onClick={()=>router.push('/investor/asset')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -1162,7 +1121,7 @@ export default function InvestorDashboard() {
                 <span className="text-sm font-semibold">🔄 P2P Market</span>
                 <span className="text-xs text-gray-500">Greenfield · peer-to-peer transfers</span>
               </div>
-              <button onClick={()=>router.push('/investor/trade')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
+              <button onClick={()=>router.push('/investor/asset')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
             <table className="w-full text-sm">
               <thead>
