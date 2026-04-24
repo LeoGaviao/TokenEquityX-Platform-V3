@@ -689,6 +689,11 @@ router.get('/migrate', async (req, res) => {
     `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS listed_at TIMESTAMP`,
     `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS submission_id INTEGER`,
     `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS issuer_id UUID`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS website_url VARCHAR(255)`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS founded_year INTEGER`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS headquarters VARCHAR(255)`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS use_of_proceeds TEXT`,
+    `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS num_employees VARCHAR(50)`,
   ];
   const results = [];
   for (const sql of migrations) {
