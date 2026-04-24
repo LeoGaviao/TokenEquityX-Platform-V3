@@ -105,6 +105,11 @@ export default function InvestorDashboard() {
   const [voting,      setVoting]      = useState(null);
   const [claiming,    setClaiming]    = useState(null);
   const [actionMsg,   setActionMsg]   = useState(null);
+  const [offerings,       setOfferings]       = useState([]);
+  const [selOffering,     setSelOffering]     = useState(null);
+  const [subAmount,       setSubAmount]       = useState('');
+  const [subLoading,      setSubLoading]      = useState(false);
+  const [offeringsLoaded, setOfferingsLoaded] = useState(false);
   const [priceFlash,  setPriceFlash]  = useState({});
   const [preListingDetail, setPreListingDetail] = useState(null);
   const wsRef = useRef(null);
@@ -307,8 +312,35 @@ export default function InvestorDashboard() {
       if (tradeRes.status==='fulfilled') setTrades(tradeRes.value.data||[]);
       if (propRes.status==='fulfilled')  setProposals(propRes.value.data||[]);
       if (divRes.status==='fulfilled')   setDividends(divRes.value.data||[]);
+      // Load open primary offerings
+      api.get('/offerings').then(r => {
+        const open = (r.data || []).filter(o => o.status === 'OPEN');
+        setOfferings(open);
+        setOfferingsLoaded(true);
+      }).catch(() => setOfferingsLoaded(true));
     } catch(e){ console.error(e); }
     finally { setLoading(false); }
+  };
+
+  const subscribeToOffering = async (offeringId) => {
+    if (!subAmount || parseFloat(subAmount) <= 0) {
+      alert('Please enter a valid subscription amount.'); return;
+    }
+    setSubLoading(true);
+    try {
+      const res = await api.post(`/offerings/${offeringId}/subscribe`, {
+        amount_usd: parseFloat(subAmount)
+      });
+      setActionMsg({ type: 'success', text: `✅ ${res.data.message}` });
+      setSelOffering(null);
+      setSubAmount('');
+      api.get('/offerings').then(r => {
+        setOfferings((r.data || []).filter(o => o.status === 'OPEN'));
+      }).catch(() => {});
+    } catch (err) {
+      setActionMsg({ type: 'error', text: err.response?.data?.error || 'Subscription failed.' });
+    }
+    setSubLoading(false);
   };
 
   const connectWS = () => {
@@ -786,6 +818,88 @@ export default function InvestorDashboard() {
                 </div>
               ))}
             </div>
+
+            {/* Primary Offerings */}
+            {offeringsLoaded && offerings.length > 0 && (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-bold text-lg">🏦 Open Primary Offerings</h3>
+                    <p className="text-gray-500 text-xs mt-0.5">Invest directly in new token issuances at the primary offering price</p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {offerings.map(o => (
+                    <div key={o.id} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-bold text-white">{o.token_symbol}</span>
+                            <span className="text-xs bg-green-900/40 text-green-300 px-2 py-0.5 rounded-full border border-green-700/50">OPEN</span>
+                          </div>
+                          <p className="text-sm text-gray-400 mb-3">{o.token_name || o.token_symbol}</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div><p className="text-xs text-gray-500">Offering Price</p><p className="font-semibold text-white">${parseFloat(o.offering_price_usd).toFixed(4)}</p></div>
+                            <div><p className="text-xs text-gray-500">Target Raise</p><p className="font-semibold text-white">${parseFloat(o.target_raise_usd).toLocaleString()}</p></div>
+                            <div><p className="text-xs text-gray-500">Raised So Far</p><p className="font-semibold text-green-400">${parseFloat(o.total_raised_usd || 0).toLocaleString()}</p></div>
+                            <div><p className="text-xs text-gray-500">Deadline</p><p className="font-semibold text-white">{new Date(o.subscription_deadline).toLocaleDateString('en-GB')}</p></div>
+                          </div>
+                          {parseFloat(o.target_raise_usd) > 0 && (
+                            <div className="mt-3">
+                              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                <span>Progress</span>
+                                <span>{((parseFloat(o.total_raised_usd || 0) / parseFloat(o.target_raise_usd)) * 100).toFixed(1)}%</span>
+                              </div>
+                              <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                <div className="h-full bg-green-500 rounded-full" style={{width: `${Math.min(100, (parseFloat(o.total_raised_usd || 0) / parseFloat(o.target_raise_usd)) * 100)}%`}}/>
+                              </div>
+                            </div>
+                          )}
+                          {o.min_subscription_usd && (
+                            <p className="text-xs text-gray-600 mt-2">Min: ${parseFloat(o.min_subscription_usd).toLocaleString()} · Max: {o.max_subscription_usd ? `$${parseFloat(o.max_subscription_usd).toLocaleString()}` : 'No limit'}</p>
+                          )}
+                        </div>
+                      </div>
+                      {selOffering?.id === o.id ? (
+                        <div className="mt-4 pt-4 border-t border-gray-700">
+                          <p className="text-sm font-semibold text-white mb-2">Subscribe to {o.token_symbol}</p>
+                          <div className="flex gap-3">
+                            <div className="flex-1">
+                              <label className="text-xs text-gray-400 block mb-1">Amount (USD) *</label>
+                              <input type="number" value={subAmount}
+                                onChange={e => setSubAmount(e.target.value)}
+                                placeholder={`Min $${parseFloat(o.min_subscription_usd || 0).toLocaleString()}`}
+                                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"/>
+                            </div>
+                            {subAmount && parseFloat(subAmount) > 0 && (
+                              <div className="flex-1">
+                                <label className="text-xs text-gray-400 block mb-1">Tokens You Will Receive</label>
+                                <p className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-semibold text-green-400">
+                                  {(parseFloat(subAmount) / parseFloat(o.offering_price_usd)).toLocaleString(undefined, {maximumFractionDigits: 2})} tokens
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-3 mt-3">
+                            <button onClick={() => { setSelOffering(null); setSubAmount(''); }}
+                              className="flex-1 py-2 rounded-lg text-sm bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
+                            <button onClick={() => subscribeToOffering(o.id)} disabled={subLoading}
+                              className="flex-1 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50">
+                              {subLoading ? 'Processing...' : '✅ Confirm Subscription'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setSelOffering(o); setSubAmount(''); }}
+                          className="mt-4 w-full py-2.5 rounded-xl text-sm font-semibold bg-green-700 hover:bg-green-600 text-white transition-colors">
+                          🏦 Subscribe to This Offering
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {portfolio.map(p => (
