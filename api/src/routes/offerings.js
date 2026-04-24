@@ -109,11 +109,12 @@ router.post('/',
 
       // Verify token belongs to this issuer via issuer_id OR via SPV ownership
       if (req.user.role !== 'ADMIN') {
-        const isOwnerViaSpv      = token.owner_user_id === req.user.userId;
-        const isOwnerViaIssuerId = token.issuer_id === req.user.userId;
+        const isOwnerViaSpv      = String(token.owner_user_id) === String(req.user.userId);
+        const isOwnerViaIssuerId = String(token.issuer_id) === String(req.user.userId);
+        console.log('[OFFERINGS DEBUG] owner_user_id:', token.owner_user_id, 'issuer_id:', token.issuer_id, 'userId:', req.user.userId, 'isOwnerViaSpv:', isOwnerViaSpv, 'isOwnerViaIssuerId:', isOwnerViaIssuerId);
         if (!isOwnerViaSpv && !isOwnerViaIssuerId) {
           await conn.rollback();
-          return res.status(403).json({ error: 'You are not the issuer of this token' });
+          return res.status(403).json({ error: 'You are not the issuer of this token', debug: { owner_user_id: token.owner_user_id, issuer_id: token.issuer_id, userId: req.user.userId } });
         }
       }
 
