@@ -832,7 +832,7 @@ export default function InvestorDashboard() {
                 <div className="flex gap-3 overflow-x-auto pb-2" style={{scrollbarWidth:'none'}}>
                   {offerings.map(o => (
                     <div key={o.id}
-                      onClick={() => { setSelOffering(selOffering?.id === o.id ? null : o); setTab('market'); }}
+                      onClick={() => router.push(`/investor/offering/${o.id}`)}
                       className="flex-shrink-0 cursor-pointer rounded-xl p-3 transition-all"
                       style={{
                         minWidth: '160px', maxWidth: '180px',
@@ -1006,7 +1006,7 @@ export default function InvestorDashboard() {
                 <div className="flex gap-3 overflow-x-auto pb-2" style={{scrollbarWidth:'none'}}>
                   {offerings.map(o => (
                     <div key={o.id}
-                      onClick={() => setSelOffering(selOffering?.id === o.id ? null : o)}
+                      onClick={() => router.push(`/investor/offering/${o.id}`)}
                       className="flex-shrink-0 cursor-pointer rounded-xl p-3 transition-all"
                       style={{
                         minWidth: '160px', maxWidth: '180px',

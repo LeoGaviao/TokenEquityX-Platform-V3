@@ -62,12 +62,23 @@ router.get('/:id', authenticate, async (req, res) => {
       SELECT po.*,
              COALESCE(t.token_symbol, t.symbol) as token_symbol,
              COALESCE(t.token_name, t.name) as token_name,
-             t.asset_type, t.current_price_usd,
-             u.full_name AS issuer_name, u.email AS issuer_email
+             t.asset_type, t.current_price_usd, t.market_state,
+             t.jurisdiction, t.spv_id,
+             u.full_name AS issuer_name, u.email AS issuer_email,
+             u.phone AS issuer_phone, u.city AS issuer_city, u.country AS issuer_country,
+             s.legal_name AS company_name, s.description AS company_description,
+             s.registration_number, s.sector,
+             ds.data_json AS submission_data,
+             ds.audit_report,
+             (SELECT COUNT(*) FROM offering_subscriptions os WHERE os.offering_id = po.id AND os.status = 'CONFIRMED') AS subscriber_count
       FROM primary_offerings po
       JOIN tokens t ON t.id = po.token_id
       LEFT JOIN users u ON u.id = po.issuer_id
+      LEFT JOIN spvs s ON s.id = t.spv_id
+      LEFT JOIN data_submissions ds ON ds.token_symbol = t.token_symbol
+        AND ds.status IN ('ADMIN_APPROVED','AUDITOR_APPROVED')
       WHERE po.id = ?
+      LIMIT 1
     `, [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Offering not found' });
     res.json(rows[0]);
