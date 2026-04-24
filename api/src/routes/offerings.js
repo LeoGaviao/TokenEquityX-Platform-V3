@@ -390,7 +390,9 @@ router.post('/:id/subscribe',
         INSERT INTO offering_subscriptions
           (offering_id, investor_id, amount_usd, tokens_allocated, settlement_rail, status)
         VALUES (?, ?, ?, ?, ?, 'CONFIRMED')
+        RETURNING id
       `, [req.params.id, req.user.userId, subscribeAmount, tokensAllocated, rail]);
+      const subId = subResult?.[0]?.id || req.params.id;
 
       await conn.execute(`
         UPDATE primary_offerings
@@ -407,7 +409,7 @@ router.post('/:id/subscribe',
       `, [
         req.user.userId, -subscribeAmount,
         availableBalance, availableBalance - subscribeAmount,
-        String(subResult.insertId),
+        String(subId),
         `Primary offering subscription — ${tokensAllocated} tokens @ $${offering.offering_price_usd}`
       ]);
 
