@@ -818,7 +818,7 @@ function DiagnosticPanel({ token, API }) {
   const [auditLog,   setAuditLog]   = useState([]);
   const [activeTab,  setActiveTab]  = useState('health');
   const [autoRefresh,setAutoRefresh]= useState(false);
-  const intervalRef = React.useRef(null);
+  const intervalRef = useRef(null);
 
   const hdrs = () => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' });
 
@@ -1071,11 +1071,11 @@ function DiagnosticPanel({ token, API }) {
     setLoading(false);
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     runDiagnostic();
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (autoRefresh) {
       intervalRef.current = setInterval(runDiagnostic, 60000);
     } else {
