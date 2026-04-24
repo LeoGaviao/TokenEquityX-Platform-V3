@@ -403,7 +403,7 @@ router.post('/:id/subscribe',
       await conn.execute(`
         INSERT INTO wallet_transactions
           (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-        VALUES (uuid(), ?, 'ADJUSTMENT', ?, ?, ?, ?, ?)
+        VALUES (gen_random_uuid(), ?, 'ADJUSTMENT', ?, ?, ?, ?, ?)
       `, [
         req.user.userId, -subscribeAmount,
         availableBalance, availableBalance - subscribeAmount,
@@ -476,7 +476,7 @@ router.post('/:id/close',
         if (holdingRows.length === 0) {
           await conn.execute(
             `INSERT INTO token_holdings (id, user_id, token_id, balance, reserved, average_cost_usd)
-             VALUES (uuid(), ?, ?, ?, 0, ?)`,
+             VALUES (gen_random_uuid(), ?, ?, ?, 0, ?)`,
             [sub.investor_id, offering.token_id, sub.tokens_allocated, offering.offering_price_usd]
           );
         } else {
@@ -516,7 +516,7 @@ router.post('/:id/close',
       if (issuerWallets.length === 0) {
         await conn.execute(
           `INSERT INTO investor_wallets (id, user_id, balance_usd, balance_usdc, reserved_usd)
-           VALUES (uuid(), ?, ?, 0, 0)`,
+           VALUES (gen_random_uuid(), ?, ?, 0, 0)`,
           [offering.issuer_id, netProceeds]
         );
       } else {
@@ -529,7 +529,7 @@ router.post('/:id/close',
         await conn.execute(`
           INSERT INTO wallet_transactions
             (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-          VALUES (uuid(), ?, 'ADJUSTMENT', ?, ?, ?, ?, ?)
+          VALUES (gen_random_uuid(), ?, 'ADJUSTMENT', ?, ?, ?, ?, ?)
         `, [
           offering.issuer_id, netProceeds, issuerCurrentBal, issuerNewBal,
           String(offering.id),
@@ -630,7 +630,7 @@ router.post('/:id/cancel',
           }
           await conn.execute(`
             INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-            VALUES (uuid(), ?, 'REFUND', ?, ?, ?, ?, ?)
+            VALUES (gen_random_uuid(), ?, 'REFUND', ?, ?, ?, ?, ?)
           `, [sub.investor_id, sub.amount_usd,
               parseFloat(wallets[0].balance_usd), parseFloat(wallets[0].balance_usd) + sub.amount_usd,
               String(sub.id), `Offering cancelled — refund of $${sub.amount_usd}`]);

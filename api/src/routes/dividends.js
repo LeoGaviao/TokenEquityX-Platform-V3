@@ -90,7 +90,7 @@ router.post('/create',
         await conn.execute(`
           INSERT INTO wallet_transactions
             (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-          VALUES (uuid(), ?, 'ADJUSTMENT', ?, ?, ?, ?, ?)
+          VALUES (gen_random_uuid(), ?, 'ADJUSTMENT', ?, ?, ?, ?, ?)
         `, [
           token.issuer_id || req.user.userId,
           -pool, issuerBal, issuerBal - pool,
@@ -291,7 +291,7 @@ router.post('/claim', authenticate, requireKYC, async (req, res) => {
     if (wallets.length === 0) {
       // Create wallet if missing
       await conn.execute(
-        'INSERT INTO investor_wallets (id, user_id, balance_usd, balance_usdc, reserved_usd) VALUES (uuid(), ?, 0, 0, 0)',
+        'INSERT INTO investor_wallets (id, user_id, balance_usd, balance_usdc, reserved_usd) VALUES (gen_random_uuid(), ?, 0, 0, 0)',
         [req.user.userId]
       );
     } else {
@@ -310,7 +310,7 @@ router.post('/claim', authenticate, requireKYC, async (req, res) => {
     await conn.execute(`
       INSERT INTO wallet_transactions
         (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-      VALUES (uuid(), ?, 'DIVIDEND', ?, ?, ?, ?, ?)
+      VALUES (gen_random_uuid(), ?, 'DIVIDEND', ?, ?, ?, ?, ?)
     `, [
       req.user.userId,
       netAmount, currentBal, newBal,

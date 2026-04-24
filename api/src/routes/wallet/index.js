@@ -25,7 +25,7 @@ router.get('/balance', authenticate, async (req, res) => {
       // Auto-create wallet if missing
       await db.execute(
         `INSERT INTO investor_wallets (id, user_id, balance_usd, balance_usdc, reserved_usd, settlement_rail)
-         VALUES (uuid(), ?, 0, 0, 0, 'FIAT')`,
+         VALUES (gen_random_uuid(), ?, 0, 0, 0, 'FIAT')`,
         [req.user.userId]
       );
       return res.json({ balance_usd: 0, balance_usdc: 0, reserved_usd: 0, available_usd: 0, settlement_rail: 'FIAT' });
@@ -280,7 +280,7 @@ router.put('/deposit/:id/confirm',
       if (wallets.length === 0) {
         await conn.execute(
           `INSERT INTO investor_wallets (id, user_id, balance_usd, balance_usdc, reserved_usd)
-           VALUES (uuid(), ?, ?, 0, 0)`,
+           VALUES (gen_random_uuid(), ?, ?, 0, 0)`,
           [dep.user_id, newBal]
         );
       } else {
@@ -294,7 +294,7 @@ router.put('/deposit/:id/confirm',
       await conn.execute(
         `INSERT INTO wallet_transactions
            (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-         VALUES (uuid(), ?, 'DEPOSIT', ?, ?, ?, ?, ?)`,
+         VALUES (gen_random_uuid(), ?, 'DEPOSIT', ?, ?, ?, ?, ?)`,
         [dep.user_id, parseFloat(dep.amount_usd), currentBal, newBal, dep.id,
          `Deposit confirmed — Ref: ${dep.reference}`]
       );
@@ -449,7 +449,7 @@ router.put('/withdraw/:id/complete',
         await conn.execute(
           `INSERT INTO wallet_transactions
              (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-           VALUES (uuid(), ?, 'WITHDRAWAL', ?, ?, ?, ?, ?)`,
+           VALUES (gen_random_uuid(), ?, 'WITHDRAWAL', ?, ?, ?, ?, ?)`,
           [wr.user_id, -parseFloat(wr.amount_usd), currentBal, newBal, wr.id,
            `Withdrawal completed — Bank ref: ${tx_reference} — ${wr.bank_name}`]
         );

@@ -15,7 +15,7 @@ router.put('/settlement-rail', authenticate, async (req, res) => {
     if (existing.length === 0) {
       await db.execute(
         `INSERT INTO investor_wallets (id, user_id, balance_usd, balance_usdc, reserved_usd, settlement_rail)
-         VALUES (uuid(), ?, 0, 0, 0, ?)`,
+         VALUES (gen_random_uuid(), ?, 0, 0, 0, ?)`,
         [req.user.userId, rail]
       );
     } else {
