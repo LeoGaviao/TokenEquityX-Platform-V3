@@ -806,6 +806,515 @@ const mockAlerts = [];
 const ALERT_STYLES={warning:'bg-amber-900/40 border-amber-700 text-amber-300',error:'bg-red-900/40 border-red-700 text-red-300',success:'bg-green-900/40 border-green-700 text-green-300',info:'bg-blue-900/40 border-blue-700 text-blue-300'};
 const ALERT_ICONS={warning:'⚠️',error:'🚨',success:'✅',info:'ℹ️'};
 
+// ═══════════════════════════════════════════════════════════
+// DIAGNOSTIC & SECURITY GUARD TOOL
+// ═══════════════════════════════════════════════════════════
+function DiagnosticPanel({ token, API }) {
+  const [loading,    setLoading]    = useState(false);
+  const [lastRun,    setLastRun]    = useState(null);
+  const [health,     setHealth]     = useState([]);
+  const [alerts,     setAlerts]     = useState([]);
+  const [security,   setSecurity]   = useState([]);
+  const [auditLog,   setAuditLog]   = useState([]);
+  const [activeTab,  setActiveTab]  = useState('health');
+  const [autoRefresh,setAutoRefresh]= useState(false);
+  const intervalRef = React.useRef(null);
+
+  const hdrs = () => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' });
+
+  const runDiagnostic = async () => {
+    setLoading(true);
+    const results = { health: [], alerts: [], security: [], audit: [] };
+    const t0 = Date.now();
+
+    // ── SYSTEM HEALTH CHECKS ──
+    const healthChecks = [
+      { name: 'API Server', url: `${API}/ticker`, critical: true },
+      { name: 'Database', url: `${API}/settings`, critical: true },
+      { name: 'Auth Service', url: `${API}/auth/me`, critical: true },
+      { name: 'Pipeline Service', url: `${API}/submissions/pending`, critical: false },
+      { name: 'Wallet Service', url: `${API}/wallet/balance`, critical: false },
+      { name: 'Offerings Service', url: `${API}/offerings`, critical: false },
+    ];
+
+    for (const check of healthChecks) {
+      const start = Date.now();
+      try {
+        const res = await fetch(check.url, { headers: hdrs() });
+        const ms = Date.now() - start;
+        results.health.push({
+          name: check.name,
+          status: res.ok ? 'OK' : 'DEGRADED',
+          ms,
+          critical: check.critical,
+          detail: res.ok ? `${ms}ms` : `HTTP ${res.status}`,
+        });
+      } catch {
+        results.health.push({
+          name: check.name,
+          status: 'DOWN',
+          ms: Date.now() - start,
+          critical: check.critical,
+          detail: 'Connection failed',
+        });
+      }
+    }
+
+    // ── PLATFORM ALERTS ──
+    try {
+      // Check stuck submissions
+      const subsRes = await fetch(`${API}/submissions/pending`, { headers: hdrs() });
+      if (subsRes.ok) {
+        const subs = await subsRes.json();
+        const stuck = subs.filter(s => {
+          const days = (Date.now() - new Date(s.created_at)) / 86400000;
+          return days > 7;
+        });
+        if (stuck.length > 0) {
+          results.alerts.push({
+            level: 'WARNING',
+            title: `${stuck.length} submission(s) stuck in queue`,
+            detail: `${stuck.map(s => s.token_symbol).join(', ')} have been pending for over 7 days.`,
+            action: 'Review Pipeline tab and advance or reject stalled submissions.',
+            icon: '⏳',
+          });
+        }
+      }
+    } catch {}
+
+    try {
+      // Check unconfirmed deposits
+      const depRes = await fetch(`${API}/wallet/admin/deposits`, { headers: hdrs() });
+      if (depRes.ok) {
+        const deps = await depRes.json();
+        const pending = deps.filter(d => d.status === 'PENDING');
+        const old = pending.filter(d => (Date.now() - new Date(d.created_at)) / 86400000 > 2);
+        if (old.length > 0) {
+          results.alerts.push({
+            level: 'WARNING',
+            title: `${old.length} deposit(s) unconfirmed for 48+ hours`,
+            detail: `Total: $${old.reduce((a,d) => a + parseFloat(d.amount_usd||0), 0).toFixed(2)} USD pending confirmation.`,
+            action: 'Go to Wallet tab → Deposits and confirm or reject each pending deposit.',
+            icon: '💵',
+          });
+        }
+        if (pending.length > 0 && old.length === 0) {
+          results.alerts.push({
+            level: 'INFO',
+            title: `${pending.length} deposit(s) awaiting confirmation`,
+            detail: `$${pending.reduce((a,d) => a + parseFloat(d.amount_usd||0), 0).toFixed(2)} USD total pending.`,
+            action: 'Go to Wallet tab → Deposits to review.',
+            icon: '💵',
+          });
+        }
+      }
+    } catch {}
+
+    try {
+      // Check pending withdrawals
+      const wdRes = await fetch(`${API}/wallet/admin/withdrawals`, { headers: hdrs() });
+      if (wdRes.ok) {
+        const wds = await wdRes.json();
+        const pending = wds.filter(w => w.status === 'PENDING');
+        const old = pending.filter(w => (Date.now() - new Date(w.created_at)) / 86400000 > 3);
+        if (old.length > 0) {
+          results.alerts.push({
+            level: 'CRITICAL',
+            title: `${old.length} withdrawal(s) pending for 3+ days`,
+            detail: `$${old.reduce((a,w) => a + parseFloat(w.amount_usd||0), 0).toFixed(2)} USD overdue for processing.`,
+            action: 'Go to Wallet tab → Withdrawals. Process EFT/RTGS payments immediately.',
+            icon: '🏦',
+          });
+        }
+      }
+    } catch {}
+
+    try {
+      // Check open offerings past deadline
+      const offRes = await fetch(`${API}/offerings`, { headers: hdrs() });
+      if (offRes.ok) {
+        const offs = await offRes.json();
+        const overdue = offs.filter(o => o.status === 'OPEN' && new Date(o.subscription_deadline) < new Date());
+        if (overdue.length > 0) {
+          results.alerts.push({
+            level: 'WARNING',
+            title: `${overdue.length} offering(s) past subscription deadline`,
+            detail: `${overdue.map(o => o.token_symbol).join(', ')} deadline has passed but offering is still OPEN.`,
+            action: 'Go to Offerings tab and close each overdue offering to disburse proceeds.',
+            icon: '📅',
+          });
+        }
+      }
+    } catch {}
+
+    try {
+      // Check KYC pending queue
+      const kycRes = await fetch(`${API}/admin/users`, { headers: hdrs() });
+      if (kycRes.ok) {
+        const users = await kycRes.json();
+        const pendingKyc = users.filter(u => u.kyc_status === 'PENDING');
+        if (pendingKyc.length > 0) {
+          results.alerts.push({
+            level: 'INFO',
+            title: `${pendingKyc.length} KYC application(s) pending review`,
+            detail: `${pendingKyc.map(u => u.email).join(', ')}`,
+            action: 'Go to KYC tab to review and approve or reject pending applications.',
+            icon: '🪪',
+          });
+        }
+      }
+    } catch {}
+
+    if (results.alerts.length === 0) {
+      results.alerts.push({
+        level: 'OK',
+        title: 'All systems normal',
+        detail: 'No pending alerts at this time.',
+        action: null,
+        icon: '✅',
+      });
+    }
+
+    // ── SECURITY CHECKS ──
+    try {
+      const txRes = await fetch(`${API}/wallet/admin/transactions?limit=100`, { headers: hdrs() });
+      if (txRes.ok) {
+        const txns = await txRes.json();
+        // Look for large transactions
+        const large = txns.filter(t => Math.abs(parseFloat(t.amount_usd||0)) > 10000);
+        if (large.length > 0) {
+          results.security.push({
+            level: 'INFO',
+            title: `${large.length} large transaction(s) detected`,
+            detail: `Transactions over $10,000 USD: ${large.map(t => `$${parseFloat(t.amount_usd).toFixed(2)} (${t.type})`).join(', ')}`,
+            action: 'Review in Ledger tab. Verify these are legitimate deposits or withdrawals.',
+            icon: '💰',
+          });
+        }
+
+        // Look for multiple rapid transactions from same user
+        const userTxCount = {};
+        txns.forEach(t => {
+          if (t.user_id) userTxCount[t.user_id] = (userTxCount[t.user_id] || 0) + 1;
+        });
+        const rapid = Object.entries(userTxCount).filter(([,count]) => count > 10);
+        if (rapid.length > 0) {
+          results.security.push({
+            level: 'WARNING',
+            title: 'High transaction frequency detected',
+            detail: `${rapid.length} user(s) have 10+ transactions in recent history. Possible wash trading or bot activity.`,
+            action: 'Go to Users tab → review flagged accounts. Consider suspending if activity is suspicious.',
+            icon: '🤖',
+          });
+        }
+      }
+    } catch {}
+
+    try {
+      const usersRes = await fetch(`${API}/admin/users`, { headers: hdrs() });
+      if (usersRes.ok) {
+        const users = await usersRes.json();
+        // Multiple admin accounts
+        const admins = users.filter(u => u.role === 'ADMIN');
+        if (admins.length > 3) {
+          results.security.push({
+            level: 'WARNING',
+            title: `${admins.length} admin accounts active`,
+            detail: `Admin accounts: ${admins.map(u => u.email).join(', ')}`,
+            action: 'Review admin accounts. Remove any that are no longer needed.',
+            icon: '👤',
+          });
+        }
+        // Suspended accounts
+        const suspended = users.filter(u => u.account_status === 'SUSPENDED');
+        if (suspended.length > 0) {
+          results.security.push({
+            level: 'INFO',
+            title: `${suspended.length} suspended account(s)`,
+            detail: suspended.map(u => u.email).join(', '),
+            action: 'Review in Users tab. Reinstate if suspension was resolved.',
+            icon: '🚫',
+          });
+        }
+      }
+    } catch {}
+
+    if (results.security.length === 0) {
+      results.security.push({
+        level: 'OK',
+        title: 'No security threats detected',
+        detail: 'Platform security checks passed.',
+        action: null,
+        icon: '🔒',
+      });
+    }
+
+    // ── AUDIT LOG ──
+    try {
+      const txRes = await fetch(`${API}/wallet/admin/transactions?limit=20`, { headers: hdrs() });
+      if (txRes.ok) {
+        const txns = await txRes.json();
+        results.audit = txns.map(t => ({
+          time: t.created_at,
+          type: t.type,
+          detail: t.description || `${t.type} — $${parseFloat(t.amount_usd||0).toFixed(2)}`,
+          user: t.email || t.user_id?.substring(0,8) || 'System',
+        }));
+      }
+    } catch {}
+
+    setHealth(results.health);
+    setAlerts(results.alerts);
+    setSecurity(results.security);
+    setAuditLog(results.audit);
+    setLastRun(new Date());
+    setLoading(false);
+  };
+
+  React.useEffect(() => {
+    runDiagnostic();
+  }, []);
+
+  React.useEffect(() => {
+    if (autoRefresh) {
+      intervalRef.current = setInterval(runDiagnostic, 60000);
+    } else {
+      clearInterval(intervalRef.current);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [autoRefresh]);
+
+  const statusColor = s => s === 'OK' ? 'text-green-400' : s === 'DEGRADED' ? 'text-yellow-400' : 'text-red-400';
+  const statusBg   = s => s === 'OK' ? 'bg-green-900/20 border-green-700/40' : s === 'DEGRADED' ? 'bg-yellow-900/20 border-yellow-700/40' : 'bg-red-900/20 border-red-700/40';
+  const alertColor = l => l === 'CRITICAL' ? 'text-red-400 border-red-700/50 bg-red-900/20' : l === 'WARNING' ? 'text-yellow-400 border-yellow-700/50 bg-yellow-900/20' : l === 'OK' ? 'text-green-400 border-green-700/50 bg-green-900/20' : 'text-blue-400 border-blue-700/50 bg-blue-900/20';
+
+  const overallHealth = health.length === 0 ? 'CHECKING' :
+    health.some(h => h.status === 'DOWN' && h.critical) ? 'CRITICAL' :
+    health.some(h => h.status !== 'OK') ? 'DEGRADED' : 'HEALTHY';
+
+  const criticalAlerts = alerts.filter(a => a.level === 'CRITICAL').length;
+  const warningAlerts  = alerts.filter(a => a.level === 'WARNING').length;
+
+  const DIAG_TABS = [
+    { key: 'health',   label: '🟢 System Health' },
+    { key: 'alerts',   label: `⚠️ Alerts ${criticalAlerts > 0 ? `(${criticalAlerts} critical)` : warningAlerts > 0 ? `(${warningAlerts})` : ''}` },
+    { key: 'security', label: '🔒 Security Watch' },
+    { key: 'audit',    label: '📋 Audit Trail' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold">Diagnostic & Security Guard</h2>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {lastRun ? `Last checked: ${lastRun.toLocaleTimeString('en-GB')}` : 'Running initial check...'}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+            <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)}
+              className="rounded"/>
+            Auto-refresh (60s)
+          </label>
+          <button onClick={runDiagnostic} disabled={loading}
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 bg-blue-700 hover:bg-blue-600">
+            {loading ? '⏳ Scanning...' : '🔄 Run Scan'}
+          </button>
+        </div>
+      </div>
+
+      {/* Overall status banner */}
+      <div className={`rounded-2xl p-5 border flex items-center justify-between ${
+        overallHealth === 'HEALTHY' ? 'bg-green-900/20 border-green-700/40' :
+        overallHealth === 'DEGRADED' ? 'bg-yellow-900/20 border-yellow-700/40' :
+        overallHealth === 'CRITICAL' ? 'bg-red-900/20 border-red-700/40' :
+        'bg-gray-900 border-gray-700'
+      }`}>
+        <div className="flex items-center gap-4">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
+            overallHealth === 'HEALTHY' ? 'bg-green-900/60' :
+            overallHealth === 'DEGRADED' ? 'bg-yellow-900/60' :
+            overallHealth === 'CRITICAL' ? 'bg-red-900/60' : 'bg-gray-800'
+          }`}>
+            {overallHealth === 'HEALTHY' ? '✅' : overallHealth === 'DEGRADED' ? '⚠️' : overallHealth === 'CRITICAL' ? '🚨' : '⏳'}
+          </div>
+          <div>
+            <p className={`text-lg font-bold ${
+              overallHealth === 'HEALTHY' ? 'text-green-400' :
+              overallHealth === 'DEGRADED' ? 'text-yellow-400' :
+              overallHealth === 'CRITICAL' ? 'text-red-400' : 'text-gray-400'
+            }`}>
+              Platform Status: {overallHealth}
+            </p>
+            <p className="text-gray-400 text-sm">
+              {health.filter(h => h.status === 'OK').length}/{health.length} services operational
+              {criticalAlerts > 0 && ` · ${criticalAlerts} critical alert(s) require immediate attention`}
+              {warningAlerts > 0 && !criticalAlerts && ` · ${warningAlerts} warning(s) to review`}
+            </p>
+          </div>
+        </div>
+        <div className="text-right text-xs text-gray-500">
+          <p>TokenEquityX Platform V3</p>
+          <p>Admin Security Console</p>
+        </div>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex gap-1 border-b border-gray-800">
+        {DIAG_TABS.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
+              activeTab === t.key ? 'border-yellow-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
+            }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* HEALTH TAB */}
+      {activeTab === 'health' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {health.length === 0 ? (
+            <div className="col-span-3 text-center py-8 text-gray-500">Running health checks...</div>
+          ) : health.map((h, i) => (
+            <div key={i} className={`rounded-xl p-4 border ${statusBg(h.status)}`}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-semibold text-sm">{h.name}</p>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                  h.status === 'OK' ? 'bg-green-900/60 text-green-300' :
+                  h.status === 'DEGRADED' ? 'bg-yellow-900/60 text-yellow-300' :
+                  'bg-red-900/60 text-red-300'
+                }`}>{h.status}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-400">{h.detail}</p>
+                {h.critical && <span className="text-xs text-gray-600">Critical service</span>}
+              </div>
+              {h.status !== 'OK' && (
+                <p className="text-xs mt-2 text-yellow-300">
+                  {h.status === 'DOWN'
+                    ? '⚠️ Service unreachable. Check Render dashboard for errors.'
+                    : '⚠️ Service degraded. Monitor closely.'}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ALERTS TAB */}
+      {activeTab === 'alerts' && (
+        <div className="space-y-3">
+          {alerts.map((a, i) => (
+            <div key={i} className={`rounded-xl p-4 border ${alertColor(a.level)}`}>
+              <div className="flex items-start gap-3">
+                <span className="text-2xl flex-shrink-0">{a.icon}</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="font-semibold text-sm text-white">{a.title}</p>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      a.level === 'CRITICAL' ? 'bg-red-900/60 text-red-300' :
+                      a.level === 'WARNING'  ? 'bg-yellow-900/60 text-yellow-300' :
+                      a.level === 'OK'       ? 'bg-green-900/60 text-green-300' :
+                      'bg-blue-900/60 text-blue-300'
+                    }`}>{a.level}</span>
+                  </div>
+                  <p className="text-xs text-gray-300 mb-2">{a.detail}</p>
+                  {a.action && (
+                    <div className="bg-gray-900/60 rounded-lg px-3 py-2 text-xs text-gray-300">
+                      <span className="text-yellow-400 font-semibold">Suggested action: </span>
+                      {a.action}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* SECURITY TAB */}
+      {activeTab === 'security' && (
+        <div className="space-y-3">
+          <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-4 text-xs text-blue-300 mb-4">
+            ℹ️ Security scans run against recent transaction history and user activity. For advanced threat detection, consider integrating Cloudflare or a WAF in production.
+          </div>
+          {security.map((s, i) => (
+            <div key={i} className={`rounded-xl p-4 border ${alertColor(s.level)}`}>
+              <div className="flex items-start gap-3">
+                <span className="text-2xl flex-shrink-0">{s.icon}</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="font-semibold text-sm text-white">{s.title}</p>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      s.level === 'CRITICAL' ? 'bg-red-900/60 text-red-300' :
+                      s.level === 'WARNING'  ? 'bg-yellow-900/60 text-yellow-300' :
+                      s.level === 'OK'       ? 'bg-green-900/60 text-green-300' :
+                      'bg-blue-900/60 text-blue-300'
+                    }`}>{s.level}</span>
+                  </div>
+                  <p className="text-xs text-gray-300 mb-2">{s.detail}</p>
+                  {s.action && (
+                    <div className="bg-gray-900/60 rounded-lg px-3 py-2 text-xs text-gray-300">
+                      <span className="text-yellow-400 font-semibold">Suggested action: </span>
+                      {s.action}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* AUDIT TRAIL TAB */}
+      {activeTab === 'audit' && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+            <h3 className="font-semibold text-sm">Recent Platform Activity</h3>
+            <span className="text-xs text-gray-500">{auditLog.length} recent events</span>
+          </div>
+          {auditLog.length === 0 ? (
+            <p className="text-center text-gray-500 text-sm py-8">No audit log entries available.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-gray-500 text-xs border-b border-gray-800">
+                  <th className="text-left py-2 px-4 font-medium">Time</th>
+                  <th className="text-left py-2 px-4 font-medium">Type</th>
+                  <th className="text-left py-2 px-4 font-medium">Detail</th>
+                  <th className="text-left py-2 px-4 font-medium">User</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditLog.map((entry, i) => (
+                  <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/30">
+                    <td className="py-2 px-4 text-xs text-gray-400 whitespace-nowrap">
+                      {new Date(entry.time).toLocaleString('en-GB', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
+                    </td>
+                    <td className="py-2 px-4">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                        entry.type === 'DEPOSIT'    ? 'bg-green-900/50 text-green-300' :
+                        entry.type === 'WITHDRAWAL' ? 'bg-red-900/50 text-red-300' :
+                        entry.type === 'DIVIDEND'   ? 'bg-yellow-900/50 text-yellow-300' :
+                        'bg-blue-900/50 text-blue-300'
+                      }`}>{entry.type}</span>
+                    </td>
+                    <td className="py-2 px-4 text-xs text-gray-300 max-w-xs truncate">{entry.detail}</td>
+                    <td className="py-2 px-4 text-xs text-gray-400">{entry.user}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const {account,user,ready}=useWallet();
   const router=useRouter();
@@ -1202,7 +1711,7 @@ export default function AdminDashboard() {
               )}
             </div>
             {/* Primary tabs */}
-            {['pipeline','trading','compliance','users','offerings','settings'].map(t=>(
+            {['pipeline','trading','compliance','users','offerings','settings','diagnostic'].map(t=>(
               <button key={t} onClick={()=>setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
                 {t}
                 {t==='pipeline'&&pendingApprovals>0&&<span className="ml-1.5 bg-amber-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingApprovals}</span>}
@@ -2090,6 +2599,10 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
+        )}
+
+        {tab==='diagnostic'&&(
+          <DiagnosticPanel token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} API={API}/>
         )}
 
       </div>
