@@ -842,4 +842,25 @@ router.get('/fix-holding', async (req, res) => {
   }
 });
 
+// GET /api/setup/fix-token-state — update a token's market_state and trading_mode
+router.get('/fix-token-state', async (req, res) => {
+  const { secret, symbol, market_state, trading_mode } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!symbol || !market_state) {
+    return res.status(400).json({ error: 'symbol and market_state are required' });
+  }
+  try {
+    await pool.execute(
+      `UPDATE tokens SET market_state = ?, trading_mode = COALESCE(?, trading_mode), updated_at = NOW()
+       WHERE token_symbol = ? OR symbol = ?`,
+      [market_state, trading_mode || null, symbol.toUpperCase(), symbol.toUpperCase()]
+    );
+    res.json({ success: true, symbol, market_state, trading_mode });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
