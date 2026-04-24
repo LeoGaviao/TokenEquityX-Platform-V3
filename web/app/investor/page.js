@@ -1022,127 +1022,191 @@ export default function InvestorDashboard() {
 
         {/* ══ MARKET ══ */}
         {tab==='market' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold">Live Market</h2>
-                <p className="text-gray-500 text-sm mt-0.5">All listed and pre-listing assets</p>
+          <div className="space-y-8">
+            <div>
+              <h2 className="text-xl font-bold">Capital Markets</h2>
+              <p className="text-gray-500 text-sm mt-0.5">Primary offerings, secondary trading and P2P transfers</p>
+            </div>
+          {/* ── SECTION 1: PRIMARY OFFERINGS ── */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-6 rounded-full bg-yellow-400"/>
+              <h3 className="font-bold text-lg">🏦 Primary Market — Open Offerings</h3>
+            </div>
+            {offerings.length === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 text-center">
+                <p className="text-gray-500 text-sm">No primary offerings currently open.</p>
               </div>
-              <div className="flex items-center gap-3">
-                <input placeholder="Search symbol or name…" value={marketSearch||''} onChange={e=>setMarketSearch(e.target.value)}
-                  className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600 w-48"/>
-                <select value={marketSort||'volume'} onChange={e=>setMarketSort(e.target.value)}
-                  className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
-                  <option value="volume">Sort: Volume</option>
-                  <option value="price">Sort: Price</option>
-                  <option value="change">Sort: 24h Change</option>
-                  <option value="yield">Sort: Yield</option>
-                  <option value="mktcap">Sort: Mkt Cap</option>
-                </select>
+            ) : (
+              <div className="space-y-4">
+                {offerings.map(o => (
+                  <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                    <div className="flex items-start justify-between flex-wrap gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold text-white text-lg">{o.token_symbol}</span>
+                          <span className="text-xs bg-green-900/40 text-green-300 px-2 py-0.5 rounded-full border border-green-700/50">OPEN</span>
+                        </div>
+                        <p className="text-gray-400 text-sm">{o.token_name || o.issuer_name}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-yellow-400">${parseFloat(o.offering_price_usd).toFixed(4)}</p>
+                        <p className="text-xs text-gray-500">per token</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                      <div className="bg-gray-800/50 rounded-lg p-3"><p className="text-xs text-gray-500 mb-1">Target Raise</p><p className="font-semibold">${parseFloat(o.target_raise_usd).toLocaleString()}</p></div>
+                      <div className="bg-gray-800/50 rounded-lg p-3"><p className="text-xs text-gray-500 mb-1">Raised So Far</p><p className="font-semibold text-green-400">${parseFloat(o.total_raised_usd || 0).toLocaleString()}</p></div>
+                      <div className="bg-gray-800/50 rounded-lg p-3"><p className="text-xs text-gray-500 mb-1">Tokens Available</p><p className="font-semibold">{parseInt(o.total_tokens_offered || 0).toLocaleString()}</p></div>
+                      <div className="bg-gray-800/50 rounded-lg p-3"><p className="text-xs text-gray-500 mb-1">Deadline</p><p className="font-semibold">{new Date(o.subscription_deadline).toLocaleDateString('en-GB')}</p></div>
+                    </div>
+                    <div className="mt-3">
+                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                        <span>Subscription Progress</span>
+                        <span>{((parseFloat(o.total_raised_usd || 0) / parseFloat(o.target_raise_usd)) * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-green-500 rounded-full transition-all" style={{width:`${Math.min(100,(parseFloat(o.total_raised_usd||0)/parseFloat(o.target_raise_usd))*100)}%`}}/>
+                      </div>
+                    </div>
+                    {o.min_subscription_usd && (
+                      <p className="text-xs text-gray-600 mt-2">Min subscription: ${parseFloat(o.min_subscription_usd).toLocaleString()} · Max: {o.max_subscription_usd ? `$${parseFloat(o.max_subscription_usd).toLocaleString()}` : 'No limit'}</p>
+                    )}
+                    {selOffering?.id === o.id ? (
+                      <div className="mt-4 pt-4 border-t border-gray-700 space-y-3">
+                        <p className="text-sm font-semibold">Subscribe to {o.token_symbol}</p>
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <label className="text-xs text-gray-400 block mb-1">Amount (USD) *</label>
+                            <input type="number" value={subAmount} onChange={e=>setSubAmount(e.target.value)}
+                              placeholder={`Min $${parseFloat(o.min_subscription_usd||0).toLocaleString()}`}
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"/>
+                          </div>
+                          {subAmount && parseFloat(subAmount) > 0 && (
+                            <div className="flex-1">
+                              <label className="text-xs text-gray-400 block mb-1">Tokens You Receive</label>
+                              <p className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-bold text-green-400">
+                                {(parseFloat(subAmount)/parseFloat(o.offering_price_usd)).toLocaleString(undefined,{maximumFractionDigits:2})} {o.token_symbol}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-3">
+                          <button onClick={()=>{setSelOffering(null);setSubAmount('');}} className="flex-1 py-2 rounded-lg text-sm bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
+                          <button onClick={()=>subscribeToOffering(o.id)} disabled={subLoading}
+                            className="flex-1 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50">
+                            {subLoading?'Processing...':'✅ Confirm Subscription'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={()=>{setSelOffering(o);setSubAmount('');}}
+                        className="mt-4 w-full py-2.5 rounded-xl text-sm font-semibold bg-green-700 hover:bg-green-600 text-white">
+                        🏦 Subscribe to This Offering
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
+            )}
+          </div>
+
+          {/* ── SECTION 2: SECONDARY MARKET — FULL TRADING ── */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-6 rounded-full bg-blue-400"/>
+              <h3 className="font-bold text-lg">📈 Secondary Market — Full Trading</h3>
+              <span className="text-xs text-gray-500">Order book trading · All securities</span>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-              <div className="grid text-xs font-bold text-gray-500 uppercase tracking-wider px-4 py-3 border-b border-gray-800"
-                style={{gridTemplateColumns:'2fr 1fr 1fr 1fr 1fr 1fr 1fr 120px'}}>
-                <span>Asset</span><span className="text-right">Price</span><span className="text-right">24h</span>
-                <span className="text-right">Mkt Cap</span><span className="text-right">Volume</span>
-                <span className="text-right">Yield</span><span className="text-right">Type</span><span className="text-right">Action</span>
-              </div>
-              {(allTokens
-                .filter(t=>!marketSearch||t.symbol.toLowerCase().includes(marketSearch.toLowerCase())||t.company?.toLowerCase().includes(marketSearch.toLowerCase()))
-                .sort((a,b)=>{
-                  // Pre-listing tokens sort to bottom
-                  if(a.isPreListing && !b.isPreListing) return 1;
-                  if(!a.isPreListing && b.isPreListing) return -1;
-                  if(marketSort==='price') return b.price-a.price;
-                  if(marketSort==='change') return b.change24h-a.change24h;
-                  if(marketSort==='yield') return b.yield_pa-a.yield_pa;
-                  if(marketSort==='mktcap') return b.mktCap-a.mktCap;
-                  return b.volume24h-a.volume24h;
-                })
-              ).map((t,i)=>{
-                const inPortfolio = portfolio.find(p=>p.symbol===t.symbol);
-                const listingType = t.listing_type||(t.market_state==='FULL_TRADING'?'BROWNFIELD_BOURSE':'GREENFIELD_P2P');
-                return (
-                  <div key={t.symbol}
-                    className={`grid items-center px-4 py-3.5 border-b border-gray-800/50 transition-colors ${i%2===0?'':'bg-gray-900/50'} ${t.isPreListing?'opacity-80 hover:bg-indigo-950/30 cursor-pointer':'hover:bg-gray-800/30'}`}
-                    style={{gridTemplateColumns:'2fr 1fr 1fr 1fr 1fr 1fr 1fr 120px'}}
-                    onClick={t.isPreListing ? ()=>setPreListingDetail(t) : undefined}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0 relative"
-                        style={{background:t.isPreListing?'#312e81':NAVY}}>
-                        {t.symbol[0]}
-                        {t.isPreListing && <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-indigo-400 border-2 border-gray-950"/>}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-sm">{t.symbol}</span>
-                          {t.isPreListing && <span className="text-xs bg-indigo-900/60 text-indigo-300 px-1.5 py-0.5 rounded-full border border-indigo-700/40">Pre-Listing</span>}
-                          {!t.isPreListing && inPortfolio && <span className="text-xs bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded-full">Held</span>}
+              <table className="w-full text-sm">
+                <thead><tr className="text-gray-500 text-xs border-b border-gray-800">
+                  {['Asset','Price','24h','Mkt Cap','Volume','Yield','Action'].map(h=>(
+                    <th key={h} className="text-left py-3 px-4 font-medium">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {allTokens.filter(t => t.market_state === 'FULL_TRADING' || t.trading_mode === 'FULL_TRADING').length === 0 ? (
+                    <tr><td colSpan={7} className="text-center py-8 text-gray-500 text-sm">No securities on full trading yet.</td></tr>
+                  ) : allTokens.filter(t => t.market_state === 'FULL_TRADING' || t.trading_mode === 'FULL_TRADING').map((t,i) => (
+                    <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:'#1A3C5E'}}>{(t.symbol||t.token_symbol||'?')[0]}</div>
+                          <div>
+                            <p className="font-semibold text-white">{t.symbol||t.token_symbol}</p>
+                            <p className="text-xs text-gray-500 truncate max-w-[120px]">{t.name||t.company_name}</p>
+                          </div>
                         </div>
-                        <p className="text-gray-500 text-xs truncate max-w-32">{t.company||t.company_name}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      {t.isPreListing
-                        ? <p className="text-xs text-indigo-400 italic">Pending</p>
-                        : <>
-                            <p className={`font-bold font-mono text-sm transition-colors duration-300 ${priceFlash[t.symbol]?'text-yellow-300':'text-white'}`}>${t.price.toFixed(4)}</p>
-                            {priceFlash[t.symbol]&&<span className="text-xs text-yellow-400 animate-pulse">⚡</span>}
-                          </>
-                      }
-                    </div>
-                    <div className="text-right">
-                      {t.isPreListing
-                        ? <span className="text-gray-600 text-xs">—</span>
-                        : <>
-                            <span className={`text-sm font-bold ${t.change24h>=0?'text-green-400':'text-red-400'}`}>{t.change24h>=0?'+':''}{t.change24h.toFixed(2)}%</span>
-                            <div className="w-full bg-gray-800 rounded-full h-1 mt-1">
-                              <div className="h-1 rounded-full" style={{width:`${Math.min(Math.abs(t.change24h)*10,100)}%`,background:t.change24h>=0?GREEN:RED,marginLeft:t.change24h<0?'auto':0}}/>
-                            </div>
-                          </>
-                      }
-                    </div>
-                    <div className="text-right"><p className="text-sm font-medium">{t.isPreListing?'—':fmt(t.mktCap)}</p></div>
-                    <div className="text-right"><p className="text-sm">{t.isPreListing?'—':fmt(t.volume24h)}</p></div>
-                    <div className="text-right"><p className={`text-sm font-medium ${t.yield_pa>0?'text-yellow-400':'text-gray-500'}`}>{t.yield_pa>0?`${t.yield_pa}%`:'—'}</p></div>
-                    <div className="text-right">
-                      {t.isPreListing
-                        ? <span className="text-xs bg-indigo-900/40 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-700/40">Pre-Listing</span>
-                        : <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${listingType==='BROWNFIELD_BOURSE'?'bg-blue-900/50 text-blue-300':'bg-amber-900/50 text-amber-300'}`}>
-                            {listingType==='BROWNFIELD_BOURSE'?'Bourse':'P2P'}
-                          </span>
-                      }
-                    </div>
-                    <div className="text-right">
-                      {t.isPreListing
-                        ? <button onClick={e=>{e.stopPropagation();setPreListingDetail(t);}}
-                            className="text-xs text-indigo-300 px-3 py-1.5 rounded-lg font-semibold w-full bg-indigo-900/30 border border-indigo-700/40 hover:bg-indigo-900/50">
-                            View Info
-                          </button>
-                        : listingType==='BROWNFIELD_BOURSE'
-                          ? <><button onClick={(e)=>{e.stopPropagation(); setChartToken({symbol:t.symbol, name:t.company||t.company_name, price:t.price, change24h:t.change24h||0, oracle_price:t.price, market_state:t.market_state, asset_class:t.asset_class||t.asset_type, total_supply:t.total_supply, market_cap:t.mktcap});}}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">📈</button>
-                            <button onClick={()=>{ setTradeSymbol(t.symbol); setTab('trade'); fetchOrderBook(t.symbol); }}
-                              className="text-xs text-white px-3 py-1.5 rounded-lg font-semibold w-full" style={{background:NAVY}}>Trade</button></>
-                          : <button className="text-xs text-amber-300 px-3 py-1.5 rounded-lg font-semibold w-full bg-amber-900/30 border border-amber-700/50">P2P Offer</button>
-                      }
-                    </div>
-                  </div>
-                );
-              })}
-              {allTokens.length===0&&<div className="py-12 text-center text-gray-500">No listings available yet.</div>}
-            </div>
-            <div className="flex items-center gap-6 text-xs text-gray-500 px-1 flex-wrap">
-              <span><span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1"/>Bourse = Full order book trading</span>
-              <span><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1"/>P2P = Greenfield — peer-to-peer transfers only</span>
-              <span><span className="inline-block w-2 h-2 rounded-full bg-indigo-400 mr-1"/>Pre-Listing = Compliance review in progress — click to view info</span>
-              <span className="ml-auto text-gray-600 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block"/>Live — prices update via WebSocket + 30s poll
-              </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono font-semibold">${parseFloat(t.price||t.current_price_usd||0).toFixed(4)}</td>
+                      <td className={`py-3 px-4 font-semibold ${parseFloat(t.change_24h||t.change24h||0)>=0?'text-green-400':'text-red-400'}`}>
+                        {parseFloat(t.change_24h||t.change24h||0)>=0?'+':''}{parseFloat(t.change_24h||t.change24h||0).toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-4 text-gray-300">{fmt(t.market_cap||t.mktCap||0)}</td>
+                      <td className="py-3 px-4 text-gray-300">{fmt(t.volume_24h||t.volume24h||0)}</td>
+                      <td className="py-3 px-4 text-yellow-400">{(t.yield_pct||t.yield_pa) ? `${t.yield_pct||t.yield_pa}%` : '—'}</td>
+                      <td className="py-3 px-4">
+                        <button onClick={()=>{ setTradeSymbol(t.symbol||t.token_symbol); setTab('trade'); fetchOrderBook(t.symbol||t.token_symbol); }}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-blue-900/40 text-blue-300 hover:bg-blue-900/60 font-semibold">
+                          📈 Trade
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
+
+          {/* ── SECTION 3: P2P MARKET ── */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-1 h-6 rounded-full bg-purple-400"/>
+              <h3 className="font-bold text-lg">🔄 P2P Market — Peer to Peer Transfers</h3>
+              <span className="text-xs text-gray-500">Greenfield securities · Direct transfers between investors</span>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead><tr className="text-gray-500 text-xs border-b border-gray-800">
+                  {['Asset','Price','24h','Mkt Cap','Volume','Yield','Action'].map(h=>(
+                    <th key={h} className="text-left py-3 px-4 font-medium">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {allTokens.filter(t => t.market_state === 'P2P_ONLY' || t.trading_mode === 'P2P_ONLY' || t.market_state === 'PRE_LAUNCH' || t.isPreListing).length === 0 ? (
+                    <tr><td colSpan={7} className="text-center py-8 text-gray-500 text-sm">No P2P securities available.</td></tr>
+                  ) : allTokens.filter(t => t.market_state === 'P2P_ONLY' || t.trading_mode === 'P2P_ONLY' || t.market_state === 'PRE_LAUNCH' || t.isPreListing).map((t,i) => (
+                    <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:'#4B1D8E'}}>{(t.symbol||t.token_symbol||'?')[0]}</div>
+                          <div>
+                            <p className="font-semibold text-white">{t.symbol||t.token_symbol}</p>
+                            <p className="text-xs text-gray-500 truncate max-w-[120px]">{t.name||t.company_name}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 font-mono font-semibold">${parseFloat(t.price||t.current_price_usd||0).toFixed(4)}</td>
+                      <td className={`py-3 px-4 font-semibold ${parseFloat(t.change_24h||t.change24h||0)>=0?'text-green-400':'text-red-400'}`}>
+                        {parseFloat(t.change_24h||t.change24h||0)>=0?'+':''}{parseFloat(t.change_24h||t.change24h||0).toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-4 text-gray-300">{fmt(t.market_cap||t.mktCap||0)}</td>
+                      <td className="py-3 px-4 text-gray-300">{fmt(t.volume_24h||t.volume24h||0)}</td>
+                      <td className="py-3 px-4 text-yellow-400">{(t.yield_pct||t.yield_pa) ? `${t.yield_pct||t.yield_pa}%` : '—'}</td>
+                      <td className="py-3 px-4">
+                        <button onClick={()=>setPreListingDetail(t)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-purple-900/40 text-purple-300 hover:bg-purple-900/60 font-semibold">
+                          🔄 P2P Offer
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
         )}
 
         {/* ══ TRADE ══ */}
