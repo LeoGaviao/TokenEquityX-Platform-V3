@@ -425,7 +425,7 @@ router.post('/:id/subscribe',
 
       res.json({
         success: true,
-        subscription_id: subResult.insertId,
+        subscription_id: null,
         tokens_allocated: tokensAllocated,
         amount_usd: subscribeAmount,
         message: `Subscribed successfully. ${tokensAllocated} tokens reserved for you.`
