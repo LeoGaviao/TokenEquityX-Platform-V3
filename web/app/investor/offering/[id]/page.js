@@ -173,27 +173,65 @@ export default function OfferingPitchPage() {
                   <p className="text-gray-300 text-sm leading-relaxed">
                     {offering.company_description || 'No company description provided.'}
                   </p>
-                  {offering.issuer_email && (
-                    <div className="mt-4 pt-4 border-t border-gray-800 flex items-center gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-500 text-xs">Issuer Contact</p>
-                        <p className="text-white font-medium">{offering.issuer_name}</p>
-                        <a href={`mailto:${offering.issuer_email}`} className="text-blue-400 hover:text-blue-300 text-xs">{offering.issuer_email}</a>
-                      </div>
-                      {offering.issuer_city && (
+                  <div className="mt-4 pt-4 border-t border-gray-800 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      {offering.founded_year && (
                         <div>
-                          <p className="text-gray-500 text-xs">Location</p>
-                          <p className="text-white text-sm">{offering.issuer_city}, {offering.issuer_country}</p>
+                          <p className="text-gray-500 text-xs">Founded</p>
+                          <p className="text-white text-sm font-medium">{offering.founded_year}</p>
+                        </div>
+                      )}
+                      {offering.headquarters && (
+                        <div>
+                          <p className="text-gray-500 text-xs">Headquarters</p>
+                          <p className="text-white text-sm font-medium">{offering.headquarters}</p>
+                        </div>
+                      )}
+                      {offering.num_employees && (
+                        <div>
+                          <p className="text-gray-500 text-xs">Employees</p>
+                          <p className="text-white text-sm font-medium">{offering.num_employees}</p>
+                        </div>
+                      )}
+                      {offering.sector && (
+                        <div>
+                          <p className="text-gray-500 text-xs">Sector</p>
+                          <p className="text-white text-sm font-medium">{offering.sector}</p>
                         </div>
                       )}
                     </div>
-                  )}
+                    {offering.website_url && (
+                      <div>
+                        <p className="text-gray-500 text-xs mb-1">Company Website</p>
+                        <a href={offering.website_url} target="_blank" rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
+                          🔗 {offering.website_url}
+                        </a>
+                      </div>
+                    )}
+                    {offering.issuer_email && (
+                      <div className="flex items-center gap-4 text-sm">
+                        <div>
+                          <p className="text-gray-500 text-xs">Issuer Contact</p>
+                          <p className="text-white font-medium">{offering.issuer_name}</p>
+                          <a href={`mailto:${offering.issuer_email}`} className="text-blue-400 hover:text-blue-300 text-xs">{offering.issuer_email}</a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
                   <h3 className="font-bold text-base mb-3">Offering Rationale</h3>
                   <p className="text-gray-300 text-sm leading-relaxed">{offering.offering_rationale || 'No rationale provided.'}</p>
                 </div>
+
+                {offering.use_of_proceeds && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                    <h3 className="font-bold text-base mb-3">Use of Proceeds</h3>
+                    <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{offering.use_of_proceeds}</p>
+                  </div>
+                )}
 
                 <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
                   <h3 className="font-bold text-base mb-3">Key Terms</h3>
