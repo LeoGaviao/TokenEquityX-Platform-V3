@@ -819,18 +819,18 @@ router.get('/fix-holding', async (req, res) => {
     return res.status(400).json({ error: 'user_id, token_id and balance are required' });
   }
   try {
-    const [existing] = await db.execute(
+    const [existing] = await pool.execute(
       'SELECT id FROM token_holdings WHERE user_id = ? AND token_id = ?',
       [user_id, parseInt(token_id)]
     );
     if (existing.length > 0) {
-      await db.execute(
+      await pool.execute(
         'UPDATE token_holdings SET balance = ?, average_cost_usd = ?, updated_at = NOW() WHERE user_id = ? AND token_id = ?',
         [parseFloat(balance), parseFloat(cost || 1), user_id, parseInt(token_id)]
       );
       res.json({ success: true, action: 'updated', user_id, token_id, balance });
     } else {
-      await db.execute(
+      await pool.execute(
         `INSERT INTO token_holdings (id, user_id, token_id, balance, reserved, average_cost_usd)
          VALUES (gen_random_uuid(), ?, ?, ?, 0, ?)`,
         [user_id, parseInt(token_id), parseFloat(balance), parseFloat(cost || 1)]
