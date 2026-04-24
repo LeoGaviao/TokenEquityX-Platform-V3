@@ -667,10 +667,11 @@ export default function InvestorDashboard() {
                   <p className="text-gray-400 text-xs">Transfer USD to our bank account and submit your reference number below. Admin will confirm and credit your wallet.</p>
                   <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-3 text-xs text-blue-300 space-y-1">
                     <p className="font-bold">Bank Transfer Details</p>
-                    <p>Bank: <span className="text-white">CABS Zimbabwe</span></p>
+                    <p>Bank: <span className="text-white">Stanbic Bank Zimbabwe</span></p>
                     <p>Account Name: <span className="text-white">TokenEquityX Ltd</span></p>
-                    <p>Account Number: <span className="text-white">1234567890</span></p>
-                    <p>Branch: <span className="text-white">Jason Moyo Branch, Harare</span></p>
+                    <p>Account Number: <span className="text-white">Contact admin@tokenequityx.co.zw for account details</span></p>
+                    <p>Branch: <span className="text-white">Harare Main Branch</span></p>
+                    <p>Swift: <span className="text-white">SBICZWHX</span></p>
                   </div>
                   {[{label:'Amount (USD)',key:'amount_usd',type:'number',placeholder:'e.g. 500.00'},{label:'Bank Transfer Reference',key:'reference',type:'text',placeholder:'e.g. TXN-20260401-001'},{label:'Notes (optional)',key:'notes',type:'text',placeholder:'Any additional info'}].map(({label,key,type,placeholder})=>(
                     <div key={key}>
@@ -1350,10 +1351,13 @@ export default function InvestorDashboard() {
           <div className="space-y-4 max-w-3xl">
             <h2 className="text-xl font-bold">Governance Votes</h2>
             <p className="text-gray-500 text-sm">Vote on company resolutions proportional to your token holdings.</p>
-            {(proposals.length?proposals:[
-              {id:1,title:'Approve Phase 2 Capital Expenditure Programme',token_symbol:'ACME',company_name:'Acme Mining Ltd',description:'Board resolution to approve USD 2.1M expansion budget for Block 12 Phase 2 works.',votes_for:340,votes_against:45,votes_abstain:15,end_time:new Date(Date.now()+5*86400000).toISOString(),status:'ACTIVE'},
-              {id:2,title:'Appoint New Independent Director — Audit Committee',token_symbol:'HCPR',company_name:'Harare CBD REIT',description:'Appointment of qualified CA(Z) to serve as chair of the Audit Committee.',votes_for:180,votes_against:20,votes_abstain:10,end_time:new Date(Date.now()+8*86400000).toISOString(),status:'ACTIVE'},
-            ]).map(p=>{
+            {proposals.length === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+                <p className="text-3xl mb-3">🗳️</p>
+                <p className="font-semibold mb-2">No active proposals</p>
+                <p className="text-gray-500 text-sm">Governance proposals from companies you hold tokens in will appear here.</p>
+              </div>
+            ) : proposals.map(p=>{
               const total=Number(p.votes_for)+Number(p.votes_against)+Number(p.votes_abstain);
               const forPct=total>0?Math.round((p.votes_for/total)*100):0;
               const againstPct=total>0?Math.round((p.votes_against/total)*100):0;
@@ -1404,17 +1408,20 @@ export default function InvestorDashboard() {
           <div className="space-y-4 max-w-3xl">
             <h2 className="text-xl font-bold">Income & Dividends</h2>
             <div className="grid grid-cols-3 gap-4 mb-2">
-              {[{label:'Claimable Now',value:fmt(dividends.reduce((a,d)=>a+Number(d.total_amount_usdc||0),0)||230.50),color:'text-green-400'},{label:'Received YTD',value:fmt(1240),color:'text-white'},{label:'Next Expected',value:'1 Apr 2026',color:'text-yellow-400'}].map((k,i)=>(
+              {[{label:'Claimable Now',value:fmt(dividends.reduce((a,d)=>a+Number(d.total_amount_usdc||0),0)),color:'text-green-400'},{label:'Received YTD',value:'—',color:'text-white'},{label:'Next Expected',value:'—',color:'text-yellow-400'}].map((k,i)=>(
                 <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">{k.label}</p>
                   <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
                 </div>
               ))}
             </div>
-            {(dividends.length?dividends:[
-              {id:1,token_symbol:'HCPR',company_name:'Harare CBD REIT',description:'Q1 2026 Rental Distribution',total_amount_usdc:'230.50',claim_deadline:new Date(Date.now()+12*86400000).toISOString()},
-              {id:2,token_symbol:'ZWIB',company_name:'ZimInfra Bond 2027',description:'April 2026 Coupon Payment',total_amount_usdc:'42.50',claim_deadline:new Date(Date.now()+18*86400000).toISOString()},
-            ]).map(d=>{
+            {dividends.length === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+                <p className="text-3xl mb-3">💰</p>
+                <p className="font-semibold mb-2">No dividends available</p>
+                <p className="text-gray-500 text-sm">Dividend distributions from your token holdings will appear here when declared.</p>
+              </div>
+            ) : dividends.map(d=>{
               const daysLeft=Math.max(0,Math.ceil((new Date(d.claim_deadline)-new Date())/(1000*60*60*24)));
               return(
                 <div key={d.id} className="bg-gray-900 border border-gray-800 rounded-xl p-6">
@@ -1441,7 +1448,8 @@ export default function InvestorDashboard() {
               <table className="w-full text-sm">
                 <thead><tr className="text-gray-500 text-xs border-b border-gray-800">{['Date','Token','Type','Amount','Status'].map(h=><th key={h} className="text-left pb-2 font-medium pr-4">{h}</th>)}</tr></thead>
                 <tbody>
-                  {[{date:'01 Jan 2026',sym:'HCPR',type:'Rental Distribution',amt:'$218.40',status:'CLAIMED'},{date:'01 Oct 2025',sym:'ZWIB',type:'Coupon Payment',amt:'$42.50',status:'CLAIMED'},{date:'01 Oct 2025',sym:'HCPR',type:'Rental Distribution',amt:'$203.60',status:'CLAIMED'}].map((r,i)=>(
+                  {true && <p className="text-gray-500 text-sm text-center py-4">No income history yet.</p>}
+                  {[].map((r,i)=>(
                     <tr key={i} className="border-b border-gray-800/50">
                       <td className="py-2 pr-4 text-gray-400">{r.date}</td>
                       <td className="py-2 pr-4 font-medium">{r.sym}</td>
