@@ -17,6 +17,7 @@ export default function RegisterAssetPage() {
   const [form, setForm] = useState({
     legalName: '', registrationNumber: '', jurisdiction: 'ZW',
     sector: 'TECH', assetType: 'EQUITY', description: '',
+    websiteUrl: '', foundedYear: '', headquarters: '', useOfProceeds: '', numEmployees: '',
     tokenName: '', tokenSymbol: '', ticker: '',
     authorisedShares: '', nominalValueCents: '100'
   });
@@ -105,6 +106,35 @@ export default function RegisterAssetPage() {
               <label className="text-xs text-gray-400">Description</label>
               <textarea value={form.description} onChange={e => set('description', e.target.value)}
                 className="input mt-1" rows={3} placeholder="Brief description of the business or asset..." />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400">Company Website</label>
+                <input value={form.websiteUrl} onChange={e => set('websiteUrl', e.target.value)}
+                  className="input mt-1" placeholder="https://example.co.zw" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">Year Founded</label>
+                <input type="number" value={form.foundedYear} onChange={e => set('foundedYear', e.target.value)}
+                  className="input mt-1" placeholder="e.g. 2018" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400">Headquarters</label>
+                <input value={form.headquarters} onChange={e => set('headquarters', e.target.value)}
+                  className="input mt-1" placeholder="e.g. Harare, Zimbabwe" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">Number of Employees</label>
+                <input value={form.numEmployees} onChange={e => set('numEmployees', e.target.value)}
+                  className="input mt-1" placeholder="e.g. 10-50" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400">Use of Proceeds</label>
+              <textarea value={form.useOfProceeds} onChange={e => set('useOfProceeds', e.target.value)}
+                className="input mt-1" rows={3} placeholder="Describe how the funds raised will be used..." />
             </div>
           </div>
         </div>

@@ -10,6 +10,7 @@ router.post('/register', authenticate, requireKYC, async (req, res) => {
   const {
     legalName, registrationNumber, jurisdiction, sector,
     assetType, description, ipfsDocHash, tokenName,
+    websiteUrl, foundedYear, headquarters, useOfProceeds, numEmployees,
     tokenSymbol, ticker, authorisedShares, nominalValueCents
   } = req.body;
 
@@ -37,12 +38,16 @@ router.post('/register', authenticate, requireKYC, async (req, res) => {
     const [spvResult] = await db.execute(`
       INSERT INTO spvs
         (owner_user_id, legal_name, registration_no, registration_number,
-         jurisdiction, sector, asset_type, description, ipfs_doc_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         jurisdiction, sector, asset_type, description, ipfs_doc_hash,
+         website_url, founded_year, headquarters, use_of_proceeds, num_employees)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING id
     `, [
       req.user.userId, legalName, registrationNumber, registrationNumber,
-      jurisdiction || 'Zimbabwe', sector || 'OTHER', assetType || 'EQUITY', description || null, ipfsDocHash || null
+      jurisdiction || 'ZW', sector || 'TECH', assetType || 'EQUITY',
+      description || null, ipfsDocHash || null,
+      websiteUrl || null, foundedYear ? parseInt(foundedYear) : null,
+      headquarters || null, useOfProceeds || null, numEmployees || null,
     ]);
     const spvId = spvResult[0].id;
 

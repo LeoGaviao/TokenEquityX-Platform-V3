@@ -68,6 +68,8 @@ router.get('/:id', authenticate, async (req, res) => {
              u.phone AS issuer_phone, u.city AS issuer_city, u.country AS issuer_country,
              s.legal_name AS company_name, s.description AS company_description,
              s.registration_number, s.sector,
+             s.website_url, s.founded_year, s.headquarters,
+             s.use_of_proceeds, s.num_employees,
              ds.data_json AS submission_data,
              ds.audit_report,
              (SELECT COUNT(*) FROM offering_subscriptions os WHERE os.offering_id = po.id AND os.status = 'CONFIRMED') AS subscriber_count
