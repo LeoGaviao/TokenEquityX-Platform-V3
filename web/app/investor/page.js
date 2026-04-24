@@ -1036,7 +1036,7 @@ export default function InvestorDashboard() {
                   <span className="text-xs bg-green-900/40 text-green-300 border border-green-700/40 px-2 py-0.5 rounded-full">{offerings.length} open</span>
                 )}
               </div>
-              <span className="text-xs text-gray-500">Invest directly in new issuances</span>
+              <span className="text-xs text-gray-500">Scroll to see all offerings →</span>
             </div>
 
             {offerings.length === 0 ? (
@@ -1109,9 +1109,12 @@ export default function InvestorDashboard() {
 
           {/* ── SECTION 2: SECONDARY MARKET — FULL TRADING ── */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
-              <span className="text-sm font-semibold">📈 Secondary Market</span>
-              <span className="text-xs text-gray-500">Full order book trading</span>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold">📈 Secondary Market</span>
+                <span className="text-xs text-gray-500">Full order book trading</span>
+              </div>
+              <button onClick={()=>router.push('/investor/trade')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -1126,7 +1129,8 @@ export default function InvestorDashboard() {
                   <tr><td colSpan={6} className="text-center py-6 text-gray-600 text-xs">No securities on full trading yet.</td></tr>
                 ) : allTokens.filter(t=>t.market_state==='FULL_TRADING'||t.trading_mode==='FULL_TRADING').map((t,i)=>(
                   <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/30 cursor-pointer transition-colors"
-                    onClick={()=>{ setTradeSymbol(t.symbol||t.token_symbol); setTab('trade'); fetchOrderBook(t.symbol||t.token_symbol); }}>
+                    onClick={()=>router.push('/investor/asset/'+(t.symbol||t.token_symbol))}>
+
                     <td className="py-2.5 px-4">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white bg-blue-900">{(t.symbol||t.token_symbol||'?')[0]}</div>
@@ -1143,7 +1147,7 @@ export default function InvestorDashboard() {
                     <td className="py-2.5 px-4 text-xs text-right text-gray-400">${parseFloat(t.volume_24h||t.volume24h||0)>=1e3?`${((t.volume_24h||t.volume24h)/1e3).toFixed(1)}K`:parseFloat(t.volume_24h||t.volume24h||0).toFixed(0)}</td>
                     <td className="py-2.5 px-4 text-xs text-right text-yellow-400">{t.yield_pct?`${t.yield_pct}%`:'—'}</td>
                     <td className="py-2.5 px-4 text-right">
-                      <span className="text-xs px-2 py-1 rounded-lg border border-blue-700/50 text-blue-300 bg-blue-900/20">Trade</span>
+                      <span className="text-xs px-2 py-1 rounded-lg border border-blue-700/50 text-blue-300 bg-blue-900/20">View →</span>
                     </td>
                   </tr>
                 ))}
@@ -1153,9 +1157,12 @@ export default function InvestorDashboard() {
 
           {/* ── SECTION 3: P2P MARKET ── */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
-              <span className="text-sm font-semibold">🔄 P2P Market</span>
-              <span className="text-xs text-gray-500">Greenfield · peer-to-peer transfers</span>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold">🔄 P2P Market</span>
+                <span className="text-xs text-gray-500">Greenfield · peer-to-peer transfers</span>
+              </div>
+              <button onClick={()=>router.push('/investor/trade')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -1169,7 +1176,8 @@ export default function InvestorDashboard() {
                 {allTokens.filter(t=>t.market_state==='P2P_ONLY'||t.trading_mode==='P2P_ONLY'||t.market_state==='PRE_LAUNCH').length === 0 ? (
                   <tr><td colSpan={6} className="text-center py-6 text-gray-600 text-xs">No P2P securities available.</td></tr>
                 ) : allTokens.filter(t=>t.market_state==='P2P_ONLY'||t.trading_mode==='P2P_ONLY'||t.market_state==='PRE_LAUNCH').map((t,i)=>(
-                  <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/30 cursor-pointer transition-colors">
+                  <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/30 cursor-pointer transition-colors"
+                    onClick={()=>router.push('/investor/asset/'+(t.symbol||t.token_symbol))}>
                     <td className="py-2.5 px-4">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white bg-purple-900">{(t.symbol||t.token_symbol||'?')[0]}</div>
