@@ -809,4 +809,37 @@ router.get('/columns', async (req, res) => {
   }
 });
 
+// GET /api/setup/fix-holding — manually insert or update a token holding
+router.get('/fix-holding', async (req, res) => {
+  const { secret, user_id, token_id, balance, cost } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!user_id || !token_id || !balance) {
+    return res.status(400).json({ error: 'user_id, token_id and balance are required' });
+  }
+  try {
+    const [existing] = await db.execute(
+      'SELECT id FROM token_holdings WHERE user_id = ? AND token_id = ?',
+      [user_id, parseInt(token_id)]
+    );
+    if (existing.length > 0) {
+      await db.execute(
+        'UPDATE token_holdings SET balance = ?, average_cost_usd = ?, updated_at = NOW() WHERE user_id = ? AND token_id = ?',
+        [parseFloat(balance), parseFloat(cost || 1), user_id, parseInt(token_id)]
+      );
+      res.json({ success: true, action: 'updated', user_id, token_id, balance });
+    } else {
+      await db.execute(
+        `INSERT INTO token_holdings (id, user_id, token_id, balance, reserved, average_cost_usd)
+         VALUES (gen_random_uuid(), ?, ?, ?, 0, ?)`,
+        [user_id, parseInt(token_id), parseFloat(balance), parseFloat(cost || 1)]
+      );
+      res.json({ success: true, action: 'inserted', user_id, token_id, balance });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
