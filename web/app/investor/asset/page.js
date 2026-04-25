@@ -9,6 +9,7 @@ const pct  = n => `${parseFloat(n||0) >= 0 ? '+' : ''}${parseFloat(n||0).toFixed
 
 const SECTIONS = [
   { key: 'all',       label: 'All Securities' },
+  { key: 'primary',   label: '🏦 Primary Offerings' },
   { key: 'secondary', label: '📈 Secondary Market' },
   { key: 'p2p',       label: '🔄 P2P Market' },
   { key: 'prelisting',label: '⏳ Pre-Listing' },
@@ -46,8 +47,9 @@ export default function MarketPriceSheet() {
         return (t.symbol||t.token_symbol||'').toLowerCase().includes(q) ||
                (t.name||t.company||'').toLowerCase().includes(q);
       }
-      if (section === 'secondary') return t.marketState === 'FULL_TRADING';
-      if (section === 'p2p')       return t.marketState === 'P2P_ONLY';
+      if (section === 'primary')    return t.marketState === 'PRIMARY_ONLY';
+      if (section === 'secondary')  return t.marketState === 'FULL_TRADING';
+      if (section === 'p2p')        return t.marketState === 'P2P_ONLY';
       if (section === 'prelisting') return t.marketState === 'PRE_LAUNCH';
       return true;
     })

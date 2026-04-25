@@ -1011,7 +1011,7 @@ export default function InvestorDashboard() {
                   <span className="text-xs bg-green-900/40 text-green-300 border border-green-700/40 px-2 py-0.5 rounded-full">{offerings.length} open</span>
                 )}
               </div>
-              <button onClick={()=>router.push('/investor/offering')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
+              <button onClick={()=>router.push('/investor/asset?section=primary')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
 
             {offerings.length === 0 ? (
@@ -1169,7 +1169,7 @@ export default function InvestorDashboard() {
                     <td className="py-2.5 px-4 text-xs text-right text-gray-400">${parseFloat(t.market_cap||0)>=1e6?`${(t.market_cap/1e6).toFixed(2)}M`:parseFloat(t.market_cap||0)>=1e3?`${(t.market_cap/1e3).toFixed(1)}K`:parseFloat(t.market_cap||0).toFixed(0)}</td>
                     <td className="py-2.5 px-4 text-xs text-right text-yellow-400">{t.yield_pct?`${t.yield_pct}%`:'—'}</td>
                     <td className="py-2.5 px-4 text-right">
-                      <span className="text-xs px-2 py-1 rounded-lg border border-purple-700/50 text-purple-300 bg-purple-900/20">P2P</span>
+                      <span className="text-xs px-2 py-1 rounded-lg border border-purple-700/50 text-purple-300 bg-purple-900/20 cursor-pointer">View →</span>
                     </td>
                   </tr>
                 ))}

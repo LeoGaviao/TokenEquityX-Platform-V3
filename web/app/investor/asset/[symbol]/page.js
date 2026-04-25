@@ -20,7 +20,7 @@ const TABS = [
   { key: 'fundamentals',  label: '🏦 Fundamentals' },
   { key: 'documents',     label: '📎 Documents' },
   { key: 'governance',    label: '🗳️ Board & Governance' },
-  { key: 'p2p',           label: '🔄 P2P Board' },
+  { key: 'p2p',           label: '🔄 P2P Board', p2pOnly: true },
 ];
 
 export default function AssetDetailPage() {
@@ -223,7 +223,7 @@ export default function AssetDetailPage() {
       <div className="max-w-6xl mx-auto px-4 py-6">
         {/* Tabs */}
         <div className="flex gap-1 border-b border-gray-800 mb-6 overflow-x-auto">
-          {TABS.map(t => (
+          {TABS.filter(t => !t.p2pOnly || isP2P).map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
               className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
                 activeTab === t.key ? 'border-yellow-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
