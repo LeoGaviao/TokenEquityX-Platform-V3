@@ -1011,7 +1011,7 @@ export default function InvestorDashboard() {
                   <span className="text-xs bg-green-900/40 text-green-300 border border-green-700/40 px-2 py-0.5 rounded-full">{offerings.length} open</span>
                 )}
               </div>
-              <span className="text-xs text-gray-500">Scroll to see all offerings →</span>
+              <button onClick={()=>router.push('/investor/offering')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
 
             {offerings.length === 0 ? (
@@ -1089,7 +1089,7 @@ export default function InvestorDashboard() {
                 <span className="text-sm font-semibold">📈 Secondary Market</span>
                 <span className="text-xs text-gray-500">Full order book trading</span>
               </div>
-              <button onClick={()=>router.push('/investor/asset')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
+              <button onClick={()=>router.push('/investor/asset?section=secondary')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -1137,7 +1137,7 @@ export default function InvestorDashboard() {
                 <span className="text-sm font-semibold">🔄 P2P Market</span>
                 <span className="text-xs text-gray-500">Greenfield · peer-to-peer transfers</span>
               </div>
-              <button onClick={()=>router.push('/investor/asset')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
+              <button onClick={()=>router.push('/investor/asset?section=p2p')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
             <table className="w-full text-sm">
               <thead>

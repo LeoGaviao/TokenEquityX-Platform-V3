@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
@@ -18,7 +19,8 @@ export default function MarketPriceSheet() {
   const router  = useRouter();
   const [tokens,  setTokens]  = useState([]);
   const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState('all');
+  const searchParams = useSearchParams();
+  const [section, setSection] = useState(searchParams?.get('section') || 'all');
   const [sortBy,  setSortBy]  = useState('market_cap');
   const [search,  setSearch]  = useState('');
 
