@@ -219,7 +219,7 @@ router.get('/', async (req, res) => {
              s.owner_user_id
       FROM tokens t
       JOIN spvs s ON s.id = t.spv_id
-      WHERE t.status IN ('ACTIVE','DRAFT')
+      WHERE t.status = 'ACTIVE'
       ORDER BY t.created_at DESC
     `);
     res.json(rows);

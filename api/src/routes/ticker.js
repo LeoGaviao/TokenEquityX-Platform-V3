@@ -32,7 +32,7 @@ router.get('/', async (req, res) => {
         ), t.current_price_usd) as price_24h_ago
       FROM tokens t
       LEFT JOIN spvs s ON s.id = t.spv_id
-      WHERE t.status IN ('ACTIVE','DRAFT')
+      WHERE t.status = 'ACTIVE'
       ORDER BY t.created_at DESC
     `);
 
