@@ -19,8 +19,8 @@ const TABS = [
   { key: 'charts',        label: '📈 Price & Volume' },
   { key: 'fundamentals',  label: '🏦 Fundamentals' },
   { key: 'documents',     label: '📎 Documents' },
-  { key: 'p2p',           label: '🔄 P2P Board' },
   { key: 'governance',    label: '🗳️ Board & Governance' },
+  { key: 'p2p',           label: '🔄 P2P Board' },
 ];
 
 export default function AssetDetailPage() {
