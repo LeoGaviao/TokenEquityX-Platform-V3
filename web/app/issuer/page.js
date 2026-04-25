@@ -513,22 +513,35 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
 
 // ── TOKENIZE TAB ────────────────────────────────────────────────
 function TokenizeTab({ setPostMsg, NAVY }) {
-  const [step, setStep]           = useState(1);
+  const FORM_KEY = 'zwgb_app_draft';
+  const savedDraft = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem(FORM_KEY) || 'null') : null;
+  const [step, setStep] = useState(savedDraft?.step || 1);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(null);
   const [files, setFiles]         = useState({});
   const fileRefs = useRef({});
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(savedDraft?.form || {
     legalEntityName:'', registrationNumber:'', proposedSymbol:'', tokenName:'',
     assetClass:'Real Estate / REIT', assetDescription:'', jurisdiction:'Zimbabwe',
     targetRaiseUsd:'', tokenIssuePrice:'1.00', totalSupply:'',
     expectedYield:'', distributionFrequency:'Quarterly',
-    ceo_name:'', ceo_email:'', ceo_id:'',
-    cfo_name:'', cfo_email:'', cfo_id:'',
+    ceo_name:'', cfo_name:'', cfo_email:'', cfo_id:'',
+    ceo_email:'', ceo_id:'',
     legal_name:'', legal_email:'', legal_id:'',
     termsAccepted: false,
   });
-  const set = (field, val) => setForm(f=>({...f,[field]:val}));
+  const set = (field, val) => {
+    setForm(f => {
+      const updated = {...f, [field]: val};
+      localStorage.setItem(FORM_KEY, JSON.stringify({ step, form: updated }));
+      return updated;
+    });
+  };
+
+  const goToStep = (n) => {
+    setStep(n);
+    localStorage.setItem(FORM_KEY, JSON.stringify({ step: n, form }));
+  };
   const handleFile = (docName) => (e) => { const f=e.target.files[0]; if(f) setFiles(prev=>({...prev,[docName]:f})); };
 
   const submit = async () => {
@@ -546,6 +559,7 @@ function TokenizeTab({ setPostMsg, NAVY }) {
       Object.values(files).forEach(f=>fd.append('documents',f));
       const res = await api.post('/submissions/tokenise', fd, {headers:{'Content-Type':'multipart/form-data'}});
       setSubmitted(res.data);
+      localStorage.removeItem(FORM_KEY);
       setPostMsg({type:'success',text:`✅ Application submitted. Reference: ${res.data.referenceNumber}`});
     } catch(err) {
       setPostMsg({type:'error',text:err.response?.data?.error||'Submission failed. Please try again.'});
@@ -577,22 +591,46 @@ function TokenizeTab({ setPostMsg, NAVY }) {
         <h2 className="text-xl font-bold">Submit a Tokenisation Proposal</h2>
         <p className="text-gray-500 text-sm mt-1">Apply to list a new asset on TokenEquityX. Approval typically takes 5–10 business days.</p>
       </div>
-      <div className="flex items-center gap-2">
-        {['Asset Info','Economics','Personnel','Documents','Submit'].map((s,i)=>(
-          <div key={i} className="flex items-center gap-2">
-            <button onClick={()=>setStep(i+1)} className={`w-7 h-7 rounded-full text-xs font-bold transition-all ${step===i+1?'text-gray-900':'text-white'}`}
-              style={{background:step===i+1?GOLD:step>i+1?'#16a34a':'#374151'}}>{step>i+1?'✓':i+1}</button>
-            <span className={`text-xs hidden md:block ${step===i+1?'text-white font-semibold':'text-gray-500'}`}>{s}</span>
-            {i<4&&<span className="text-gray-700">—</span>}
-          </div>
-        ))}
+      {savedDraft && savedDraft.step > 1 && (
+        <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl px-4 py-3 mb-4 flex items-center justify-between text-xs text-blue-300">
+          <span>📋 Draft restored from your last session — you are on step {savedDraft.step} of 5.</span>
+          <button onClick={() => { localStorage.removeItem(FORM_KEY); setStep(1); setForm({legalEntityName:'',registrationNumber:'',proposedSymbol:'',tokenName:'',assetClass:'Real Estate / REIT',assetDescription:'',jurisdiction:'Zimbabwe',targetRaiseUsd:'',tokenIssuePrice:'1.00',totalSupply:'',expectedYield:'',distributionFrequency:'Quarterly',ceo_name:'',ceo_email:'',ceo_id:'',cfo_name:'',cfo_email:'',cfo_id:'',legal_name:'',legal_email:'',legal_id:'',termsAccepted:false}); }}
+            className="text-blue-400 hover:text-white underline">Start fresh</button>
+        </div>
+      )}
+      {/* Progress bar */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-gray-500">Step {step} of 5</p>
+          <p className="text-xs text-gray-500">{['Asset Info','Token Economics','Key Personnel','Documents','Review & Submit'][step-1]}</p>
+        </div>
+        <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+          <div className="h-2 rounded-full transition-all duration-500"
+            style={{width:`${(step/5)*100}%`, background: GOLD}}/>
+        </div>
+        <div className="flex justify-between mt-2">
+          {['Asset Info','Economics','Personnel','Documents','Submit'].map((s,i)=>(
+            <div key={i} className="flex flex-col items-center">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                step > i+1 ? 'bg-green-600 text-white' :
+                step === i+1 ? 'text-gray-900' : 'bg-gray-800 text-gray-500'
+              }`} style={step === i+1 ? {background: GOLD} : {}}>
+                {step > i+1 ? '✔' : i+1}
+              </div>
+              <span className={`text-xs mt-1 hidden md:block ${step===i+1?'text-white font-semibold':'text-gray-600'}`}>{s}</span>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="bg-amber-900/20 border border-amber-800/50 rounded-xl p-4 text-sm text-amber-300">
         ⚠️ Ensure your SPV is registered and all directors have completed KYC before submitting.
       </div>
       {step===1&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
-          <h3 className="font-semibold">1. Asset Information</h3>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+          <div className="mb-2">
+            <h3 className="font-bold text-lg">Asset Information</h3>
+            <p className="text-gray-500 text-sm mt-0.5">Tell us about the company or asset you want to tokenise.</p>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs text-gray-400 block mb-1">Legal Entity Name *</label><input placeholder="e.g. Harare CBD REIT (Pvt) Ltd" value={form.legalEntityName} onChange={e=>set('legalEntityName',e.target.value)} className={inputCls}/></div>
             <div><label className="text-xs text-gray-400 block mb-1">Registration Number</label><input placeholder="e.g. 1234/2024" value={form.registrationNumber} onChange={e=>set('registrationNumber',e.target.value)} className={inputCls}/></div>
@@ -606,12 +644,15 @@ function TokenizeTab({ setPostMsg, NAVY }) {
           </div>
           <div><label className="text-xs text-gray-400 block mb-1">Jurisdiction</label><input value={form.jurisdiction} onChange={e=>set('jurisdiction',e.target.value)} className={inputCls}/></div>
           <div><label className="text-xs text-gray-400 block mb-1">Asset Description *</label><textarea rows={4} placeholder="Describe the underlying asset..." value={form.assetDescription} onChange={e=>set('assetDescription',e.target.value)} className={inputCls+' resize-none'}/></div>
-          <button onClick={()=>setStep(2)} className="w-full py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Token Economics →</button>
+          <button onClick={()=>goToStep(2)} className="w-full py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Token Economics →</button>
         </div>
       )}
       {step===2&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
-          <h3 className="font-semibold">2. Token Economics</h3>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+          <div className="mb-2">
+            <h3 className="font-bold text-lg">Token Economics</h3>
+            <p className="text-gray-500 text-sm mt-0.5">Define the financial structure of your token offering.</p>
+          </div>
           <div className="grid grid-cols-3 gap-4">
             {[['Target Raise (USD)','targetRaiseUsd','e.g. 2000000'],['Issue Price (USD)','tokenIssuePrice','e.g. 1.00'],['Total Supply','totalSupply','e.g. 2000000']].map(([l,f,p])=>(
               <div key={f}><label className="text-xs text-gray-400 block mb-1">{l}</label><input type="number" placeholder={p} value={form[f]} onChange={e=>set(f,e.target.value)} className={inputCls}/></div>
@@ -626,14 +667,17 @@ function TokenizeTab({ setPostMsg, NAVY }) {
             </div>
           </div>
           <div className="flex gap-3">
-            <button onClick={()=>setStep(1)} className="flex-1 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
-            <button onClick={()=>setStep(3)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Key Personnel →</button>
+            <button onClick={()=>goToStep(1)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
+            <button onClick={()=>goToStep(3)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Personnel →</button>
           </div>
         </div>
       )}
       {step===3&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
-          <h3 className="font-semibold">3. Key Personnel</h3>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+          <div className="mb-2">
+            <h3 className="font-bold text-lg">Key Personnel</h3>
+            <p className="text-gray-500 text-sm mt-0.5">Provide details of the company's key management team.</p>
+          </div>
           {[['CEO / Director','ceo'],['CFO / Financial Officer','cfo'],['Legal Counsel','legal']].map(([role,prefix])=>(
             <div key={prefix}>
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">{role}</p>
@@ -645,14 +689,17 @@ function TokenizeTab({ setPostMsg, NAVY }) {
             </div>
           ))}
           <div className="flex gap-3">
-            <button onClick={()=>setStep(2)} className="flex-1 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
-            <button onClick={()=>setStep(4)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Documents →</button>
+            <button onClick={()=>goToStep(2)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
+            <button onClick={()=>goToStep(4)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Documents →</button>
           </div>
         </div>
       )}
       {step===4&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-          <h3 className="font-semibold">4. Supporting Documents</h3>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-3">
+          <div className="mb-2">
+            <h3 className="font-bold text-lg">Supporting Documents</h3>
+            <p className="text-gray-500 text-sm mt-0.5">Upload your investment memorandum, financial statements and other required documents.</p>
+          </div>
           <p className="text-gray-500 text-xs">Upload what you have. Missing documents can be submitted later but will delay approval.</p>
           {[
             {name:'incorporation',label:'Certificate of Incorporation / SPV Registration',required:true},
@@ -677,25 +724,31 @@ function TokenizeTab({ setPostMsg, NAVY }) {
             </div>
           ))}
           <div className="flex gap-3 mt-2">
-            <button onClick={()=>setStep(3)} className="flex-1 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
-            <button onClick={()=>setStep(5)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Review & Submit →</button>
+            <button onClick={()=>goToStep(3)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
+            <button onClick={()=>goToStep(5)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Review & Submit →</button>
           </div>
         </div>
       )}
       {step===5&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
-          <h3 className="font-semibold">5. Review & Submit</h3>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+          <div className="mb-2">
+            <h3 className="font-bold text-lg">Review & Submit</h3>
+            <p className="text-gray-500 text-sm mt-0.5">Review your application details before submitting.</p>
+          </div>
           <div className="bg-gray-800/50 rounded-xl p-4 space-y-2 text-sm">
-            {[['Entity',form.legalEntityName],['Proposed Symbol',form.proposedSymbol],['Asset Class',form.assetClass],['Target Raise',form.targetRaiseUsd?`USD ${parseFloat(form.targetRaiseUsd).toLocaleString()}`:'—'],['Documents',`${Object.keys(files).length} uploaded`]].map(([l,v])=>(
-              <div key={l} className="flex justify-between"><span className="text-gray-400">{l}</span><span className="font-medium">{v||'—'}</span></div>
-            ))}
+            <div className="flex justify-between"><span className="text-gray-400">Entity</span><span className="text-white font-medium">{form.legalEntityName}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Symbol</span><span className="text-white font-bold">{form.proposedSymbol}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Asset Class</span><span className="text-white">{form.assetClass}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Target Raise</span><span className="text-white">${parseFloat(form.targetRaiseUsd||0).toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Token Price</span><span className="text-white">${form.tokenIssuePrice}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Total Supply</span><span className="text-white">{parseInt(form.totalSupply||0).toLocaleString()}</span></div>
           </div>
           <div className="flex items-start gap-3 bg-gray-800/50 rounded-xl p-4">
             <input type="checkbox" id="terms" checked={form.termsAccepted} onChange={e=>set('termsAccepted',e.target.checked)} className="mt-1"/>
             <label htmlFor="terms" className="text-sm text-gray-300">I confirm that all information provided is accurate and complete. I understand that submitting false or misleading information may result in rejection and potential regulatory referral under the Securities and Exchange Act (Chapter 24:25).</label>
           </div>
           <div className="flex gap-3">
-            <button onClick={()=>setStep(4)} className="flex-1 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
+            <button onClick={()=>goToStep(4)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
             <button onClick={submit} disabled={submitting||!form.termsAccepted} className="flex-1 py-3 rounded-xl font-black text-white disabled:opacity-50" style={{background:NAVY}}>
               {submitting?'⏳ Submitting...':'🚀 Submit Tokenisation Proposal'}
             </button>
