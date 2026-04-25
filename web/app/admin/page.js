@@ -1,6 +1,6 @@
 'use client';
 import { useWallet } from '../../hooks/useWallet';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
 import Inbox from '../../components/ui/Inbox';
