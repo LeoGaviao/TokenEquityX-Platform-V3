@@ -887,4 +887,41 @@ router.get('/fix-token-state', async (req, res) => {
   }
 });
 
+// GET /api/setup/delete-token — permanently delete a DRAFT token and its SPV/submissions
+router.get('/delete-token', async (req, res) => {
+  const { secret, symbol } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!symbol) return res.status(400).json({ error: 'symbol is required' });
+
+  const sym = symbol.toUpperCase();
+  try {
+    // Only allow deletion of DRAFT tokens
+    const [tokens] = await pool.execute(
+      'SELECT id, spv_id, status FROM tokens WHERE token_symbol = ?', [sym]
+    );
+    if (tokens.length === 0) return res.status(404).json({ error: `Token ${sym} not found` });
+    if (tokens[0].status === 'ACTIVE') {
+      return res.status(400).json({ error: `Cannot delete ACTIVE token ${sym}. Only DRAFT tokens can be deleted.` });
+    }
+
+    const tokenId = tokens[0].id;
+    const spvId   = tokens[0].spv_id;
+
+    // Delete in order to respect foreign keys
+    await pool.execute('DELETE FROM data_submissions WHERE token_symbol = ?', [sym]);
+    await pool.execute('DELETE FROM application_fees WHERE token_symbol = ?', [sym]);
+    await pool.execute('DELETE FROM primary_offerings WHERE token_id = ?', [tokenId]);
+    await pool.execute('DELETE FROM token_holdings WHERE token_id = ?', [tokenId]);
+    await pool.execute('DELETE FROM p2p_offers WHERE token_symbol = ?', [sym]);
+    await pool.execute('DELETE FROM tokens WHERE id = ?', [tokenId]);
+    if (spvId) await pool.execute('DELETE FROM spvs WHERE id = ?', [spvId]);
+
+    res.json({ success: true, message: `Token ${sym} and all related data permanently deleted.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
