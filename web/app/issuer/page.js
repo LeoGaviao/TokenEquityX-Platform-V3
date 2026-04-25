@@ -1247,18 +1247,33 @@ export default function IssuerDashboard() {
             </div>
 
             {/* ── STEP 3: Primary Offering ── */}
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">3</div>
-                <div>
-                  <h2 className="font-bold text-lg">Primary Offering</h2>
-                  <p className="text-gray-500 text-xs mt-0.5">Propose a fundraising round once your token is approved</p>
+            {myTokens && myTokens.some(t => t.status === 'ACTIVE') ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">3</div>
+                  <div>
+                    <h2 className="font-bold text-lg">Primary Offering</h2>
+                    <p className="text-gray-500 text-xs mt-0.5">Propose a fundraising round once your token is approved</p>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <IssuerOfferingTab notify={notify} />
                 </div>
               </div>
-              <div className="p-6">
-                <IssuerOfferingTab notify={notify} />
+            ) : (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 opacity-60">
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl font-black text-yellow-400 opacity-30">3</span>
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-400">Primary Offering</h3>
+                    <p className="text-gray-600 text-sm">Available after your token is approved through the compliance pipeline.</p>
+                  </div>
+                </div>
+                <div className="border border-gray-800 rounded-xl p-4 text-center">
+                  <p className="text-gray-600 text-sm">🔒 Complete steps 1 and 2 first — register your asset and submit financial data for auditor review. Once your token is approved by admin, you can propose a primary offering here.</p>
+                </div>
               </div>
-            </div>
+            )}
 
           </div>
         )}
