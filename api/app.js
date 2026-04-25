@@ -76,6 +76,7 @@ const walletRoutes = require('./src/routes/wallet');
 app.use('/api/wallet', walletRoutes);
 app.use('/api/wallet', require('./src/routes/settlementRail'));
 app.use('/api/offerings', require('./src/routes/offerings'));
+app.use('/api/p2p',      require('./src/routes/p2p'));
 app.use('/api/blog', require('./src/routes/blog'));
 app.use('/api/settings', require('./src/routes/settings'));
 app.use('/api/messages', require('./src/routes/messages'));

@@ -694,6 +694,25 @@ router.get('/migrate', async (req, res) => {
     `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS headquarters VARCHAR(255)`,
     `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS use_of_proceeds TEXT`,
     `ALTER TABLE spvs ADD COLUMN IF NOT EXISTS num_employees VARCHAR(50)`,
+    `CREATE TABLE IF NOT EXISTS p2p_offers (
+      id               UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+      token_id         INTEGER       NOT NULL,
+      token_symbol     VARCHAR(20)   NOT NULL,
+      seller_id        UUID          NOT NULL,
+      quantity         NUMERIC(18,6) NOT NULL,
+      price_per_token  NUMERIC(18,8) NOT NULL,
+      total_value      NUMERIC(18,2) NOT NULL,
+      status           VARCHAR(20)   NOT NULL DEFAULT 'OPEN',
+      buyer_id         UUID,
+      accepted_at      TIMESTAMP,
+      expires_at       TIMESTAMP,
+      notes            TEXT,
+      created_at       TIMESTAMP     NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_p2p_symbol ON p2p_offers(token_symbol)`,
+    `CREATE INDEX IF NOT EXISTS idx_p2p_seller ON p2p_offers(seller_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_p2p_status ON p2p_offers(status)`,
   ];
   const results = [];
   for (const sql of migrations) {

@@ -19,6 +19,7 @@ const TABS = [
   { key: 'charts',        label: '📈 Price & Volume' },
   { key: 'fundamentals',  label: '🏦 Fundamentals' },
   { key: 'documents',     label: '📎 Documents' },
+  { key: 'p2p',           label: '🔄 P2P Board' },
   { key: 'governance',    label: '🗳️ Board & Governance' },
 ];
 
@@ -34,16 +35,31 @@ export default function AssetDetailPage() {
   const [activeTab,   setActiveTab]   = useState('overview');
   const [chartPeriod, setChartPeriod] = useState('1M');
 
+  const [p2pOffers,  setP2pOffers]  = useState([]);
+  const [myHolding,  setMyHolding]  = useState(null);
+  const [myUserId,   setMyUserId]   = useState('');
+  const [p2pLoading, setP2pLoading] = useState(false);
+  const [postQty,    setPostQty]    = useState('');
+  const [postPrice,  setPostPrice]  = useState('');
+  const [postNotes,  setPostNotes]  = useState('');
+  const [postDays,   setPostDays]   = useState('30');
+  const [posting,    setPosting]    = useState(false);
+  const [p2pMsg,     setP2pMsg]     = useState('');
+
   useEffect(() => {
     if (!symbol) return;
     const tok = localStorage.getItem('token');
     const hdrs = { Authorization: `Bearer ${tok}` };
+    const uid = JSON.parse(localStorage.getItem('user') || '{}')?.userId || '';
+    setMyUserId(uid);
 
     Promise.allSettled([
       fetch(`${API}/assets`, { headers: hdrs }).then(r => r.json()),
       fetch(`${API}/governance/proposals`, { headers: hdrs }).then(r => r.json()),
       fetch(`${API}/trading/history/${symbol}?limit=50`, { headers: hdrs }).then(r => r.json()),
-    ]).then(([assetRes, propRes, tradeRes]) => {
+      fetch(`${API}/p2p?symbol=${symbol}`, { headers: hdrs }).then(r => r.json()),
+      fetch(`${API}/kyc/holdings`, { headers: hdrs }).then(r => r.json()),
+    ]).then(([assetRes, propRes, tradeRes, p2pRes, holdRes]) => {
       if (assetRes.status === 'fulfilled') {
         const assets = Array.isArray(assetRes.value) ? assetRes.value : [];
         const found  = assets.find(a => (a.token_symbol || a.symbol || '').toUpperCase() === symbol);
@@ -55,6 +71,14 @@ export default function AssetDetailPage() {
       }
       if (tradeRes.status === 'fulfilled') {
         setTrades(Array.isArray(tradeRes.value) ? tradeRes.value : []);
+      }
+      if (p2pRes.status === 'fulfilled') {
+        setP2pOffers(Array.isArray(p2pRes.value) ? p2pRes.value : []);
+      }
+      if (holdRes.status === 'fulfilled') {
+        const holdings = Array.isArray(holdRes.value) ? holdRes.value : [];
+        const h = holdings.find(h => (h.token_symbol || h.symbol || '').toUpperCase() === symbol);
+        setMyHolding(h || null);
       }
     }).finally(() => setLoading(false));
   }, [symbol]);
@@ -73,6 +97,55 @@ export default function AssetDetailPage() {
       }));
 
   const volumeChart = priceChart.slice(-14);
+
+  const loadP2P = async () => {
+    setP2pLoading(true);
+    const tok = localStorage.getItem('token');
+    try {
+      const r = await fetch(`${API}/p2p?symbol=${symbol}`, { headers: { Authorization: `Bearer ${tok}` } });
+      const data = await r.json();
+      setP2pOffers(Array.isArray(data) ? data : []);
+    } catch {}
+    setP2pLoading(false);
+  };
+
+  const postOffer = async () => {
+    setPosting(true); setP2pMsg('');
+    const tok = localStorage.getItem('token');
+    try {
+      const r = await fetch(`${API}/p2p`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token_symbol: symbol, quantity: postQty, price_per_token: postPrice, notes: postNotes, expires_days: postDays }),
+      });
+      const d = await r.json();
+      if (d.success) { setP2pMsg('✅ ' + d.message); setPostQty(''); setPostPrice(''); setPostNotes(''); loadP2P(); }
+      else setP2pMsg('❌ ' + (d.error || 'Failed'));
+    } catch { setP2pMsg('❌ Network error'); }
+    setPosting(false);
+  };
+
+  const acceptOffer = async (id) => {
+    setP2pMsg('');
+    const tok = localStorage.getItem('token');
+    try {
+      const r = await fetch(`${API}/p2p/${id}/accept`, { method: 'PUT', headers: { Authorization: `Bearer ${tok}` } });
+      const d = await r.json();
+      setP2pMsg(d.success ? '✅ ' + d.message : '❌ ' + (d.error || 'Failed'));
+      if (d.success) loadP2P();
+    } catch { setP2pMsg('❌ Network error'); }
+  };
+
+  const cancelOffer = async (id) => {
+    setP2pMsg('');
+    const tok = localStorage.getItem('token');
+    try {
+      const r = await fetch(`${API}/p2p/${id}/cancel`, { method: 'PUT', headers: { Authorization: `Bearer ${tok}` } });
+      const d = await r.json();
+      setP2pMsg(d.success ? '✅ ' + d.message : '❌ ' + (d.error || 'Failed'));
+      if (d.success) loadP2P();
+    } catch { setP2pMsg('❌ Network error'); }
+  };
 
   if (loading) return (
     <div className="min-h-screen bg-[#0D1B2A] flex items-center justify-center">
@@ -334,6 +407,141 @@ export default function AssetDetailPage() {
             <div className="text-center py-8 text-gray-500">
               <p className="text-3xl mb-3">📎</p>
               <p className="text-sm">Document downloads are available on the <button onClick={()=>router.push('/investor')} className="text-blue-400 hover:text-blue-300">primary offering pitch page</button>.</p>
+            </div>
+          </div>
+        )}
+
+        {/* P2P BOARD TAB */}
+        {activeTab === 'p2p' && (
+          <div className="space-y-5">
+            {p2pMsg && (
+              <div className={`p-3 rounded-xl text-sm ${p2pMsg.startsWith('✅') ? 'bg-green-900/30 text-green-300 border border-green-800/40' : 'bg-red-900/30 text-red-300 border border-red-800/40'}`}>
+                {p2pMsg}
+              </div>
+            )}
+
+            {/* My Holdings */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+              <h3 className="font-bold text-base mb-3">Your {symbol} Holdings</h3>
+              {myHolding ? (
+                <div className="flex gap-6 flex-wrap text-sm">
+                  <div><p className="text-gray-500 text-xs">Balance</p><p className="font-semibold">{parseFloat(myHolding.balance||0).toFixed(4)}</p></div>
+                  <div><p className="text-gray-500 text-xs">Reserved</p><p className="font-semibold text-yellow-400">{parseFloat(myHolding.reserved||0).toFixed(4)}</p></div>
+                  <div><p className="text-gray-500 text-xs">Available</p><p className="font-semibold text-green-400">{(parseFloat(myHolding.balance||0)-parseFloat(myHolding.reserved||0)).toFixed(4)}</p></div>
+                  <div><p className="text-gray-500 text-xs">Avg Cost</p><p className="font-semibold">${parseFloat(myHolding.average_cost_usd||0).toFixed(4)}</p></div>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">You do not hold any {symbol} tokens.</p>
+              )}
+            </div>
+
+            {/* Post Sell Offer */}
+            {myHolding && (parseFloat(myHolding.balance||0) - parseFloat(myHolding.reserved||0)) > 0 && (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                <h3 className="font-bold text-base mb-4">Post a Sell Offer</h3>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Quantity</label>
+                    <input type="number" value={postQty} onChange={e=>setPostQty(e.target.value)} placeholder="0.00"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Price per Token (USD)</label>
+                    <input type="number" value={postPrice} onChange={e=>setPostPrice(e.target.value)} placeholder="0.0000"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Expires in (days)</label>
+                    <input type="number" value={postDays} onChange={e=>setPostDays(e.target.value)} placeholder="30"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Notes (optional)</label>
+                    <input type="text" value={postNotes} onChange={e=>setPostNotes(e.target.value)} placeholder="Any notes for buyer..."
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+                  </div>
+                </div>
+                {postQty && postPrice && (
+                  <p className="text-xs text-gray-400 mb-3">Total: <span className="text-yellow-400 font-semibold">${(parseFloat(postQty||0)*parseFloat(postPrice||0)).toFixed(2)}</span></p>
+                )}
+                <button onClick={postOffer} disabled={posting || !postQty || !postPrice}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                  style={{background: NAVY}}>
+                  {posting ? 'Posting...' : '📤 Post Sell Offer'}
+                </button>
+              </div>
+            )}
+
+            {/* Open Offers Table */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-base">Open Offers — {symbol}</h3>
+                <button onClick={loadP2P} className="text-xs text-blue-400 hover:text-blue-300">↻ Refresh</button>
+              </div>
+              {p2pLoading ? (
+                <p className="text-gray-500 text-sm text-center py-6">Loading offers...</p>
+              ) : p2pOffers.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-3xl mb-3">🔄</p>
+                  <p className="text-sm">No open P2P offers for {symbol}.</p>
+                  <p className="text-xs mt-1 text-gray-600">Be the first to post a sell offer above.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-500 text-xs border-b border-gray-800">
+                        <th className="text-left py-2 px-3">Seller</th>
+                        <th className="text-right py-2 px-3">Qty</th>
+                        <th className="text-right py-2 px-3">Price / Token</th>
+                        <th className="text-right py-2 px-3">Total</th>
+                        <th className="text-right py-2 px-3">Expires</th>
+                        <th className="text-right py-2 px-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {p2pOffers.map(offer => {
+                        const isMyOffer = offer.seller_id === myUserId;
+                        const expiry    = offer.expires_at ? new Date(offer.expires_at).toLocaleDateString() : '—';
+                        return (
+                          <tr key={offer.id} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                            <td className="py-2.5 px-3 text-gray-300 text-xs">{offer.seller_name || 'Holder'}</td>
+                            <td className="py-2.5 px-3 text-right font-mono">{parseFloat(offer.quantity).toFixed(4)}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-yellow-400">${parseFloat(offer.price_per_token).toFixed(4)}</td>
+                            <td className="py-2.5 px-3 text-right font-mono">${parseFloat(offer.total_value).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right text-gray-500 text-xs">{expiry}</td>
+                            <td className="py-2.5 px-3 text-right">
+                              {isMyOffer ? (
+                                <button onClick={() => cancelOffer(offer.id)}
+                                  className="text-xs px-3 py-1 rounded-lg border border-red-800/50 text-red-400 hover:bg-red-900/20">
+                                  Cancel
+                                </button>
+                              ) : (
+                                <button onClick={() => acceptOffer(offer.id)}
+                                  className="text-xs px-3 py-1 rounded-lg text-white font-semibold"
+                                  style={{background:'#4B1D8E'}}>
+                                  Buy
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* How P2P Works */}
+            <div className="bg-blue-900/10 border border-blue-800/30 rounded-2xl p-5 text-xs text-gray-400">
+              <p className="font-semibold text-blue-300 mb-2">ℹ️ How P2P Trading Works</p>
+              <ul className="space-y-1 list-disc list-inside">
+                <li>Token holders post sell offers at their chosen price and quantity.</li>
+                <li>Buyers accept offers — funds are debited from their wallet and tokens transferred instantly.</li>
+                <li>Reserved tokens are held in escrow until the offer is accepted or cancelled.</li>
+                <li>All transfers are atomic — they complete fully or not at all.</li>
+              </ul>
             </div>
           </div>
         )}
