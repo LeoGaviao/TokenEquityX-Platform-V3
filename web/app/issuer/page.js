@@ -1595,12 +1595,28 @@ export default function IssuerDashboard() {
               )}
             </div>
             {/* Primary tabs */}
-            {['journey','financials','kyc','governance','dividends'].map(tab2=>(
-              <button key={tab2} onClick={()=>setTab(tab2)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===tab2?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                {tab2}
+            {['overview','kyc','journey','financials'].map(t=>(
+              <button key={t} onClick={()=>setTab(t)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                {t === 'journey' ? 'Application Journey' : t}
               </button>
             ))}
+            <div className="relative">
+              <button onClick={()=>setShowIssuerMore(m=>!m)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${['governance','dividends'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                More ▾
+              </button>
+              {showIssuerMore && (
+                <div className="absolute top-full left-0 mt-1 w-36 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                  {['governance','dividends'].map(t=>(
+                    <button key={t} onClick={()=>{setTab(t);setShowIssuerMore(false);}}
+                      className={`w-full text-left px-4 py-2.5 text-sm capitalize hover:bg-gray-800 transition-colors ${tab===t?'text-white font-semibold':'text-gray-400'}`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </nav>
           <div className="flex items-center gap-3">
             <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email||'User'}</span>
