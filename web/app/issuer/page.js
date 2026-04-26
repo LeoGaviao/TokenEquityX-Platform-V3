@@ -545,6 +545,8 @@ function TokenizeTab({ setPostMsg, NAVY }) {
   const FORM_KEY = 'zwgb_app_draft';
   const savedDraft = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem(FORM_KEY) || 'null') : null;
   const [step, setStep] = useState(savedDraft?.step || 1);
+  const [symbolStatus, setSymbolStatus] = useState(null); // null | 'checking' | 'available' | 'taken'
+  const [symbolTimer,  setSymbolTimer]  = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(null);
   const [files, setFiles]         = useState({});
@@ -565,6 +567,22 @@ function TokenizeTab({ setPostMsg, NAVY }) {
       localStorage.setItem(FORM_KEY, JSON.stringify({ step, form: updated }));
       return updated;
     });
+  };
+
+  const checkSymbol = (sym) => {
+    if (!sym || sym.length < 2) { setSymbolStatus(null); return; }
+    setSymbolStatus('checking');
+    clearTimeout(symbolTimer);
+    const timer = setTimeout(async () => {
+      try {
+        const res  = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/assets/check-symbol?symbol=${sym}`);
+        const data = await res.json();
+        setSymbolStatus(data.available ? 'available' : 'taken');
+      } catch {
+        setSymbolStatus(null);
+      }
+    }, 600);
+    setSymbolTimer(timer);
   };
 
   const goToStep = (n) => {
@@ -663,7 +681,18 @@ function TokenizeTab({ setPostMsg, NAVY }) {
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs text-gray-400 block mb-1">Legal Entity Name *</label><input placeholder="e.g. Harare CBD REIT (Pvt) Ltd" value={form.legalEntityName} onChange={e=>set('legalEntityName',e.target.value)} className={inputCls}/></div>
             <div><label className="text-xs text-gray-400 block mb-1">Registration Number</label><input placeholder="e.g. 1234/2024" value={form.registrationNumber} onChange={e=>set('registrationNumber',e.target.value)} className={inputCls}/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Proposed Token Symbol *</label><input placeholder="e.g. HCPR" value={form.proposedSymbol} onChange={e=>set('proposedSymbol',e.target.value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,5))} className={inputCls}/></div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Proposed Token Symbol *</label>
+              <div className="relative">
+                <input placeholder="e.g. ZWGB" value={form.proposedSymbol}
+                  onChange={e => { const v=e.target.value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,5); set('proposedSymbol',v); checkSymbol(v); }}
+                  className={inputCls + (symbolStatus==='taken'?' border-red-500':symbolStatus==='available'?' border-green-500':'')}/>
+                {symbolStatus === 'checking'   && <span className="absolute right-3 top-2.5 text-xs text-gray-400">⏳ Checking...</span>}
+                {symbolStatus === 'available'  && <span className="absolute right-3 top-2.5 text-xs text-green-400">✅ Available</span>}
+                {symbolStatus === 'taken'      && <span className="absolute right-3 top-2.5 text-xs text-red-400">❌ Already taken</span>}
+              </div>
+              {symbolStatus === 'taken' && <p className="text-xs text-red-400 mt-1">This symbol is already registered. Please choose a different symbol.</p>}
+            </div>
             <div><label className="text-xs text-gray-400 block mb-1">Token Name</label><input placeholder="e.g. Harare CBD REIT" value={form.tokenName} onChange={e=>set('tokenName',e.target.value)} className={inputCls}/></div>
           </div>
           <div><label className="text-xs text-gray-400 block mb-1">Asset Class *</label>
@@ -1009,15 +1038,15 @@ export default function IssuerDashboard() {
   const loadAll = async () => {
     try {
       const [tokRes, tradeRes, divRes, propRes, appRes] = await Promise.allSettled([
-        api.get('/assets'),
+        api.get('/assets/my'),
         api.get('/trading/recent?limit=20'),
         api.get('/dividends/rounds'),
         api.get('/governance/proposals'),
         api.get('/submissions/my'),
       ]);
       const myToks = (tokRes.status==='fulfilled' ? tokRes.value.data : []);
-      setMyTokens(myToks.length ? myToks : [{id:1,symbol:'HCPR',company_name:'Harare CBD REIT',asset_class:'Real Estate',oracle_price:1.005,total_supply:5000000,market_state:'FULL_TRADING'}]);
-      setSelToken(myToks[0] || {id:1,symbol:'HCPR',company_name:'Harare CBD REIT',asset_class:'Real Estate',oracle_price:1.005,total_supply:5000000,market_state:'FULL_TRADING'});
+      setMyTokens(myToks);
+      if (myToks.length > 0) setSelToken(myToks[0]);
       if (tradeRes.status==='fulfilled') setTrades(tradeRes.value.data||[]);
       if (divRes.status==='fulfilled')   setDividends(divRes.value.data||[]);
       if (propRes.status==='fulfilled')  setProposals(propRes.value.data||[]);
@@ -1246,6 +1275,46 @@ export default function IssuerDashboard() {
         {/* ══ JOURNEY ══ */}
         {tab==='journey' && (
           <div className="space-y-8">
+
+            {/* My Registered Assets */}
+            {myTokens.length > 0 && (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-bold text-lg">My Registered Assets</h3>
+                    <p className="text-gray-500 text-xs mt-0.5">All tokens registered under your account</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {myTokens.map(t => {
+                    const sym = t.token_symbol || t.symbol || '?';
+                    const statusColor = t.status === 'ACTIVE' ? 'bg-green-900/40 text-green-300 border-green-700/50' :
+                                       t.status === 'DRAFT'  ? 'bg-gray-800 text-gray-400 border-gray-700' :
+                                       'bg-yellow-900/40 text-yellow-300 border-yellow-700/50';
+                    const marketColor = t.market_state === 'P2P_ONLY' ? 'text-purple-400' :
+                                       t.market_state === 'FULL_TRADING' ? 'text-blue-400' :
+                                       t.market_state === 'PRIMARY_ONLY' ? 'text-green-400' : 'text-gray-500';
+                    return (
+                      <div key={t.id} className="flex items-center justify-between bg-gray-800/50 border border-gray-700/40 rounded-xl px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                            style={{background: NAVY}}>{sym[0]}</div>
+                          <div>
+                            <p className="font-semibold text-white text-sm">{sym}</p>
+                            <p className="text-gray-500 text-xs">{t.token_name || t.name || t.company_name}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor}`}>{t.status}</span>
+                          <span className={`text-xs font-medium ${marketColor}`}>{t.market_state?.replace('_',' ')}</span>
+                          <span className="text-xs text-gray-400">${parseFloat(t.current_price_usd || t.oracle_price || 1).toFixed(4)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* ── STEP 1: Tokenisation Application ── */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">

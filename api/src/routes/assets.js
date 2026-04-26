@@ -106,17 +106,32 @@ router.post('/register', authenticate, requireKYC, async (req, res) => {
 });
 
 // GET /api/assets/my — get assets owned by current user
+// GET /api/assets/check-symbol?symbol=XXX — check if symbol is available
+router.get('/check-symbol', async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: 'symbol is required' });
+  try {
+    const [rows] = await db.execute(
+      'SELECT id FROM tokens WHERE token_symbol = ?', [symbol.toUpperCase()]
+    );
+    res.json({ symbol: symbol.toUpperCase(), available: rows.length === 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/my', authenticate, async (req, res) => {
   try {
     const [rows] = await db.execute(`
       SELECT t.*, s.legal_name, s.registration_number,
              s.jurisdiction, s.sector, s.asset_type as spv_asset_type,
-             s.ipfs_doc_hash as spv_ipfs_hash
+             s.ipfs_doc_hash as spv_ipfs_hash,
+             s.owner_user_id, s.description, s.website_url, s.founded_year, s.headquarters
       FROM tokens t
       JOIN spvs s ON s.id = t.spv_id
-      WHERE s.owner_user_id = ?
+      WHERE (s.owner_user_id = ? OR t.issuer_id = ?)
       ORDER BY t.created_at DESC
-    `, [req.user.userId]);
+    `, [req.user.userId, req.user.userId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: 'Could not fetch assets' });
