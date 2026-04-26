@@ -729,13 +729,13 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), async (req,
       INSERT INTO tokens (spv_id, symbol, name, company_name, token_name, token_symbol, ticker,
         asset_type, asset_class, authorised_shares, issued_shares, nominal_value_cents,
         total_supply, price_usd, current_price_usd, oracle_price,
-        market_state, status, jurisdiction, sector)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT', ?, ?)
+        market_state, status, jurisdiction)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT', ?)
     `, [
       spvId, sym, tokenName, legalName, tokenName, sym, sym,
       assetType || 'EQUITY', assetClass || assetType || 'EQUITY',
       shares, shares, nomVal, shares, price, price, price,
-      jurisdiction || 'ZW', sector || 'OTHER'
+      jurisdiction || 'ZW'
     ]);
 
     const dataJson = JSON.stringify({

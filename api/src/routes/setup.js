@@ -713,6 +713,7 @@ router.get('/migrate', async (req, res) => {
     `CREATE INDEX IF NOT EXISTS idx_p2p_symbol ON p2p_offers(token_symbol)`,
     `CREATE INDEX IF NOT EXISTS idx_p2p_seller ON p2p_offers(seller_id)`,
     `CREATE INDEX IF NOT EXISTS idx_p2p_status ON p2p_offers(status)`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS sector VARCHAR(100)`,
   ];
   const results = [];
   for (const sql of migrations) {
