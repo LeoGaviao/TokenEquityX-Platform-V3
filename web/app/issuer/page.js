@@ -540,33 +540,47 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
   );
 }
 
-// ── TOKENIZE TAB ────────────────────────────────────────────────
-function TokenizeTab({ setPostMsg, NAVY }) {
-  const FORM_KEY = 'zwgb_app_draft';
+// ── TOKENISATION TAB ────────────────────────────────────────────
+function TokenisationTab({ notify }) {
+  const API     = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+  const FORM_KEY = 'texz_unified_app_draft';
   const savedDraft = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem(FORM_KEY) || 'null') : null;
-  const [step, setStep] = useState(savedDraft?.step || 1);
-  const [symbolStatus, setSymbolStatus] = useState(null); // null | 'checking' | 'available' | 'taken'
-  const [symbolTimer,  setSymbolTimer]  = useState(null);
+  const [step,       setStep]       = useState(savedDraft?.step || 1);
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(null);
-  const [files, setFiles]         = useState({});
+  const [submitted,  setSubmitted]  = useState(null);
+  const [files,      setFiles]      = useState({});
   const fileRefs = useRef({});
+  const [symbolStatus, setSymbolStatus] = useState(null);
+  const [symbolTimer,  setSymbolTimer]  = useState(null);
+  const [postMsg,      setPostMsg]      = useState(null);
+  const [applications, setApplications] = useState([]);
+  const [loadingApps,  setLoadingApps]  = useState(true);
   const [form, setForm] = useState(savedDraft?.form || {
-    legalEntityName:'', registrationNumber:'', proposedSymbol:'', tokenName:'',
-    assetClass:'Real Estate / REIT', assetDescription:'', jurisdiction:'Zimbabwe',
-    targetRaiseUsd:'', tokenIssuePrice:'1.00', totalSupply:'',
-    expectedYield:'', distributionFrequency:'Quarterly',
-    ceo_name:'', cfo_name:'', cfo_email:'', cfo_id:'',
-    ceo_email:'', ceo_id:'',
-    legal_name:'', legal_email:'', legal_id:'',
+    legalName: '', registrationNumber: '', jurisdiction: 'ZW',
+    sector: 'OTHER', assetType: 'EQUITY', description: '',
+    websiteUrl: '', foundedYear: '', headquarters: '', useOfProceeds: '', numEmployees: '',
+    tokenName: '', tokenSymbol: '', assetClass: 'Private Equity',
+    authorisedShares: '', nominalValueCents: '100',
+    targetRaiseUsd: '', tokenIssuePrice: '1.00', totalSupply: '',
+    expectedYield: '', distributionFrequency: 'Quarterly',
+    ceo_name: '', ceo_email: '', ceo_id: '',
+    cfo_name: '', cfo_email: '', cfo_id: '',
+    legal_name: '', legal_email: '', legal_id: '',
     termsAccepted: false,
   });
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500';
+
   const set = (field, val) => {
     setForm(f => {
-      const updated = {...f, [field]: val};
+      const updated = { ...f, [field]: val };
       localStorage.setItem(FORM_KEY, JSON.stringify({ step, form: updated }));
       return updated;
     });
+  };
+
+  const goToStep = (n) => {
+    setStep(n);
+    localStorage.setItem(FORM_KEY, JSON.stringify({ step: n, form }));
   };
 
   const checkSymbol = (sym) => {
@@ -575,245 +589,418 @@ function TokenizeTab({ setPostMsg, NAVY }) {
     clearTimeout(symbolTimer);
     const timer = setTimeout(async () => {
       try {
-        const res  = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/assets/check-symbol?symbol=${sym}`);
+        const res  = await fetch(`${API}/assets/check-symbol?symbol=${sym}`);
         const data = await res.json();
         setSymbolStatus(data.available ? 'available' : 'taken');
-      } catch {
-        setSymbolStatus(null);
-      }
+      } catch { setSymbolStatus(null); }
     }, 600);
     setSymbolTimer(timer);
   };
 
-  const goToStep = (n) => {
-    setStep(n);
-    localStorage.setItem(FORM_KEY, JSON.stringify({ step: n, form }));
+  const handleFile = (docName) => (e) => {
+    const f = e.target.files[0];
+    if (f) setFiles(prev => ({ ...prev, [docName]: f }));
   };
-  const handleFile = (docName) => (e) => { const f=e.target.files[0]; if(f) setFiles(prev=>({...prev,[docName]:f})); };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    fetch(`${API}/submissions/my`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d)) setApplications(d); })
+      .catch(() => {})
+      .finally(() => setLoadingApps(false));
+  }, [submitted]);
+
+  const deleteSubmission = async (subId, symbol) => {
+    if (!window.confirm(`Delete the ${symbol} application?\n\nThis will permanently delete the token, SPV and all related data.\n\nThis cannot be undone.`)) return;
+    const typed = window.prompt(`Type "${symbol}" to confirm:`);
+    if (typed !== symbol) { alert('Symbol did not match. Deletion cancelled.'); return; }
+    const token = localStorage.getItem('token');
+    const res   = await fetch(`${API}/submissions/${subId}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (res.ok) { alert(`✅ ${data.message}`); window.location.reload(); }
+    else alert(`Error: ${data.error}`);
+  };
 
   const submit = async () => {
-    if (!form.termsAccepted) { setPostMsg({type:'error',text:'Please accept the declaration before submitting.'}); return; }
-    if (!form.legalEntityName || !form.proposedSymbol || !form.assetDescription) { setPostMsg({type:'error',text:'Please complete all required fields (marked *).'}); return; }
+    if (!form.termsAccepted) { setPostMsg({ type: 'error', text: 'Please accept the declaration.' }); return; }
+    if (!form.legalName || !form.tokenSymbol || !form.tokenName) {
+      setPostMsg({ type: 'error', text: 'Please complete all required fields.' }); return;
+    }
+    if (symbolStatus === 'taken') { setPostMsg({ type: 'error', text: 'Token symbol is already taken.' }); return; }
     setSubmitting(true);
     try {
-      const fd = new FormData();
-      Object.entries(form).forEach(([k,v]) => { if(k!=='termsAccepted') fd.append(k,v); });
-      fd.append('keyPersonnel', JSON.stringify([
-        {role:'CEO',name:form.ceo_name,email:form.ceo_email,idNumber:form.ceo_id},
-        {role:'CFO',name:form.cfo_name,email:form.cfo_email,idNumber:form.cfo_id},
-        {role:'Legal Counsel',name:form.legal_name,email:form.legal_email,idNumber:form.legal_id},
-      ].filter(p=>p.name)));
-      Object.values(files).forEach(f=>fd.append('documents',f));
-      const res = await api.post('/submissions/tokenise', fd, {headers:{'Content-Type':'multipart/form-data'}});
-      setSubmitted(res.data);
-      localStorage.removeItem(FORM_KEY);
-      setPostMsg({type:'success',text:`✅ Application submitted. Reference: ${res.data.referenceNumber}`});
-    } catch(err) {
-      setPostMsg({type:'error',text:err.response?.data?.error||'Submission failed. Please try again.'});
-    } finally { setSubmitting(false); }
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`${API}/submissions/unified`, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.removeItem(FORM_KEY);
+        setSubmitted(data);
+      } else {
+        setPostMsg({ type: 'error', text: data.error || 'Submission failed.' });
+      }
+    } catch { setPostMsg({ type: 'error', text: 'Request failed. Please try again.' }); }
+    setSubmitting(false);
   };
 
-  if (submitted) {
-    return (
-      <div className="max-w-2xl">
-        <div className="bg-green-900/40 border border-green-700 rounded-2xl p-8 text-center">
-          <span className="text-5xl mb-4 block">✅</span>
-          <h3 className="font-bold text-xl mb-2">Application Submitted!</h3>
-          <p className="text-gray-400 mb-4">{submitted.message}</p>
-          <div className="bg-gray-900/50 rounded-xl p-4 text-left space-y-2">
-            {[['Reference Number',submitted.referenceNumber,'text-yellow-400'],['Proposed Symbol',submitted.proposedSymbol,'font-bold'],['Documents Uploaded',submitted.documentsUploaded,'font-bold']].map(([l,v,cls])=>(
-              <div key={l} className="flex justify-between text-sm"><span className="text-gray-400">{l}</span><span className={cls}>{v}</span></div>
-            ))}
-          </div>
-          <button onClick={()=>setSubmitted(null)} className="mt-6 text-sm text-blue-400 hover:text-blue-300">Submit another application</button>
-        </div>
-      </div>
-    );
-  }
+  const STEPS = ['Company', 'Token', 'Economics', 'Personnel', 'Documents', 'Review'];
 
-  const inputCls = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-600";
+  if (submitted) return (
+    <div className="bg-gray-900 border border-green-700/40 rounded-2xl p-8 text-center max-w-lg mx-auto">
+      <p className="text-5xl mb-4">🎉</p>
+      <h3 className="font-bold text-xl mb-2 text-green-400">Application Submitted!</h3>
+      <p className="text-gray-300 text-sm mb-4">{submitted.message}</p>
+      <div className="bg-gray-800 rounded-xl p-3 mb-4">
+        <p className="text-xs text-gray-500">Reference Number</p>
+        <p className="font-mono text-yellow-400 text-sm">{submitted.referenceNumber}</p>
+      </div>
+      <p className="text-gray-500 text-xs">Your application will be reviewed at the next Tuesday Applications Appraisal Meeting. You will receive a notification once reviewed.</p>
+      <button onClick={() => setSubmitted(null)} className="mt-6 text-sm text-blue-400 hover:text-blue-300">Submit another application</button>
+    </div>
+  );
+
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div>
-        <h2 className="text-xl font-bold">Submit a Tokenisation Proposal</h2>
-        <p className="text-gray-500 text-sm mt-1">Apply to list a new asset on TokenEquityX. Approval typically takes 5–10 business days.</p>
-      </div>
-      {savedDraft && savedDraft.step > 1 && (
-        <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl px-4 py-3 mb-4 flex items-center justify-between text-xs text-blue-300">
-          <span>📋 Draft restored from your last session — you are on step {savedDraft.step} of 5.</span>
-          <button onClick={() => { localStorage.removeItem(FORM_KEY); setStep(1); setForm({legalEntityName:'',registrationNumber:'',proposedSymbol:'',tokenName:'',assetClass:'Real Estate / REIT',assetDescription:'',jurisdiction:'Zimbabwe',targetRaiseUsd:'',tokenIssuePrice:'1.00',totalSupply:'',expectedYield:'',distributionFrequency:'Quarterly',ceo_name:'',ceo_email:'',ceo_id:'',cfo_name:'',cfo_email:'',cfo_id:'',legal_name:'',legal_email:'',legal_id:'',termsAccepted:false}); }}
-            className="text-blue-400 hover:text-white underline">Start fresh</button>
-        </div>
-      )}
-      {/* Progress bar */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-gray-500">Step {step} of 5</p>
-          <p className="text-xs text-gray-500">{['Asset Info','Token Economics','Key Personnel','Documents','Review & Submit'][step-1]}</p>
-        </div>
-        <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-          <div className="h-2 rounded-full transition-all duration-500"
-            style={{width:`${(step/5)*100}%`, background: GOLD}}/>
-        </div>
-        <div className="flex justify-between mt-2">
-          {['Asset Info','Economics','Personnel','Documents','Submit'].map((s,i)=>(
-            <div key={i} className="flex flex-col items-center">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                step > i+1 ? 'bg-green-600 text-white' :
-                step === i+1 ? 'text-gray-900' : 'bg-gray-800 text-gray-500'
-              }`} style={step === i+1 ? {background: GOLD} : {}}>
-                {step > i+1 ? '✔' : i+1}
+    <div className="space-y-6 max-w-2xl">
+      {/* Existing applications */}
+      {!loadingApps && applications.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold">My Applications</h3>
+            <span className="text-xs text-gray-500">{applications.length} application(s)</span>
+          </div>
+          <div className="space-y-2">
+            {applications.map(app => (
+              <div key={app.id} className="flex items-center justify-between bg-gray-800/50 border border-gray-700/40 rounded-xl px-4 py-3">
+                <div>
+                  <p className="font-semibold text-sm">{app.token_symbol} — {app.entity_name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Ref: {app.reference_number?.substring(0,16)}... · {new Date(app.created_at).toLocaleDateString('en-GB')}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                    app.status === 'ADMIN_APPROVED' ? 'bg-green-900/40 text-green-300 border-green-700/50' :
+                    app.status === 'REJECTED'       ? 'bg-red-900/40 text-red-300 border-red-700/50' :
+                    app.status === 'UNDER_REVIEW'   ? 'bg-blue-900/40 text-blue-300 border-blue-700/50' :
+                    'bg-yellow-900/40 text-yellow-300 border-yellow-700/50'
+                  }`}>{app.application_status || app.status}</span>
+                  {['PENDING','UNDER_REVIEW','REJECTED'].includes(app.status) && (
+                    <button onClick={() => deleteSubmission(app.id, app.token_symbol)}
+                      className="text-xs px-2 py-1 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-800/50">
+                      🗑
+                    </button>
+                  )}
+                </div>
               </div>
-              <span className={`text-xs mt-1 hidden md:block ${step===i+1?'text-white font-semibold':'text-gray-600'}`}>{s}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="bg-amber-900/20 border border-amber-800/50 rounded-xl p-4 text-sm text-amber-300">
-        ⚠️ Ensure your SPV is registered and all directors have completed KYC before submitting.
-      </div>
-      {step===1&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
-          <div className="mb-2">
-            <h3 className="font-bold text-lg">Asset Information</h3>
-            <p className="text-gray-500 text-sm mt-0.5">Tell us about the company or asset you want to tokenise.</p>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-xs text-gray-400 block mb-1">Legal Entity Name *</label><input placeholder="e.g. Harare CBD REIT (Pvt) Ltd" value={form.legalEntityName} onChange={e=>set('legalEntityName',e.target.value)} className={inputCls}/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Registration Number</label><input placeholder="e.g. 1234/2024" value={form.registrationNumber} onChange={e=>set('registrationNumber',e.target.value)} className={inputCls}/></div>
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">Proposed Token Symbol *</label>
-              <div className="relative">
-                <input placeholder="e.g. ZWGB" value={form.proposedSymbol}
-                  onChange={e => { const v=e.target.value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,5); set('proposedSymbol',v); checkSymbol(v); }}
-                  className={inputCls + (symbolStatus==='taken'?' border-red-500':symbolStatus==='available'?' border-green-500':'')}/>
-                {symbolStatus === 'checking'   && <span className="absolute right-3 top-2.5 text-xs text-gray-400">⏳ Checking...</span>}
-                {symbolStatus === 'available'  && <span className="absolute right-3 top-2.5 text-xs text-green-400">✅ Available</span>}
-                {symbolStatus === 'taken'      && <span className="absolute right-3 top-2.5 text-xs text-red-400">❌ Already taken</span>}
-              </div>
-              {symbolStatus === 'taken' && <p className="text-xs text-red-400 mt-1">This symbol is already registered. Please choose a different symbol.</p>}
-            </div>
-            <div><label className="text-xs text-gray-400 block mb-1">Token Name</label><input placeholder="e.g. Harare CBD REIT" value={form.tokenName} onChange={e=>set('tokenName',e.target.value)} className={inputCls}/></div>
-          </div>
-          <div><label className="text-xs text-gray-400 block mb-1">Asset Class *</label>
-            <select value={form.assetClass} onChange={e=>set('assetClass',e.target.value)} className={inputCls}>
-              {['Real Estate / REIT','Mining / PGMs','Infrastructure Bond','Corporate Bond','Private Equity','Agriculture','Other'].map(o=><option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div><label className="text-xs text-gray-400 block mb-1">Jurisdiction</label><input value={form.jurisdiction} onChange={e=>set('jurisdiction',e.target.value)} className={inputCls}/></div>
-          <div><label className="text-xs text-gray-400 block mb-1">Asset Description *</label><textarea rows={4} placeholder="Describe the underlying asset..." value={form.assetDescription} onChange={e=>set('assetDescription',e.target.value)} className={inputCls+' resize-none'}/></div>
-          <button onClick={()=>goToStep(2)} className="w-full py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Token Economics →</button>
-        </div>
-      )}
-      {step===2&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
-          <div className="mb-2">
-            <h3 className="font-bold text-lg">Token Economics</h3>
-            <p className="text-gray-500 text-sm mt-0.5">Define the financial structure of your token offering.</p>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            {[['Target Raise (USD)','targetRaiseUsd','e.g. 2000000'],['Issue Price (USD)','tokenIssuePrice','e.g. 1.00'],['Total Supply','totalSupply','e.g. 2000000']].map(([l,f,p])=>(
-              <div key={f}><label className="text-xs text-gray-400 block mb-1">{l}</label><input type="number" placeholder={p} value={form[f]} onChange={e=>set(f,e.target.value)} className={inputCls}/></div>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-xs text-gray-400 block mb-1">Expected Annual Yield</label><input placeholder="e.g. 9.2% annual rental yield" value={form.expectedYield} onChange={e=>set('expectedYield',e.target.value)} className={inputCls}/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Distribution Frequency</label>
-              <select value={form.distributionFrequency} onChange={e=>set('distributionFrequency',e.target.value)} className={inputCls}>
-                {['Quarterly','Monthly','Semi-Annual','Annual','Not Applicable'].map(o=><option key={o}>{o}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={()=>goToStep(1)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
-            <button onClick={()=>goToStep(3)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Personnel →</button>
-          </div>
         </div>
       )}
-      {step===3&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
-          <div className="mb-2">
-            <h3 className="font-bold text-lg">Key Personnel</h3>
-            <p className="text-gray-500 text-sm mt-0.5">Provide details of the company's key management team.</p>
+
+      {/* New application form */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="font-bold text-lg">New Tokenisation Application</h3>
+            <p className="text-gray-500 text-xs mt-0.5">Apply to list a new asset on TokenEquityX</p>
           </div>
-          {[['CEO / Director','ceo'],['CFO / Financial Officer','cfo'],['Legal Counsel','legal']].map(([role,prefix])=>(
-            <div key={prefix}>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">{role}</p>
-              <div className="grid grid-cols-3 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Full Name</label><input placeholder="Full legal name" value={form[`${prefix}_name`]} onChange={e=>set(`${prefix}_name`,e.target.value)} className={inputCls}/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Email</label><input type="email" placeholder="email@company.com" value={form[`${prefix}_email`]} onChange={e=>set(`${prefix}_email`,e.target.value)} className={inputCls}/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">National ID / Passport</label><input placeholder="ID number" value={form[`${prefix}_id`]} onChange={e=>set(`${prefix}_id`,e.target.value)} className={inputCls}/></div>
+          {savedDraft?.step > 1 && (
+            <button onClick={() => { localStorage.removeItem(FORM_KEY); setStep(1); setForm({ legalName:'',registrationNumber:'',jurisdiction:'ZW',sector:'OTHER',assetType:'EQUITY',description:'',websiteUrl:'',foundedYear:'',headquarters:'',useOfProceeds:'',numEmployees:'',tokenName:'',tokenSymbol:'',assetClass:'Private Equity',authorisedShares:'',nominalValueCents:'100',targetRaiseUsd:'',tokenIssuePrice:'1.00',totalSupply:'',expectedYield:'',distributionFrequency:'Quarterly',ceo_name:'',ceo_email:'',ceo_id:'',cfo_name:'',cfo_email:'',cfo_id:'',legal_name:'',legal_email:'',legal_id:'',termsAccepted:false }); }}
+              className="text-xs text-red-400 hover:text-red-300">✕ Start fresh</button>
+          )}
+        </div>
+
+        {/* Progress */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-gray-500">Step {step} of {STEPS.length}</p>
+            <p className="text-xs text-white font-semibold">{STEPS[step-1]}</p>
+          </div>
+          <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+            <div className="h-1.5 rounded-full transition-all duration-500"
+              style={{width:`${(step/STEPS.length)*100}%`, background: GOLD}}/>
+          </div>
+          <div className="flex justify-between mt-2">
+            {STEPS.map((s,i)=>(
+              <div key={i} className="flex flex-col items-center">
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                  step > i+1 ? 'bg-green-600 text-white' :
+                  step === i+1 ? 'text-gray-900' : 'bg-gray-800 text-gray-500'
+                }`} style={step===i+1?{background:GOLD}:{}}>
+                  {step > i+1 ? '✔' : i+1}
+                </div>
+                <span className={`text-xs mt-1 hidden md:block ${step===i+1?'text-white font-semibold':'text-gray-600'}`}>{s}</span>
               </div>
-            </div>
-          ))}
-          <div className="flex gap-3">
-            <button onClick={()=>goToStep(2)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
-            <button onClick={()=>goToStep(4)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Documents →</button>
+            ))}
           </div>
         </div>
-      )}
-      {step===4&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-3">
-          <div className="mb-2">
-            <h3 className="font-bold text-lg">Supporting Documents</h3>
-            <p className="text-gray-500 text-sm mt-0.5">Upload your investment memorandum, financial statements and other required documents.</p>
+
+        {postMsg && (
+          <div className={`rounded-xl p-3 border mb-4 text-sm ${postMsg.type==='error'?'bg-red-900/40 border-red-700 text-red-300':'bg-green-900/40 border-green-700 text-green-300'}`}>
+            {postMsg.text}
           </div>
-          <p className="text-gray-500 text-xs">Upload what you have. Missing documents can be submitted later but will delay approval.</p>
-          {[
-            {name:'incorporation',label:'Certificate of Incorporation / SPV Registration',required:true},
-            {name:'prospectus',label:'Prospectus or Information Memorandum (draft accepted)',required:true},
-            {name:'financials',label:'Audited Financial Statements (last 2 years)',required:true},
-            {name:'valuation',label:'Independent Asset Valuation Report',required:true},
-            {name:'kyc_docs',label:'KYC Documents — All Directors',required:true},
-            {name:'legal_opinion',label:'Legal Opinion on Asset Ownership',required:false},
-            {name:'regulatory',label:'Environmental / Regulatory Approvals',required:false},
-          ].map(doc=>(
-            <div key={doc.name} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-4 py-3 border border-gray-700/50">
-              <div className="flex items-center gap-2 flex-1">
-                <span>{files[doc.name]?'✅':'📎'}</span>
-                <span className="text-sm text-gray-300">{doc.label}</span>
-                {doc.required&&<span className="text-xs text-red-400">*</span>}
-                {files[doc.name]&&<span className="text-xs text-gray-500">— {files[doc.name].name}</span>}
+        )}
+
+        {/* STEP 1: Company */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-sm">Tell us about the company or entity issuing the token.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Legal Entity Name *</label>
+                <input value={form.legalName} onChange={e=>set('legalName',e.target.value)} className={inputCls} placeholder="e.g. ZimGov Securities (Pvt) Ltd"/>
               </div>
               <div>
-                <input ref={el=>fileRefs.current[doc.name]=el} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" className="hidden" onChange={handleFile(doc.name)}/>
-                <button onClick={()=>fileRefs.current[doc.name]?.click()} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg">{files[doc.name]?'Replace':'Upload'}</button>
+                <label className="text-xs text-gray-400 block mb-1">Registration Number *</label>
+                <input value={form.registrationNumber} onChange={e=>set('registrationNumber',e.target.value)} className={inputCls} placeholder="e.g. ZW2024-GOV-001"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Jurisdiction</label>
+                <input value={form.jurisdiction} onChange={e=>set('jurisdiction',e.target.value)} className={inputCls} placeholder="ZW"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Sector</label>
+                <select value={form.sector} onChange={e=>set('sector',e.target.value)} className={inputCls}>
+                  {['TECH','FINTECH','AGRICULTURE','MANUFACTURING','MINING','REAL_ESTATE','INFRASTRUCTURE','GOVERNMENT','HEALTHCARE','EDUCATION','LOGISTICS','OTHER'].map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Asset Type</label>
+                <select value={form.assetType} onChange={e=>set('assetType',e.target.value)} className={inputCls}>
+                  {['EQUITY','BOND','REIT','REAL_ESTATE','MINING','INFRASTRUCTURE','OTHER'].map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Year Founded</label>
+                <input type="number" value={form.foundedYear} onChange={e=>set('foundedYear',e.target.value)} className={inputCls} placeholder="e.g. 2018"/>
               </div>
             </div>
-          ))}
-          <div className="flex gap-3 mt-2">
-            <button onClick={()=>goToStep(3)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
-            <button onClick={()=>goToStep(5)} className="flex-1 py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>Next: Review & Submit →</button>
-          </div>
-        </div>
-      )}
-      {step===5&&(
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
-          <div className="mb-2">
-            <h3 className="font-bold text-lg">Review & Submit</h3>
-            <p className="text-gray-500 text-sm mt-0.5">Review your application details before submitting.</p>
-          </div>
-          <div className="bg-gray-800/50 rounded-xl p-4 space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-400">Entity</span><span className="text-white font-medium">{form.legalEntityName}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Symbol</span><span className="text-white font-bold">{form.proposedSymbol}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Asset Class</span><span className="text-white">{form.assetClass}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Target Raise</span><span className="text-white">${parseFloat(form.targetRaiseUsd||0).toLocaleString()}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Token Price</span><span className="text-white">${form.tokenIssuePrice}</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Total Supply</span><span className="text-white">{parseInt(form.totalSupply||0).toLocaleString()}</span></div>
-          </div>
-          <div className="flex items-start gap-3 bg-gray-800/50 rounded-xl p-4">
-            <input type="checkbox" id="terms" checked={form.termsAccepted} onChange={e=>set('termsAccepted',e.target.checked)} className="mt-1"/>
-            <label htmlFor="terms" className="text-sm text-gray-300">I confirm that all information provided is accurate and complete. I understand that submitting false or misleading information may result in rejection and potential regulatory referral under the Securities and Exchange Act (Chapter 24:25).</label>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={()=>goToStep(4)} className="px-6 py-3 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
-            <button onClick={submit} disabled={submitting||!form.termsAccepted} className="flex-1 py-3 rounded-xl font-black text-white disabled:opacity-50" style={{background:NAVY}}>
-              {submitting?'⏳ Submitting...':'🚀 Submit Tokenisation Proposal'}
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Headquarters</label>
+              <input value={form.headquarters} onChange={e=>set('headquarters',e.target.value)} className={inputCls} placeholder="e.g. Harare, Zimbabwe"/>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Website</label>
+              <input value={form.websiteUrl} onChange={e=>set('websiteUrl',e.target.value)} className={inputCls} placeholder="https://example.co.zw"/>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Business Description *</label>
+              <textarea rows={3} value={form.description} onChange={e=>set('description',e.target.value)} className={inputCls+' resize-none'} placeholder="Describe the business or asset being tokenised..."/>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Number of Employees</label>
+              <input value={form.numEmployees} onChange={e=>set('numEmployees',e.target.value)} className={inputCls} placeholder="e.g. 10-50"/>
+            </div>
+            <button onClick={()=>{ if(!form.legalName||!form.registrationNumber||!form.description){setPostMsg({type:'error',text:'Please fill in all required fields.'});return;} setPostMsg(null); goToStep(2); }}
+              className="w-full py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>
+              Next: Token Structure →
             </button>
           </div>
-          <p className="text-gray-600 text-xs text-center">Platform issuance fee: 0.25% of total raise value, payable on SECZ approval.</p>
-        </div>
-      )}
+        )}
+
+        {/* STEP 2: Token */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-sm">Define the token that will represent this asset.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Token Name *</label>
+                <input value={form.tokenName} onChange={e=>set('tokenName',e.target.value)} className={inputCls} placeholder="e.g. ZimGov Bond 2029"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Token Symbol * (2-5 letters)</label>
+                <div className="relative">
+                  <input value={form.tokenSymbol}
+                    onChange={e=>{ const v=e.target.value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,5); set('tokenSymbol',v); checkSymbol(v); }}
+                    className={inputCls+(symbolStatus==='taken'?' border-red-500':symbolStatus==='available'?' border-green-500':'')}
+                    placeholder="e.g. ZWGB"/>
+                  {symbolStatus==='checking'  && <span className="absolute right-3 top-2.5 text-xs text-gray-400">⏳</span>}
+                  {symbolStatus==='available' && <span className="absolute right-3 top-2.5 text-xs text-green-400">✅</span>}
+                  {symbolStatus==='taken'     && <span className="absolute right-3 top-2.5 text-xs text-red-400">❌</span>}
+                </div>
+                {symbolStatus==='taken' && <p className="text-xs text-red-400 mt-1">Symbol taken — choose another.</p>}
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Asset Class</label>
+                <select value={form.assetClass} onChange={e=>set('assetClass',e.target.value)} className={inputCls}>
+                  {['Private Equity','Real Estate / REIT','Infrastructure Bond','Corporate Bond','Mining / PGMs','Agriculture','Other'].map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Authorised Shares</label>
+                <input type="number" value={form.authorisedShares} onChange={e=>set('authorisedShares',e.target.value)} className={inputCls} placeholder="e.g. 5000000"/>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={()=>goToStep(1)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+              <button onClick={()=>{ if(!form.tokenName||!form.tokenSymbol){setPostMsg({type:'error',text:'Token name and symbol are required.'});return;} if(symbolStatus==='taken'){setPostMsg({type:'error',text:'Symbol is already taken.'});return;} setPostMsg(null); goToStep(3); }}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>
+                Next: Economics →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: Economics */}
+        {step === 3 && (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-sm">Define the financial structure of the offering.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Target Raise (USD)</label>
+                <input type="number" value={form.targetRaiseUsd} onChange={e=>set('targetRaiseUsd',e.target.value)} className={inputCls} placeholder="e.g. 3000000"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Issue Price (USD)</label>
+                <input type="number" value={form.tokenIssuePrice} onChange={e=>set('tokenIssuePrice',e.target.value)} className={inputCls} placeholder="e.g. 1.00"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Total Supply</label>
+                <input type="number" value={form.totalSupply} onChange={e=>set('totalSupply',e.target.value)} className={inputCls} placeholder="e.g. 5000000"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Expected Annual Yield %</label>
+                <input type="number" value={form.expectedYield} onChange={e=>set('expectedYield',e.target.value)} className={inputCls} placeholder="e.g. 8.5"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Distribution Frequency</label>
+                <select value={form.distributionFrequency} onChange={e=>set('distributionFrequency',e.target.value)} className={inputCls}>
+                  {['Quarterly','Monthly','Semi-Annual','Annual','Not Applicable'].map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Use of Proceeds</label>
+              <textarea rows={3} value={form.useOfProceeds} onChange={e=>set('useOfProceeds',e.target.value)} className={inputCls+' resize-none'} placeholder="Describe how funds raised will be used..."/>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={()=>goToStep(2)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+              <button onClick={()=>{ setPostMsg(null); goToStep(4); }}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>
+                Next: Personnel →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: Personnel */}
+        {step === 4 && (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-sm">Provide details of key management. All directors must complete KYC.</p>
+            {[
+              { role:'CEO / Director', prefix:'ceo' },
+              { role:'CFO / Financial Officer', prefix:'cfo' },
+              { role:'Legal Counsel', prefix:'legal' },
+            ].map(({ role, prefix }) => (
+              <div key={prefix} className="bg-gray-800/50 rounded-xl p-4">
+                <p className="text-xs font-semibold text-gray-300 mb-3">{role}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div><label className="text-xs text-gray-500 block mb-1">Full Name</label><input value={form[`${prefix}_name`]} onChange={e=>set(`${prefix}_name`,e.target.value)} className={inputCls} placeholder="Full name"/></div>
+                  <div><label className="text-xs text-gray-500 block mb-1">Email</label><input value={form[`${prefix}_email`]} onChange={e=>set(`${prefix}_email`,e.target.value)} className={inputCls} placeholder="email@example.com"/></div>
+                  <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport</label><input value={form[`${prefix}_id`]} onChange={e=>set(`${prefix}_id`,e.target.value)} className={inputCls} placeholder="ID number"/></div>
+                </div>
+              </div>
+            ))}
+            <div className="flex gap-3">
+              <button onClick={()=>goToStep(3)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+              <button onClick={()=>{ setPostMsg(null); goToStep(5); }}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>
+                Next: Documents →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5: Documents */}
+        {step === 5 && (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-sm">Upload supporting documents. Missing documents can be submitted later but will delay approval.</p>
+            <div className="space-y-2">
+              {[
+                { key:'certificate',   label:'Certificate of Incorporation / SPV Registration', required: true },
+                { key:'prospectus',    label:'Prospectus or Information Memorandum (draft accepted)', required: true },
+                { key:'financials',    label:'Audited Financial Statements (last 2 years)', required: true },
+                { key:'valuation',     label:'Independent Asset Valuation Report', required: true },
+                { key:'kyc_docs',      label:'KYC Documents — All Directors', required: true },
+                { key:'legal_opinion', label:'Legal Opinion on Asset Ownership' },
+                { key:'regulatory',    label:'Environmental / Regulatory Approvals' },
+              ].map(doc => (
+                <div key={doc.key} className={`flex items-center justify-between rounded-xl px-4 py-3 border ${files[doc.key]?'bg-green-900/20 border-green-700/40':'bg-gray-800/50 border-gray-700/40'}`}>
+                  <div className="flex items-center gap-2">
+                    <span>{files[doc.key] ? '✅' : '📎'}</span>
+                    <div>
+                      <p className="text-sm text-white">{doc.label}{doc.required&&<span className="text-red-400 ml-1">*</span>}</p>
+                      {files[doc.key] && <p className="text-xs text-green-400">{files[doc.key].name}</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <input type="file" ref={el=>fileRefs.current[doc.key]=el} onChange={handleFile(doc.key)} className="hidden" accept=".pdf,.doc,.docx,.xlsx"/>
+                    <button onClick={()=>fileRefs.current[doc.key]?.click()}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">
+                      {files[doc.key] ? 'Replace' : 'Upload'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={()=>goToStep(4)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+              <button onClick={()=>{ setPostMsg(null); goToStep(6); }}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>
+                Next: Review & Submit →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 6: Review & Submit */}
+        {step === 6 && (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-sm">Review your application before submitting.</p>
+            <div className="bg-gray-800/50 rounded-xl p-4 space-y-2 text-sm">
+              {[
+                ['Legal Entity',     form.legalName],
+                ['Registration No.', form.registrationNumber],
+                ['Token Symbol',     form.tokenSymbol],
+                ['Token Name',       form.tokenName],
+                ['Asset Type',       form.assetType],
+                ['Asset Class',      form.assetClass],
+                ['Sector',           form.sector],
+                ['Jurisdiction',     form.jurisdiction],
+                ['Target Raise',     form.targetRaiseUsd ? `$${parseFloat(form.targetRaiseUsd).toLocaleString()}` : '—'],
+                ['Issue Price',      `$${form.tokenIssuePrice}`],
+                ['Total Supply',     form.totalSupply ? parseInt(form.totalSupply).toLocaleString() : '—'],
+                ['Annual Yield',     form.expectedYield ? `${form.expectedYield}%` : '—'],
+                ['Distribution',     form.distributionFrequency],
+                ['CEO',              form.ceo_name || '—'],
+                ['Documents',        `${Object.keys(files).length} uploaded`],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between py-1 border-b border-gray-700/50 last:border-0">
+                  <span className="text-gray-400">{label}</span>
+                  <span className="text-white font-medium text-right max-w-xs truncate">{value}</span>
+                </div>
+              ))}
+            </div>
+            <label className="flex items-start gap-3 cursor-pointer bg-gray-800/50 rounded-xl p-4">
+              <input type="checkbox" checked={form.termsAccepted} onChange={e=>set('termsAccepted',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
+              <span className="text-xs text-gray-300">I confirm that all information provided is accurate and complete. I understand that submitting false or misleading information may result in rejection and potential regulatory referral under the Securities and Exchange Act (Chapter 24:25).</span>
+            </label>
+            <div className="flex gap-3">
+              <button onClick={()=>goToStep(5)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+              <button onClick={submit} disabled={submitting || !form.termsAccepted}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-40"
+                style={{background:NAVY}}>
+                {submitting ? '⏳ Submitting...' : '🚀 Submit Tokenisation Application'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-600 text-center">Platform issuance fee: 0.25% of total raise value, payable on SECZ approval.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1335,12 +1522,12 @@ export default function IssuerDashboard() {
               <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">2</div>
                 <div>
-                  <h2 className="font-bold text-lg">Financial Data & Valuation</h2>
-                  <p className="text-gray-500 text-xs mt-0.5">Submit financial data for auditor review and token pricing</p>
+                  <h2 className="font-bold text-lg">Tokenisation Application</h2>
+                  <p className="text-gray-500 text-xs mt-0.5">Submit your tokenisation proposal for compliance review</p>
                 </div>
               </div>
               <div className="p-6">
-                <TokenizeTab setPostMsg={setPostMsg} NAVY={NAVY}/>
+                <TokenisationTab notify={notify}/>
               </div>
             </div>
 

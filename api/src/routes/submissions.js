@@ -671,4 +671,115 @@ router.delete('/:id', authenticate, requireRole('ISSUER','ADMIN'), async (req, r
   }
 });
 
+// POST /api/submissions/unified — create SPV + token + submission in one atomic transaction
+router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), async (req, res) => {
+  const {
+    legalName, registrationNumber, jurisdiction, sector, assetType,
+    description, websiteUrl, foundedYear, headquarters, useOfProceeds, numEmployees,
+    tokenName, tokenSymbol, authorisedShares, nominalValueCents,
+    targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency,
+    ceo_name, ceo_email, ceo_id,
+    cfo_name, cfo_email, cfo_id,
+    legal_name, legal_email, legal_id,
+    assetDescription, assetClass,
+  } = req.body;
+
+  if (!legalName || !registrationNumber || !tokenSymbol || !tokenName) {
+    return res.status(400).json({ error: 'legalName, registrationNumber, tokenSymbol and tokenName are required' });
+  }
+
+  const sym = tokenSymbol.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [existing] = await conn.execute('SELECT id FROM tokens WHERE token_symbol = ?', [sym]);
+    if (existing.length > 0) {
+      await conn.rollback();
+      return res.status(409).json({ error: `Token symbol ${sym} is already taken. Please choose a different symbol.` });
+    }
+
+    const [existingSpv] = await conn.execute('SELECT id FROM spvs WHERE registration_number = ?', [registrationNumber]);
+    if (existingSpv.length > 0) {
+      await conn.rollback();
+      return res.status(409).json({ error: `Registration number ${registrationNumber} already exists.` });
+    }
+
+    const [spvResult] = await conn.execute(`
+      INSERT INTO spvs (owner_user_id, legal_name, registration_no, registration_number,
+        jurisdiction, sector, asset_type, description, website_url, founded_year,
+        headquarters, use_of_proceeds, num_employees)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id
+    `, [
+      req.user.userId, legalName, registrationNumber, registrationNumber,
+      jurisdiction || 'ZW', sector || 'OTHER', assetType || 'EQUITY',
+      description || assetDescription || null,
+      websiteUrl || null, foundedYear ? parseInt(foundedYear) : null,
+      headquarters || null, useOfProceeds || null, numEmployees || null
+    ]);
+    const spvId = spvResult[0].id;
+
+    const shares = parseInt(authorisedShares || totalSupply || 1000000);
+    const nomVal = parseInt(nominalValueCents || 100);
+    const price  = parseFloat(tokenIssuePrice || 1.00);
+
+    await conn.execute(`
+      INSERT INTO tokens (spv_id, symbol, name, company_name, token_name, token_symbol, ticker,
+        asset_type, asset_class, authorised_shares, issued_shares, nominal_value_cents,
+        total_supply, price_usd, current_price_usd, oracle_price,
+        market_state, status, jurisdiction, sector)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRE_LAUNCH', 'DRAFT', ?, ?)
+    `, [
+      spvId, sym, tokenName, legalName, tokenName, sym, sym,
+      assetType || 'EQUITY', assetClass || assetType || 'EQUITY',
+      shares, shares, nomVal, shares, price, price, price,
+      jurisdiction || 'ZW', sector || 'OTHER'
+    ]);
+
+    const dataJson = JSON.stringify({
+      financialData: { targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency },
+      keyPersonnel: [
+        { role: 'CEO',           name: ceo_name,   email: ceo_email,   idNumber: ceo_id },
+        { role: 'CFO',           name: cfo_name,   email: cfo_email,   idNumber: cfo_id },
+        { role: 'Legal Counsel', name: legal_name, email: legal_email, idNumber: legal_id },
+      ].filter(p => p.name),
+      sector, assetType, assetClass,
+      description: description || assetDescription,
+    });
+
+    const refNum = `${sym.toLowerCase()}-${Date.now().toString(36)}`;
+    await conn.execute(`
+      INSERT INTO data_submissions
+        (token_symbol, entity_name, submission_type, status, application_status,
+         fee_status, issuer_wallet, reference_number, data_json, document_count)
+      VALUES (?, ?, 'TOKENISATION_APPLICATION', 'PENDING', 'PENDING_REVIEW', 'NOT_REQUIRED', ?, ?, ?, 0)
+    `, [sym, legalName, req.user.userId, refNum, dataJson]);
+
+    await conn.execute(
+      'UPDATE users SET role = ? WHERE id = ? AND role = ?',
+      ['ISSUER', req.user.userId, 'INVESTOR']
+    );
+
+    await conn.execute(
+      'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+      ['TOKENISATION_APPLICATION', req.user.userId, sym, `Entity: ${legalName}, Ref: ${refNum}`]
+    );
+
+    await conn.commit();
+    res.json({
+      success: true,
+      message: `Application for ${sym} submitted successfully. Reference: ${refNum}`,
+      tokenSymbol: sym,
+      referenceNumber: refNum,
+    });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: 'Submission failed: ' + err.message });
+  } finally {
+    conn.release();
+  }
+});
+
 module.exports = router;
