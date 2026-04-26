@@ -1056,14 +1056,14 @@ export default function IssuerDashboard() {
   };
 
   const t       = selToken;
-  const price   = t?.oracle_price || 1.005;
-  const supply  = t?.total_supply || 5000000;
+  const price   = parseFloat(t?.oracle_price || t?.current_price_usd || 1.00);
+  const supply  = parseFloat(t?.total_supply || t?.issued_shares || 1000000);
   const mktCap  = price * supply;
   const amtRaised   = mktCap * 0.25;
   const raisedTarget = 5000000;
   const raisedPct   = Math.min(100, Math.round((amtRaised/raisedTarget)*100));
-  const holders = 89;
-  const vol24h  = 128000;
+  const holders = 0;
+  const vol24h  = 0;
   const compliance = {spv:true,kyc:true,docs:true,auditor:false,contract:false,secz:false};
   const compDone = Object.values(compliance).filter(Boolean).length;
   const compPct  = Math.round((compDone/COMPLIANCE_STEPS.length)*100);
