@@ -1498,6 +1498,7 @@ export default function IssuerDashboard() {
   const [entityKyc,      setEntityKyc]      = useState(null);
   const [kycLoaded,      setKycLoaded]      = useState(false);
   const [tab,            setTab]            = useState('overview');
+  const [showIssuerMore, setShowIssuerMore] = useState(false);
   const [loading,        setLoading]        = useState(true);
   const [statement,      setStatement]      = useState('');
   const [postMsg,        setPostMsg]        = useState(null);
@@ -1565,17 +1566,39 @@ export default function IssuerDashboard() {
             </div>
             <span className="ml-2 text-xs bg-purple-900 text-purple-300 px-2 py-0.5 rounded-full">ISSUER</span>
           </div>
-          <nav className="flex gap-1">
-            {[
-              { label: 'Dashboard',  tab: 'overview' },
-              { label: 'Investors',  tab: 'investors' },
-              { label: 'Governance', tab: 'governance' },
-              { label: 'Dividends',  tab: 'dividends' },
-              { label: 'Resources',  tab: 'resources' },
-            ].map(item => (
-              <button key={item.tab} onClick={()=>setTab(item.tab)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===item.tab?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                {item.label}
+          <nav className="flex gap-1 flex-wrap">
+            {/* Overview with dropdown for governance and dividends */}
+            <div className="relative" onMouseLeave={()=>setShowIssuerMore(false)}>
+              <button
+                onMouseEnter={()=>setShowIssuerMore(true)}
+                onClick={()=>{setTab('overview');setShowIssuerMore(false);}}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab==='overview'||['governance','dividends'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                Overview
+                <svg className="w-3 h-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              {showIssuerMore && (
+                <div className="absolute top-full left-0 mt-1 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <button onClick={()=>{setTab('overview');setShowIssuerMore(false);}}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='overview'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                    Overview
+                  </button>
+                  <button onClick={()=>{setTab('governance');setShowIssuerMore(false);}}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='governance'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                    Governance
+                  </button>
+                  <button onClick={()=>{setTab('dividends');setShowIssuerMore(false);}}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='dividends'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                    Dividends
+                  </button>
+                </div>
+              )}
+            </div>
+            {['kyc','journey','financials'].map(t=>(
+              <button key={t} onClick={()=>setTab(t)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                {t === 'journey' ? 'Application Journey' : t}
               </button>
             ))}
           </nav>
@@ -1596,24 +1619,6 @@ export default function IssuerDashboard() {
         {postMsg && (
           <div className={`rounded-xl p-4 border mb-6 ${postMsg.type==='success'?'bg-green-900/40 border-green-700 text-green-300':postMsg.type==='info'?'bg-blue-900/40 border-blue-700 text-blue-300':'bg-red-900/40 border-red-700 text-red-300'}`}>
             {postMsg.text}
-          </div>
-        )}
-
-        {/* ── Workflow sub-nav (Dashboard context) ── */}
-        {['overview','kyc','journey'].includes(tab) && (
-          <div className="flex gap-1 border-b border-gray-800 mb-6">
-            {[
-              { key: 'overview',  label: 'Overview' },
-              { key: 'kyc',       label: 'KYC & AML' },
-              { key: 'journey',   label: 'Application Journey' },
-            ].map(item => (
-              <button key={item.key} onClick={()=>setTab(item.key)}
-                className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 ${
-                  tab===item.key ? 'border-yellow-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
-                }`}>
-                {item.label}
-              </button>
-            ))}
           </div>
         )}
 
@@ -2031,22 +2036,6 @@ export default function IssuerDashboard() {
         )}
 
         {/* ══ DIVIDENDS ══ */}
-        {tab==='investors' && (
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
-            <p className="text-3xl mb-3">👥</p>
-            <h3 className="font-bold text-lg mb-2">Investor Relations</h3>
-            <p className="text-gray-500 text-sm">View your investor base, subscription history and investor communications. Coming soon.</p>
-          </div>
-        )}
-
-        {tab==='resources' && (
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
-            <p className="text-3xl mb-3">📚</p>
-            <h3 className="font-bold text-lg mb-2">Resources</h3>
-            <p className="text-gray-500 text-sm">Issuer guides, regulatory documents, SECZ requirements and TokenEquityX platform documentation. Coming soon.</p>
-          </div>
-        )}
-
         {tab==='dividends' && (
           <div className="space-y-6 max-w-2xl">
             <h2 className="text-xl font-bold">Dividend Management</h2>
