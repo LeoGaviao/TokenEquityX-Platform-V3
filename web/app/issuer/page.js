@@ -1568,9 +1568,10 @@ export default function IssuerDashboard() {
           <nav className="flex gap-1 flex-wrap">
             {[
               { key:'overview',   label:'Dashboard' },
-              { key:'investors',  label:'Investors' },
               { key:'governance', label:'Governance' },
               { key:'dividends',  label:'Dividends' },
+              { key:'reporting',  label:'Reporting' },
+              { key:'investors',  label:'Investors' },
               { key:'resources',  label:'Resources' },
             ].map(item=>(
               <button key={item.key} onClick={()=>setTab(item.key)}
@@ -1597,8 +1598,10 @@ export default function IssuerDashboard() {
             { key:'journey',  label:'Application Journey' },
           ].map(item=>(
             <button key={item.key} onClick={()=>setTab(item.key)}
-              className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                tab===item.key ? 'border-yellow-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
+              className={`px-5 py-3 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+                tab===item.key
+                  ? 'border-yellow-500 text-yellow-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-200 hover:border-gray-600'
               }`}>
               {item.label}
             </button>
@@ -1841,6 +1844,11 @@ export default function IssuerDashboard() {
             )}
 
           </div>
+        )}
+
+        {/* ══ REPORTING ══ */}
+        {tab==='reporting' && (
+          <FinancialsTab t={selToken} price={price} account={account} setPostMsg={setPostMsg} NAVY={NAVY} />
         )}
 
         {/* ══ INVESTORS ══ */}
