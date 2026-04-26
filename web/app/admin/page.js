@@ -1329,6 +1329,7 @@ export default function AdminDashboard() {
   const [assignModal,setAssignModal]=useState(null);
   const [assignNote,setAssignNote]=useState('');
   const [kycItems,setKycItems]=useState([]);
+  const [entityKycList, setEntityKycList] = useState([]);
   const [flaggedTxns,setFlaggedTxns]=useState([
     {id:1,title:'Unusual volume pattern — ACME',desc:'Wallet 0x7f4a…b2c1 placed 14 orders in 3 minutes, total USD 48,000. Possible wash trading.',time:'Today 08:47 AM',system:'MarketController'},
   ]);
@@ -1512,6 +1513,9 @@ export default function AdminDashboard() {
         }));
         setPipeline([...tokenisationApps,...financialSubs]);
       }
+      const token2 = localStorage.getItem('token');
+      fetch(`${API}/entity-kyc`, { headers: { Authorization: `Bearer ${token2}` } })
+        .then(r => r.json()).then(d => { if(Array.isArray(d)) setEntityKycList(d); }).catch(()=>{});
     } catch(e){console.error(e);}
     finally{setLoading(false);}
   };
@@ -2066,6 +2070,69 @@ export default function AdminDashboard() {
               <KPI label="Flagged Txns" value={flaggedTxns.length} icon="🚨" color={flaggedTxns.length>0?'text-red-400':'text-green-400'}/>
               <KPI label="FIU Reports Due" value="0" icon="📑"/>
             </div>
+            {/* Entity KYC */}
+            {entityKycList.length > 0 && (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden mb-6">
+                <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+                  <h3 className="font-semibold text-sm">🏢 Entity KYC — Issuer Verification</h3>
+                  <span className="text-xs text-gray-500">{entityKycList.filter(k=>k.status==='PENDING').length} pending</span>
+                </div>
+                <div className="divide-y divide-gray-800">
+                  {entityKycList.map(kyc => (
+                    <div key={kyc.id} className="px-4 py-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="font-semibold text-sm text-white">{kyc.entity_name}</p>
+                          <p className="text-xs text-gray-500">{kyc.registration_number} · {kyc.registration_country} · {new Date(kyc.created_at).toLocaleDateString('en-GB')}</p>
+                          <p className="text-xs text-gray-400 mt-1">{kyc.email} — {kyc.full_name}</p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                          kyc.status==='APPROVED' ? 'bg-green-900/40 text-green-300 border-green-700/50' :
+                          kyc.status==='REJECTED' ? 'bg-red-900/40 text-red-300 border-red-700/50' :
+                          'bg-yellow-900/40 text-yellow-300 border-yellow-700/50'
+                        }`}>{kyc.status}</span>
+                      </div>
+                      {kyc.business_description && (
+                        <p className="text-xs text-gray-400 mb-3 line-clamp-2">{kyc.business_description}</p>
+                      )}
+                      {kyc.pep_declaration && <p className="text-xs text-amber-400 mb-1">⚠️ PEP declared</p>}
+                      {kyc.status === 'PENDING' && (
+                        <div className="flex gap-2 mt-2">
+                          <button onClick={async()=>{
+                            const token = localStorage.getItem('token');
+                            const res = await fetch(`${API}/entity-kyc/${kyc.id}/approve`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}});
+                            const data = await res.json();
+                            if(res.ok){
+                              setEntityKycList(list => list.map(k => k.id===kyc.id?{...k,status:'APPROVED'}:k));
+                              notify('success','✅ Entity KYC approved. Issuer notified.');
+                            } else notify('error', data.error);
+                          }} className="px-4 py-1.5 rounded-lg text-xs bg-green-700 hover:bg-green-600 text-white font-semibold">
+                            ✅ Approve
+                          </button>
+                          <button onClick={async()=>{
+                            const reason = window.prompt('Rejection reason (shown to issuer):');
+                            if(!reason) return;
+                            const token = localStorage.getItem('token');
+                            const res = await fetch(`${API}/entity-kyc/${kyc.id}/reject`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason})});
+                            const data = await res.json();
+                            if(res.ok){
+                              setEntityKycList(list => list.map(k => k.id===kyc.id?{...k,status:'REJECTED',rejection_reason:reason}:k));
+                              notify('success','KYC rejected. Issuer notified.');
+                            } else notify('error', data.error);
+                          }} className="px-4 py-1.5 rounded-lg text-xs bg-red-900/40 text-red-300 hover:bg-red-900/60 border border-red-800/50">
+                            ❌ Reject
+                          </button>
+                        </div>
+                      )}
+                      {kyc.status === 'REJECTED' && kyc.rejection_reason && (
+                        <p className="text-xs text-red-400 mt-1">Reason: {kyc.rejection_reason}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="font-semibold mb-4">KYC Review Queue</h3>
               {kycItems.length===0&&<p className="text-gray-500 text-sm text-center py-6">✅ No pending KYC applications</p>}

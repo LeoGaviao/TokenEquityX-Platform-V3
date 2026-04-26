@@ -540,6 +540,293 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
   );
 }
 
+// ── ENTITY KYC TAB ──────────────────────────────────────────────
+function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
+  const [step,        setStep]        = useState(1);
+  const [submitting,  setSubmitting]  = useState(false);
+  const [msg,         setMsg]         = useState(null);
+  const [directors,   setDirectors]   = useState([{ name:'', id_number:'', email:'', pep: false }]);
+  const [owners,      setOwners]      = useState([{ name:'', ownership_pct:'', id_number:'', nationality:'' }]);
+  const [form, setForm] = useState({
+    entity_name: '', registration_number: '', registration_country: 'Zimbabwe',
+    registered_address: '', business_description: '', business_type: '',
+    date_incorporated: '', tax_clearance_number: '', source_of_funds: '',
+    pep_declaration: false, sanctions_declaration: false, aml_declaration: false,
+  });
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500';
+  const set = (f, v) => setForm(p => ({...p, [f]: v}));
+
+  const addDirector = () => setDirectors(d => [...d, { name:'', id_number:'', email:'', pep: false }]);
+  const setDir = (i, f, v) => setDirectors(d => d.map((x,j) => j===i ? {...x,[f]:v} : x));
+  const addOwner = () => setOwners(o => [...o, { name:'', ownership_pct:'', id_number:'', nationality:'' }]);
+  const setOwn = (i, f, v) => setOwners(o => o.map((x,j) => j===i ? {...x,[f]:v} : x));
+
+  const submit = async () => {
+    if (!form.entity_name || !form.registration_number) {
+      setMsg({ type:'error', text:'Entity name and registration number are required.' }); return;
+    }
+    if (!form.aml_declaration) {
+      setMsg({ type:'error', text:'You must confirm the AML declaration to proceed.' }); return;
+    }
+    setSubmitting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`${API}/entity-kyc/submit`, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ...form, directors, beneficial_owners: owners }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMsg({ type:'success', text: data.message });
+        onSubmitted({ ...form, status: 'PENDING', id: data.kycId });
+      } else {
+        setMsg({ type:'error', text: data.error });
+      }
+    } catch { setMsg({ type:'error', text:'Request failed. Please try again.' }); }
+    setSubmitting(false);
+  };
+
+  const STEPS = ['Entity', 'Directors', 'Ownership', 'Compliance', 'Submit'];
+  const statusColor = s => s === 'APPROVED' ? 'bg-green-900/40 border-green-700/50 text-green-300' :
+                           s === 'REJECTED'  ? 'bg-red-900/40 border-red-700/50 text-red-300' :
+                           'bg-yellow-900/40 border-yellow-700/50 text-yellow-300';
+
+  if (!kycLoaded) return <div className="text-center py-8 text-gray-500 text-sm">Loading KYC status...</div>;
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      {entityKyc && (
+        <div className={`rounded-2xl p-5 border ${statusColor(entityKyc.status)}`}>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-lg">Entity KYC Status</h3>
+            <span className={`text-xs font-bold px-3 py-1 rounded-full border ${statusColor(entityKyc.status)}`}>
+              {entityKyc.status}
+            </span>
+          </div>
+          <p className="text-sm opacity-80">{entityKyc.entity_name} · {entityKyc.registration_number}</p>
+          {entityKyc.status === 'APPROVED' && (
+            <p className="text-xs mt-2 text-green-300">✅ Your entity KYC is approved. You may proceed with tokenisation applications.</p>
+          )}
+          {entityKyc.status === 'PENDING' && (
+            <p className="text-xs mt-2">⏳ Under review. Our compliance team will respond within 3-5 business days.</p>
+          )}
+          {entityKyc.status === 'REJECTED' && (
+            <div className="mt-2">
+              <p className="text-xs text-red-300 mb-1">❌ Reason: {entityKyc.rejection_reason}</p>
+              <p className="text-xs">Please address the issues and resubmit below.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(!entityKyc || entityKyc.status === 'REJECTED') && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+          <div className="mb-6">
+            <h3 className="font-bold text-lg">Entity KYC & AML Verification</h3>
+            <p className="text-gray-500 text-xs mt-0.5">Required before submitting a tokenisation application</p>
+          </div>
+
+          {/* Progress */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-gray-500">Step {step} of {STEPS.length}</p>
+              <p className="text-xs text-white font-semibold">{STEPS[step-1]}</p>
+            </div>
+            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-1.5 rounded-full transition-all" style={{width:`${(step/STEPS.length)*100}%`,background:GOLD}}/>
+            </div>
+          </div>
+
+          {msg && (
+            <div className={`rounded-xl p-3 border mb-4 text-sm ${msg.type==='error'?'bg-red-900/40 border-red-700 text-red-300':'bg-green-900/40 border-green-700 text-green-300'}`}>
+              {msg.text}
+            </div>
+          )}
+
+          {/* STEP 1: Entity Details */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">Provide details about your registered entity.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Legal Entity Name *</label>
+                  <input value={form.entity_name} onChange={e=>set('entity_name',e.target.value)} className={inputCls} placeholder="As registered"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Registration Number *</label>
+                  <input value={form.registration_number} onChange={e=>set('registration_number',e.target.value)} className={inputCls} placeholder="e.g. ZW2024-001"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Country of Registration</label>
+                  <input value={form.registration_country} onChange={e=>set('registration_country',e.target.value)} className={inputCls} placeholder="Zimbabwe"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Business Type</label>
+                  <select value={form.business_type} onChange={e=>set('business_type',e.target.value)} className={inputCls}>
+                    <option value="">— Select —</option>
+                    {['Private Company (Pvt Ltd)','Public Company','Partnership','Trust','Non-Profit','Government Entity','Other'].map(t=><option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Date Incorporated</label>
+                  <input type="date" value={form.date_incorporated} onChange={e=>set('date_incorporated',e.target.value)} className={inputCls}/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Tax Clearance Number</label>
+                  <input value={form.tax_clearance_number} onChange={e=>set('tax_clearance_number',e.target.value)} className={inputCls} placeholder="e.g. ZIMRA-2024-12345"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Registered Address *</label>
+                <textarea rows={2} value={form.registered_address} onChange={e=>set('registered_address',e.target.value)} className={inputCls+' resize-none'} placeholder="Full registered office address"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Business Description *</label>
+                <textarea rows={3} value={form.business_description} onChange={e=>set('business_description',e.target.value)} className={inputCls+' resize-none'} placeholder="Describe your principal business activities"/>
+              </div>
+              <button onClick={()=>{ if(!form.entity_name||!form.registration_number){setMsg({type:'error',text:'Please fill required fields.'});return;} setMsg(null);setStep(2); }}
+                className="w-full py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>
+                Next: Directors →
+              </button>
+            </div>
+          )}
+
+          {/* STEP 2: Directors */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">List all directors and officers of the entity. All must complete individual KYC.</p>
+              {directors.map((d, i) => (
+                <div key={i} className="bg-gray-800/50 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-semibold text-gray-300">Director {i+1}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-xs text-gray-500 block mb-1">Full Name *</label><input value={d.name} onChange={e=>setDir(i,'name',e.target.value)} className={inputCls} placeholder="Full legal name"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport *</label><input value={d.id_number} onChange={e=>setDir(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Email</label><input value={d.email} onChange={e=>setDir(i,'email',e.target.value)} className={inputCls} placeholder="email@example.com"/></div>
+                    <div className="flex items-center gap-2 mt-4">
+                      <input type="checkbox" checked={d.pep} onChange={e=>setDir(i,'pep',e.target.checked)} id={`pep-${i}`}/>
+                      <label htmlFor={`pep-${i}`} className="text-xs text-gray-400">Politically Exposed Person (PEP)</label>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <button onClick={addDirector} className="w-full py-2 rounded-xl text-sm border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500">+ Add Another Director</button>
+              <div className="flex gap-3">
+                <button onClick={()=>setStep(1)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+                <button onClick={()=>{setMsg(null);setStep(3);}} className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>Next: Ownership →</button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: Beneficial Ownership */}
+          {step === 3 && (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">List all beneficial owners holding 25% or more of the entity.</p>
+              <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-3 text-xs text-blue-300">
+                ℹ️ FATF requirements mandate disclosure of all beneficial owners with ≥25% ownership or control.
+              </div>
+              {owners.map((o, i) => (
+                <div key={i} className="bg-gray-800/50 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-semibold text-gray-300">Beneficial Owner {i+1}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-xs text-gray-500 block mb-1">Full Name *</label><input value={o.name} onChange={e=>setOwn(i,'name',e.target.value)} className={inputCls} placeholder="Full legal name"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Ownership % *</label><input type="number" value={o.ownership_pct} onChange={e=>setOwn(i,'ownership_pct',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport</label><input value={o.id_number} onChange={e=>setOwn(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/></div>
+                    <div><label className="text-xs text-gray-500 block mb-1">Nationality</label><input value={o.nationality} onChange={e=>setOwn(i,'nationality',e.target.value)} className={inputCls} placeholder="e.g. Zimbabwean"/></div>
+                  </div>
+                </div>
+              ))}
+              <button onClick={addOwner} className="w-full py-2 rounded-xl text-sm border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500">+ Add Beneficial Owner</button>
+              <div className="flex gap-3">
+                <button onClick={()=>setStep(2)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+                <button onClick={()=>{setMsg(null);setStep(4);}} className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>Next: Compliance →</button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: Compliance Declarations */}
+          {step === 4 && (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">Complete all compliance declarations. All declarations are mandatory.</p>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Source of Funds *</label>
+                <textarea rows={3} value={form.source_of_funds} onChange={e=>set('source_of_funds',e.target.value)} className={inputCls+' resize-none'}
+                  placeholder="Describe the source of funds for this entity's operations and planned token issuance..."/>
+              </div>
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer bg-gray-800/50 rounded-xl p-4">
+                  <input type="checkbox" checked={form.pep_declaration} onChange={e=>set('pep_declaration',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
+                  <div>
+                    <p className="text-sm text-white font-medium">PEP Declaration</p>
+                    <p className="text-xs text-gray-400 mt-0.5">I confirm that neither the entity nor any of its directors or beneficial owners are Politically Exposed Persons (PEPs), unless already disclosed in the Directors section above.</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer bg-gray-800/50 rounded-xl p-4">
+                  <input type="checkbox" checked={form.sanctions_declaration} onChange={e=>set('sanctions_declaration',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
+                  <div>
+                    <p className="text-sm text-white font-medium">Sanctions Declaration</p>
+                    <p className="text-xs text-gray-400 mt-0.5">I confirm that neither the entity nor any of its directors or beneficial owners appear on any international sanctions list (OFAC, UN, EU, FATF).</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer bg-gray-800/50 rounded-xl p-4 border border-yellow-700/40">
+                  <input type="checkbox" checked={form.aml_declaration} onChange={e=>set('aml_declaration',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
+                  <div>
+                    <p className="text-sm text-white font-medium">AML/CFT Declaration *</p>
+                    <p className="text-xs text-gray-400 mt-0.5">I confirm that all funds associated with this entity are from legitimate sources. I understand that TokenEquityX is required to report suspicious activity to the Financial Intelligence Unit (FIU) of Zimbabwe under the Money Laundering and Proceeds of Crime Act (Chapter 9:24).</p>
+                  </div>
+                </label>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={()=>setStep(3)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+                <button onClick={()=>{ if(!form.source_of_funds){setMsg({type:'error',text:'Source of funds is required.'});return;} if(!form.aml_declaration){setMsg({type:'error',text:'AML declaration is required.'});return;} setMsg(null);setStep(5); }}
+                  className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>Next: Review →</button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 5: Review & Submit */}
+          {step === 5 && (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">Review and submit your Entity KYC application.</p>
+              <div className="bg-gray-800/50 rounded-xl p-4 space-y-2 text-sm">
+                {[
+                  ['Entity Name',       form.entity_name],
+                  ['Reg. Number',       form.registration_number],
+                  ['Country',           form.registration_country],
+                  ['Business Type',     form.business_type || '—'],
+                  ['Incorporated',      form.date_incorporated || '—'],
+                  ['Tax Clearance',     form.tax_clearance_number || '—'],
+                  ['Directors',         `${directors.filter(d=>d.name).length} listed`],
+                  ['Beneficial Owners', `${owners.filter(o=>o.name).length} listed`],
+                  ['PEP Declared',      form.pep_declaration ? 'Yes' : 'No'],
+                  ['Sanctions Clear',   form.sanctions_declaration ? 'Confirmed' : 'Not confirmed'],
+                  ['AML Declaration',   form.aml_declaration ? '✅ Confirmed' : '❌ Not confirmed'],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between py-1 border-b border-gray-700/50 last:border-0">
+                    <span className="text-gray-400">{label}</span>
+                    <span className="text-white font-medium">{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-3 text-xs text-amber-300">
+                ⚠️ By submitting, you confirm that all information provided is true and accurate. Providing false information is a criminal offence under the Money Laundering and Proceeds of Crime Act (Chapter 9:24).
+              </div>
+              <div className="flex gap-3">
+                <button onClick={()=>setStep(4)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+                <button onClick={submit} disabled={submitting}
+                  className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-40"
+                  style={{background:NAVY}}>
+                  {submitting ? '⏳ Submitting...' : '🚀 Submit Entity KYC'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── TOKENISATION TAB ────────────────────────────────────────────
 function TokenisationTab({ notify }) {
   const API     = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
@@ -1208,6 +1495,8 @@ export default function IssuerDashboard() {
   const [dividends,      setDividends]      = useState([]);
   const [proposals,      setProposals]      = useState([]);
   const [myApplications, setMyApplications] = useState([]);
+  const [entityKyc,      setEntityKyc]      = useState(null);
+  const [kycLoaded,      setKycLoaded]      = useState(false);
   const [tab,            setTab]            = useState('overview');
   const [showIssuerMore, setShowIssuerMore] = useState(false);
   const [loading,        setLoading]        = useState(true);
@@ -1224,12 +1513,13 @@ export default function IssuerDashboard() {
 
   const loadAll = async () => {
     try {
-      const [tokRes, tradeRes, divRes, propRes, appRes] = await Promise.allSettled([
+      const [tokRes, tradeRes, divRes, propRes, appRes, kycRes] = await Promise.allSettled([
         api.get('/assets/my'),
         api.get('/trading/recent?limit=20'),
         api.get('/dividends/rounds'),
         api.get('/governance/proposals'),
         api.get('/submissions/my'),
+        api.get('/entity-kyc/my'),
       ]);
       const myToks = (tokRes.status==='fulfilled' ? tokRes.value.data : []);
       setMyTokens(myToks);
@@ -1238,6 +1528,7 @@ export default function IssuerDashboard() {
       if (divRes.status==='fulfilled')   setDividends(divRes.value.data||[]);
       if (propRes.status==='fulfilled')  setProposals(propRes.value.data||[]);
       if (appRes.status==='fulfilled')   setMyApplications(appRes.value.data||[]);
+      if (kycRes.status==='fulfilled')   { setEntityKyc(kycRes.value.data); setKycLoaded(true); }
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -1304,7 +1595,7 @@ export default function IssuerDashboard() {
               )}
             </div>
             {/* Primary tabs */}
-            {['journey','financials','governance','dividends'].map(tab2=>(
+            {['journey','financials','kyc','governance','dividends'].map(tab2=>(
               <button key={tab2} onClick={()=>setTab(tab2)}
                 className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===tab2?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
                 {tab2}
@@ -1675,6 +1966,18 @@ export default function IssuerDashboard() {
         {/* ══ FINANCIALS ══ */}
         {tab==='financials' && (
           <FinancialsTab t={t} price={price} account={account} setPostMsg={setPostMsg} NAVY={NAVY}/>
+        )}
+
+        {/* ══ ENTITY KYC ══ */}
+        {tab==='kyc' && (
+          <EntityKycTab
+            entityKyc={entityKyc}
+            kycLoaded={kycLoaded}
+            onSubmitted={(kyc) => setEntityKyc(kyc)}
+            API={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}
+            NAVY={NAVY}
+            GOLD={GOLD}
+          />
         )}
 
         {/* ══ GOVERNANCE ══ */}
