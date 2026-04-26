@@ -207,6 +207,28 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
     } finally { setLoadingId(null); }
   };
 
+  const deleteSubmission = async (subId, symbol) => {
+    if (!window.confirm(`Are you sure you want to delete the ${symbol} submission?\n\nThis will permanently delete:\n• The tokenisation application\n• The registered token and SPV\n\nThis action cannot be undone. Type the token symbol to confirm.`)) return;
+    const typed = window.prompt(`Type "${symbol}" to confirm deletion:`);
+    if (typed !== symbol) { alert('Symbol did not match. Deletion cancelled.'); return; }
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/submissions/${subId}`, {
+        method:  'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}`);
+        window.location.reload();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch {
+      alert('Request failed. Please try again.');
+    }
+  };
+
   const STATUS_CONFIG = {
     PENDING:          { color:'text-amber-400',  bg:'bg-amber-900/30 border-amber-700/50',   label:'Pending Review',   icon:'⏳' },
     UNDER_REVIEW:     { color:'text-blue-400',   bg:'bg-blue-900/30 border-blue-700/50',     label:'Under Review',     icon:'🔍' },
@@ -485,6 +507,13 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
                             <p className="text-green-300 font-bold">🎉 Application Approved!</p>
                             <p className="text-gray-400 text-sm mt-1">Your token will be listed. The compliance team will contact you with next steps for smart contract deployment.</p>
                           </div>
+                        )}
+                        {['PENDING','UNDER_REVIEW','REJECTED'].includes(app.status) && (
+                          <button
+                            onClick={() => deleteSubmission(app.id, app.token_symbol || app.reference_number)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-900/40 text-red-300 hover:bg-red-900/60 border border-red-800/50">
+                            🗑 Delete & Start Fresh
+                          </button>
                         )}
                       </>
                     )}

@@ -614,4 +614,61 @@ router.get('/:id/document-url', authenticate, async (req, res) => {
   }
 });
 
+// DELETE /api/submissions/:id — issuer deletes their own DRAFT/PENDING submission and token
+router.delete('/:id', authenticate, requireRole('ISSUER','ADMIN'), async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // Fetch submission
+    const [rows] = await conn.execute(
+      'SELECT * FROM data_submissions WHERE id = ?', [req.params.id]
+    );
+    if (rows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+    const sub = rows[0];
+
+    // Verify ownership (issuers can only delete their own)
+    if (req.user.role === 'ISSUER' && sub.issuer_wallet !== req.user.userId) {
+      await conn.rollback();
+      return res.status(403).json({ error: 'You can only delete your own submissions' });
+    }
+
+    // Only allow deletion of PENDING/UNDER_REVIEW/REJECTED submissions
+    if (!['PENDING','UNDER_REVIEW','REJECTED'].includes(sub.status) && req.user.role !== 'ADMIN') {
+      await conn.rollback();
+      return res.status(400).json({ error: `Cannot delete a submission with status: ${sub.status}. Only PENDING or REJECTED submissions can be deleted.` });
+    }
+
+    const symbol = sub.token_symbol;
+
+    // Delete submission
+    await conn.execute('DELETE FROM data_submissions WHERE id = ?', [req.params.id]);
+    await conn.execute('DELETE FROM application_fees WHERE token_symbol = ?', [symbol]);
+
+    // Delete the token and SPV if token is still DRAFT
+    const [tokens] = await conn.execute(
+      'SELECT id, spv_id, status FROM tokens WHERE token_symbol = ?', [symbol]
+    );
+    if (tokens.length > 0 && tokens[0].status === 'DRAFT') {
+      const tokenId = tokens[0].id;
+      const spvId   = tokens[0].spv_id;
+      await conn.execute('DELETE FROM token_holdings WHERE token_id = ?', [tokenId]);
+      await conn.execute('DELETE FROM p2p_offers WHERE token_symbol = ?', [symbol]);
+      await conn.execute('DELETE FROM tokens WHERE id = ?', [tokenId]);
+      if (spvId) await conn.execute('DELETE FROM spvs WHERE id = ?', [spvId]);
+    }
+
+    await conn.commit();
+    res.json({ success: true, message: `Submission for ${symbol} deleted successfully.` });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: 'Could not delete submission: ' + err.message });
+  } finally {
+    conn.release();
+  }
+});
+
 module.exports = router;
