@@ -1498,7 +1498,6 @@ export default function IssuerDashboard() {
   const [entityKyc,      setEntityKyc]      = useState(null);
   const [kycLoaded,      setKycLoaded]      = useState(false);
   const [tab,            setTab]            = useState('overview');
-  const [showIssuerMore, setShowIssuerMore] = useState(false);
   const [loading,        setLoading]        = useState(true);
   const [statement,      setStatement]      = useState('');
   const [postMsg,        setPostMsg]        = useState(null);
@@ -1567,38 +1566,16 @@ export default function IssuerDashboard() {
             <span className="ml-2 text-xs bg-purple-900 text-purple-300 px-2 py-0.5 rounded-full">ISSUER</span>
           </div>
           <nav className="flex gap-1 flex-wrap">
-            {/* Overview with dropdown for governance and dividends */}
-            <div className="relative" onMouseLeave={()=>setShowIssuerMore(false)}>
-              <button
-                onMouseEnter={()=>setShowIssuerMore(true)}
-                onClick={()=>{setTab('overview');setShowIssuerMore(false);}}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab==='overview'||['governance','dividends'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                Overview
-                <svg className="w-3 h-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
-                </svg>
-              </button>
-              {showIssuerMore && (
-                <div className="absolute top-full left-0 mt-1 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
-                  <button onClick={()=>{setTab('overview');setShowIssuerMore(false);}}
-                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='overview'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
-                    Overview
-                  </button>
-                  <button onClick={()=>{setTab('governance');setShowIssuerMore(false);}}
-                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='governance'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
-                    Governance
-                  </button>
-                  <button onClick={()=>{setTab('dividends');setShowIssuerMore(false);}}
-                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='dividends'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
-                    Dividends
-                  </button>
-                </div>
-              )}
-            </div>
-            {['kyc','journey','financials'].map(t=>(
-              <button key={t} onClick={()=>setTab(t)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                {t === 'journey' ? 'Application Journey' : t}
+            {[
+              { key:'overview',   label:'Dashboard' },
+              { key:'investors',  label:'Investors' },
+              { key:'governance', label:'Governance' },
+              { key:'dividends',  label:'Dividends' },
+              { key:'resources',  label:'Resources' },
+            ].map(item=>(
+              <button key={item.key} onClick={()=>setTab(item.key)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===item.key?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                {item.label}
               </button>
             ))}
           </nav>
@@ -1613,6 +1590,20 @@ export default function IssuerDashboard() {
       </div>
 
       <div className="max-w-screen-xl mx-auto px-6 py-6">
+        <div className="flex gap-1 border-b border-gray-800 mb-6">
+          {[
+            { key:'overview', label:'Overview' },
+            { key:'kyc',      label:'KYC & AML' },
+            { key:'journey',  label:'Application Journey' },
+          ].map(item=>(
+            <button key={item.key} onClick={()=>setTab(item.key)}
+              className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                tab===item.key ? 'border-yellow-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
+              }`}>
+              {item.label}
+            </button>
+          ))}
+        </div>
         {actionMsg && (
           <div className={`rounded-xl p-4 border mb-4 text-sm ${actionMsg.type==='success'?'bg-green-900/40 border-green-700 text-green-300':actionMsg.type==='error'?'bg-red-900/40 border-red-700 text-red-300':actionMsg.type==='warning'?'bg-amber-900/40 border-amber-700 text-amber-300':'bg-blue-900/40 border-blue-700 text-blue-300'}`}>{actionMsg.text}</div>
         )}
@@ -1808,11 +1799,23 @@ export default function IssuerDashboard() {
               </div>
             </div>
 
-            {/* ── STEP 2: Primary Offering ── */}
+            {/* ── STEP 2: Financial Data & Valuation ── */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">2</div>
+                <div>
+                  <h2 className="font-bold text-lg">Financial Data & Valuation</h2>
+                  <p className="text-gray-500 text-xs mt-0.5">Submit financial data for auditor review and token pricing</p>
+                </div>
+              </div>
+              <FinancialsTab t={selToken} price={price} account={account} setPostMsg={setPostMsg} NAVY={NAVY} />
+            </div>
+
+            {/* ── STEP 3: Primary Offering ── */}
             {myTokens && myTokens.some(t => t.status === 'ACTIVE') ? (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">2</div>
+                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">3</div>
                   <div>
                     <h2 className="font-bold text-lg">Primary Offering</h2>
                     <p className="text-gray-500 text-xs mt-0.5">Propose a fundraising round once your token is approved</p>
@@ -1825,14 +1828,14 @@ export default function IssuerDashboard() {
             ) : (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 opacity-60">
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl font-black text-yellow-400 opacity-30">2</span>
+                  <span className="text-2xl font-black text-yellow-400 opacity-30">3</span>
                   <div>
                     <h3 className="font-bold text-lg text-gray-400">Primary Offering</h3>
                     <p className="text-gray-600 text-sm">Available after your token is approved through the compliance pipeline.</p>
                   </div>
                 </div>
                 <div className="border border-gray-800 rounded-xl p-4 text-center">
-                  <p className="text-gray-600 text-sm">🔒 Complete step 1 first — submit your tokenisation application for auditor review. Once your token is approved by admin, you can propose a primary offering here.</p>
+                  <p className="text-gray-600 text-sm">🔒 Complete steps 1 and 2 first — submit your tokenisation application and financial data. Once your token is approved by admin, you can propose a primary offering here.</p>
                 </div>
               </div>
             )}
@@ -1842,65 +1845,10 @@ export default function IssuerDashboard() {
 
         {/* ══ INVESTORS ══ */}
         {tab==='investors' && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-bold">Investor Profile</h2>
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <h3 className="font-semibold mb-4">Investor Composition</h3>
-                <div className="flex items-center gap-6">
-                  <ResponsiveContainer width="50%" height={180}>
-                    <PieChart>
-                      <Pie data={mockHolderBreakdown} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="pct" paddingAngle={3}>
-                        {mockHolderBreakdown.map((_,i)=><Cell key={i} fill={HOLDER_COLORS[i]}/>)}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex-1 space-y-3">
-                    {mockHolderBreakdown.map((h,i)=>(
-                      <div key={i} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-sm" style={{background:HOLDER_COLORS[i]}}/>
-                          <span className="text-sm text-gray-300">{h.type}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-bold">{h.pct}%</span>
-                          <span className="text-gray-500 text-xs ml-1">({h.count})</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <h3 className="font-semibold mb-4">Top Token Holders</h3>
-                <div className="space-y-3">
-                  {[
-                    {wallet:'0x3f7a…c4d2',type:'Institutional',pct:19.2,value:'$482,400'},
-                    {wallet:'0x8b2c…a1f9',type:'Family Office',pct:15.0,value:'$376,875'},
-                    {wallet:'0x1d9e…7b3c',type:'Institutional',pct:11.6,value:'$291,450'},
-                    {wallet:'0x5c4f…d8e1',type:'Accredited',pct:8.8,value:'$221,100'},
-                    {wallet:'0x9a1b…f2c7',type:'Accredited',pct:7.4,value:'$185,925'},
-                  ].map((h,i)=>(
-                    <div key={i} className="flex items-center gap-3">
-                      <span className="text-gray-500 text-xs w-4">{i+1}</span>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-mono text-sm">{h.wallet}</span>
-                          <span className="text-sm font-semibold">{h.value}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-500">{h.type}</span>
-                          <div className="flex items-center gap-2">
-                            <div className="w-24 bg-gray-800 rounded-full h-1"><div className="h-1 rounded-full" style={{width:`${h.pct*2}%`,background:NAVY}}/></div>
-                            <span className="text-xs text-gray-500">{h.pct}%</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
+            <p className="text-3xl mb-3">👥</p>
+            <h3 className="font-bold text-lg mb-2">Investor Relations</h3>
+            <p className="text-gray-500 text-sm">View your investor base, subscription history and investor communications. Coming soon.</p>
           </div>
         )}
 
@@ -1963,10 +1911,6 @@ export default function IssuerDashboard() {
           </div>
         )}
 
-        {/* ══ FINANCIALS ══ */}
-        {tab==='financials' && (
-          <FinancialsTab t={t} price={price} account={account} setPostMsg={setPostMsg} NAVY={NAVY}/>
-        )}
 
         {/* ══ ENTITY KYC ══ */}
         {tab==='kyc' && (
@@ -2078,6 +2022,29 @@ export default function IssuerDashboard() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ RESOURCES ══ */}
+        {tab==='resources' && (
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <h3 className="font-bold text-lg mb-4">📚 Issuer Resources</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { title:'SECZ Regulatory Sandbox Guidelines', desc:'Rules and requirements for operating under the SECZ Innovation Hub sandbox.', icon:'🏛️' },
+                { title:'TokenEquityX Issuer Guide', desc:'Step-by-step guide to listing your asset on the platform.', icon:'📋' },
+                { title:'KYC & AML Requirements', desc:'What documents you need for entity verification and AML compliance.', icon:'🪪' },
+                { title:'Valuation Methodology', desc:'How the TokenEquityX valuation engine works and what data it uses.', icon:'📊' },
+                { title:'Smart Contract Overview', desc:'How your token will be deployed on Polygon PoS blockchain.', icon:'⛓️' },
+                { title:'Investor Relations Guide', desc:'How to communicate with your token holders and manage distributions.', icon:'👥' },
+              ].map((r, i) => (
+                <div key={i} className="bg-gray-800/50 border border-gray-700/40 rounded-xl p-4">
+                  <p className="text-2xl mb-2">{r.icon}</p>
+                  <p className="font-semibold text-sm text-white mb-1">{r.title}</p>
+                  <p className="text-xs text-gray-500">{r.desc}</p>
+                </div>
+              ))}
             </div>
           </div>
         )}
