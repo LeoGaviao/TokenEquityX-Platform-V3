@@ -1567,12 +1567,12 @@ export default function IssuerDashboard() {
             <span className="ml-2 text-xs bg-purple-900 text-purple-300 px-2 py-0.5 rounded-full">ISSUER</span>
           </div>
           <nav className="flex gap-1 flex-wrap">
-            {/* Overview with dropdown */}
+            {/* Overview with dropdown for governance and dividends */}
             <div className="relative" onMouseLeave={()=>setShowIssuerMore(false)}>
               <button
                 onMouseEnter={()=>setShowIssuerMore(true)}
-                onClick={()=>{setTab('overview');setShowIssuerMore(m=>!m);}}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab==='overview'||['investors','trading','communications'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                onClick={()=>{setTab('overview');setShowIssuerMore(false);}}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${tab==='overview'||['governance','dividends'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
                 Overview
                 <svg className="w-3 h-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
@@ -1581,42 +1581,26 @@ export default function IssuerDashboard() {
               {showIssuerMore && (
                 <div className="absolute top-full left-0 mt-1 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
                   <button onClick={()=>{setTab('overview');setShowIssuerMore(false);}}
-                    className={`w-full text-left px-4 py-2.5 text-sm capitalize transition-colors ${tab==='overview'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='overview'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
                     Overview
                   </button>
-                  <div className="border-t border-gray-800 my-1"/>
-                  {['investors','trading','communications'].map(t=>(
-                    <button key={t} onClick={()=>{setTab(t);setShowIssuerMore(false);}}
-                      className={`w-full text-left px-4 py-2.5 text-sm capitalize transition-colors ${tab===t?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
-                      {t}
-                    </button>
-                  ))}
+                  <button onClick={()=>{setTab('governance');setShowIssuerMore(false);}}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='governance'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                    Governance
+                  </button>
+                  <button onClick={()=>{setTab('dividends');setShowIssuerMore(false);}}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${tab==='dividends'?'bg-blue-600 text-white':'text-gray-300 hover:text-white hover:bg-white/5'}`}>
+                    Dividends
+                  </button>
                 </div>
               )}
             </div>
-            {/* Primary tabs */}
-            {['overview','kyc','journey','financials'].map(t=>(
+            {['kyc','journey','financials'].map(t=>(
               <button key={t} onClick={()=>setTab(t)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
                 {t === 'journey' ? 'Application Journey' : t}
               </button>
             ))}
-            <div className="relative">
-              <button onClick={()=>setShowIssuerMore(m=>!m)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${['governance','dividends'].includes(tab)?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                More ▾
-              </button>
-              {showIssuerMore && (
-                <div className="absolute top-full left-0 mt-1 w-36 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
-                  {['governance','dividends'].map(t=>(
-                    <button key={t} onClick={()=>{setTab(t);setShowIssuerMore(false);}}
-                      className={`w-full text-left px-4 py-2.5 text-sm capitalize hover:bg-gray-800 transition-colors ${tab===t?'text-white font-semibold':'text-gray-400'}`}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           </nav>
           <div className="flex items-center gap-3">
             <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email||'User'}</span>
