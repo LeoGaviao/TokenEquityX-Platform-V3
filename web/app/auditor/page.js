@@ -633,6 +633,10 @@ export default function AuditorDashboard() {
   const [offeringForm,      setOfferingForm]       = useState({ recommendation:'', auditor_notes:'', price_assessment:'' });
   const [offeringSubmitting,setOfferingSubmitting] = useState(false);
   const [actionMsg,  setActionMsg]  = useState(null);
+  const [accepting,     setAccepting]     = useState(null);
+  const [declining,     setDeclining]     = useState(null);
+  const [declineReason, setDeclineReason] = useState('');
+  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
   useEffect(() => {
     if (typeof window === 'undefined') return null;
@@ -681,6 +685,7 @@ if (!['AUDITOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; retur
             docs:           Array.from({length: s.document_count||0}, (_,i) => `Document ${i+1}`),
             data:           { type: s.submission_type, entity: s.entity_name, reference: s.reference_number },
             assigned_auditor: s.assigned_auditor || null,
+            auditor_status: s.auditor_status || null,
             current_oracle: 1.0000,
             model_price:    1.0000,
             flags:          daysPending > 7 ? [`Submission pending for ${daysPending} days`] : [],
@@ -865,6 +870,56 @@ api.get('/auditor/completed').then(r => {
                     <div className="bg-amber-900/20 border border-amber-800/40 rounded-lg p-2 mt-2">
                       {item.flags.map((f,i)=><p key={i} className="text-amber-300 text-xs">⚠️ {f}</p>)}
                     </div>
+                  )}
+
+                  {/* Accept / Decline assignment */}
+                  {(!item.auditor_status || item.auditor_status === 'PENDING') && (
+                    <div className="mt-3 p-3 bg-amber-900/20 border border-amber-700/40 rounded-xl" onClick={e=>e.stopPropagation()}>
+                      <p className="text-xs text-amber-300 font-semibold mb-2">⚠️ Awaiting your response — please accept or decline this assignment</p>
+                      {declining === item.id ? (
+                        <div className="space-y-2">
+                          <textarea value={declineReason} onChange={e=>setDeclineReason(e.target.value)}
+                            placeholder="Reason for declining (will be shared with admin and issuer)..."
+                            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none" rows={2}/>
+                          <div className="flex gap-2">
+                            <button onClick={()=>setDeclining(null)} className="flex-1 py-1.5 rounded-lg text-xs bg-gray-700 text-white">Cancel</button>
+                            <button onClick={async()=>{
+                              const token = localStorage.getItem('token');
+                              const res = await fetch(`${API}/submissions/${item.id}/auditor-decline`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason:declineReason})});
+                              const data = await res.json();
+                              if(res.ok){alert('✅ '+data.message);loadData();}else{alert('Error: '+data.error);}
+                              setDeclining(null);setDeclineReason('');
+                            }} className="flex-1 py-1.5 rounded-lg text-xs bg-red-700 hover:bg-red-600 text-white font-semibold">
+                              Confirm Decline
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button onClick={async()=>{
+                            setAccepting(item.id);
+                            const token = localStorage.getItem('token');
+                            const res = await fetch(`${API}/submissions/${item.id}/auditor-accept`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}});
+                            const data = await res.json();
+                            if(res.ok){alert('✅ '+data.message);loadData();}else{alert('Error: '+data.error);}
+                            setAccepting(null);
+                          }} disabled={accepting===item.id}
+                            className="flex-1 py-2 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50">
+                            {accepting===item.id?'⏳ Accepting...':'✅ Accept Assignment'}
+                          </button>
+                          <button onClick={()=>setDeclining(item.id)}
+                            className="flex-1 py-2 rounded-lg text-xs font-semibold bg-red-900/40 text-red-300 hover:bg-red-900/60 border border-red-800/50">
+                            ❌ Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {item.auditor_status === 'ACCEPTED' && (
+                    <p className="text-xs text-green-400 mt-2">✅ You have accepted this assignment</p>
+                  )}
+                  {item.auditor_status === 'DECLINED' && (
+                    <p className="text-xs text-red-400 mt-2">❌ You declined this assignment</p>
                   )}
 
                   <div className="flex items-center justify-between mt-3">

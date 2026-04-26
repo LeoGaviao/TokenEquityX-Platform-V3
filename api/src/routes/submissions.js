@@ -768,6 +768,33 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), async (req,
     );
 
     await conn.commit();
+
+    // Notify issuer — application received
+    const { sendMessage } = require('../utils/messenger');
+    await sendMessage({
+      recipientId: req.user.userId,
+      subject:     `📋 Application Received — ${sym}`,
+      body:        `Your tokenisation application for ${legalName} (${sym}) has been received.\n\nReference: ${refNum}\n\nYour application will be reviewed at the next Applications Appraisal Meeting (every Tuesday). You will receive a notification once the committee has reviewed your submission.\n\nNext steps:\n1. Await committee review\n2. If approved, you will receive a compliance fee invoice and auditor assignment\n3. The auditor will contact you directly to agree scope and fee\n4. Once review is complete, admin gives final approval\n5. You can then propose a primary offering`,
+      type:        'SYSTEM',
+      category:    'APPLICATION',
+      referenceId: refNum,
+    }).catch(() => {});
+
+    // Notify admin — new application
+    const [adminRows] = await db.execute(
+      "SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1"
+    );
+    if (adminRows.length > 0) {
+      await sendMessage({
+        recipientId: adminRows[0].id,
+        subject:     `🆕 New Application — ${sym}`,
+        body:        `A new tokenisation application has been submitted.\n\nCompany: ${legalName}\nToken Symbol: ${sym}\nAsset Type: ${assetType || 'BOND'}\nSector: ${sector || 'N/A'}\nReference: ${refNum}\n\nPlease review at the next Applications Appraisal Meeting and approve or reject via the Pipeline tab.`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+        referenceId: refNum,
+      }).catch(() => {});
+    }
+
     res.json({
       success: true,
       message: `Application for ${sym} submitted successfully. Reference: ${refNum}`,
@@ -779,6 +806,83 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), async (req,
     res.status(500).json({ error: 'Submission failed: ' + err.message });
   } finally {
     conn.release();
+  }
+});
+
+// PUT /api/submissions/:id/auditor-accept — auditor accepts assignment
+router.put('/:id/auditor-accept', authenticate, requireRole('AUDITOR'), async (req, res) => {
+  const { sendMessage } = require('../utils/messenger');
+  try {
+    const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+    const sub = rows[0];
+
+    if (sub.assigned_auditor !== req.user.email && sub.assigned_auditor !== req.user.userId) {
+      return res.status(403).json({ error: 'This submission is not assigned to you' });
+    }
+
+    await db.execute(
+      "UPDATE data_submissions SET auditor_status = 'ACCEPTED', updated_at = NOW() WHERE id = ?",
+      [req.params.id]
+    );
+
+    const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
+    if (adminRows.length > 0) {
+      await sendMessage({
+        recipientId: adminRows[0].id,
+        subject:     `✅ Auditor Accepted — ${sub.token_symbol}`,
+        body:        `The auditor assigned to ${sub.token_symbol} (${sub.entity_name}) has accepted the assignment and will commence review.\n\nReference: ${sub.reference_number}`,
+        type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+      }).catch(() => {});
+    }
+
+    await sendMessage({
+      recipientId: sub.issuer_wallet,
+      subject:     `✅ Auditor Accepted — ${sub.token_symbol}`,
+      body:        `Your nominated auditor has accepted the assignment for ${sub.entity_name} (${sub.token_symbol}).\n\nThe auditor will contact you directly to agree the scope and fee. Please have your documents ready.\n\nReference: ${sub.reference_number}`,
+      type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+    }).catch(() => {});
+
+    res.json({ success: true, message: 'Assignment accepted. Issuer and admin have been notified.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/submissions/:id/auditor-decline — auditor declines assignment
+router.put('/:id/auditor-decline', authenticate, requireRole('AUDITOR'), async (req, res) => {
+  const { reason } = req.body;
+  const { sendMessage } = require('../utils/messenger');
+  try {
+    const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+    const sub = rows[0];
+
+    await db.execute(
+      "UPDATE data_submissions SET auditor_status = 'DECLINED', auditor_declined_reason = ?, updated_at = NOW() WHERE id = ?",
+      [reason || 'No reason provided', req.params.id]
+    );
+
+    const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
+    if (adminRows.length > 0) {
+      await sendMessage({
+        recipientId: adminRows[0].id,
+        subject:     `❌ Auditor Declined — ${sub.token_symbol}`,
+        body:        `The auditor assigned to ${sub.token_symbol} (${sub.entity_name}) has declined the assignment.\n\nReason: ${reason || 'Not provided'}\n\nPlease nominate a new auditor via the Pipeline tab.\n\nReference: ${sub.reference_number}`,
+        type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+      }).catch(() => {});
+    }
+
+    await sendMessage({
+      recipientId: sub.issuer_wallet,
+      subject:     `⚠️ Auditor Update — ${sub.token_symbol}`,
+      body:        `The nominated auditor was unable to accept the assignment for ${sub.entity_name} (${sub.token_symbol}).\n\nTokenEquityX will nominate a replacement auditor shortly. You will be notified once a new auditor is assigned.\n\nReference: ${sub.reference_number}`,
+      type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+    }).catch(() => {});
+
+    res.json({ success: true, message: 'Declination recorded. Admin and issuer have been notified.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

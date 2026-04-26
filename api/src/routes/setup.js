@@ -714,6 +714,8 @@ router.get('/migrate', async (req, res) => {
     `CREATE INDEX IF NOT EXISTS idx_p2p_seller ON p2p_offers(seller_id)`,
     `CREATE INDEX IF NOT EXISTS idx_p2p_status ON p2p_offers(status)`,
     `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS sector VARCHAR(100)`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS auditor_status VARCHAR(20) DEFAULT 'PENDING'`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS auditor_declined_reason TEXT`,
   ];
   const results = [];
   for (const sql of migrations) {
