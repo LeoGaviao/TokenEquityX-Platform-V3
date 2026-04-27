@@ -99,10 +99,16 @@ export default function Navigation() {
           {links.map(link => (
             <button
               key={link.href}
-              onClick={() => router.push(link.href)}
+              onClick={() => {
+                if (link.href.includes('?tab=')) {
+                  const tabName = new URLSearchParams(link.href.split('?')[1]).get('tab');
+                  window.dispatchEvent(new CustomEvent('issuer-tab-change', { detail: { tab: tabName } }));
+                } else {
+                  router.push(link.href);
+                }
+              }}
               className={`px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-1.5 ${
-                (link.href === '/issuer' && !link.href.includes('?') && pathname === '/issuer' && typeof window !== 'undefined' && !window.location.search) ||
-                (link.href.includes('?') && typeof window !== 'undefined' && window.location.href.includes(link.href.split('?')[1])) ||
+                (link.href === '/issuer' && !link.href.includes('?') && pathname === '/issuer') ||
                 (!link.href.includes('?') && link.href !== '/issuer' && (pathname === link.href || pathname.startsWith(link.href + '/')))
                   ? 'bg-yellow-500 text-black font-semibold'
                   : 'text-gray-400 hover:text-white hover:bg-gray-800'

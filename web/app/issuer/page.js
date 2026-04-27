@@ -1497,14 +1497,13 @@ export default function IssuerDashboard() {
   const [myApplications, setMyApplications] = useState([]);
   const [entityKyc,      setEntityKyc]      = useState(null);
   const [kycLoaded,      setKycLoaded]      = useState(false);
-  const [tab, setTab] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const t = params.get('tab');
-      if (t) return t;
-    }
-    return 'overview';
-  });
+  const [tab, setTab] = useState('overview');
+
+  useEffect(() => {
+    const handler = (e) => setTab(e.detail.tab);
+    window.addEventListener('issuer-tab-change', handler);
+    return () => window.removeEventListener('issuer-tab-change', handler);
+  }, []);
   const [loading,        setLoading]        = useState(true);
   const [statement,      setStatement]      = useState('');
   const [postMsg,        setPostMsg]        = useState(null);
