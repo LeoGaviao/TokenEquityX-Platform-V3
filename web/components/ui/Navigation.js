@@ -12,10 +12,11 @@ const NAV_LINKS = {
   ],
   ISSUER: [
     { href: '/issuer',             label: 'Dashboard',  icon: '🏢' },
-    { href: '/issuer/register',    label: 'Register',   icon: '➕' },
-    { href: '/issuer/data',        label: 'Financials', icon: '📋' },
     { href: '/issuer/governance',  label: 'Governance', icon: '⚖️' },
     { href: '/issuer/dividends',   label: 'Dividends',  icon: '💸' },
+    { href: '/issuer',             label: 'Reporting',  icon: '📋', tab: 'reporting' },
+    { href: '/issuer',             label: 'Investors',  icon: '👥', tab: 'investors' },
+    { href: '/issuer',             label: 'Resources',  icon: '📚', tab: 'resources' },
   ],
   AUDITOR: [
     { href: '/auditor',            label: 'Queue',      icon: '📥' },
