@@ -1591,8 +1591,6 @@ export default function IssuerDashboard() {
             <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email||'User'}</span>
             <Inbox token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} />
             <button onClick={()=>window.location.href='/profile'} className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg">Profile</button>
-            <button onClick={()=>{localStorage.clear();window.location.href='/'}}
-              className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg">Disconnect</button>
           </div>
         </div>
       </div>
