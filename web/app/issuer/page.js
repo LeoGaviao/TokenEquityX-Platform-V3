@@ -1559,34 +1559,10 @@ export default function IssuerDashboard() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
 
-      {/* HEADER */}
-      <div className="border-b border-gray-800 px-6 py-4 bg-gray-900/80">
+      {/* USER BAR */}
+      <div className="border-b border-gray-800 px-6 py-2 bg-gray-900/60">
         <div className="max-w-screen-xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{background:GOLD}}>
-              <span className="text-sm font-bold text-gray-900">TX</span>
-            </div>
-            <div>
-              <p className="font-bold text-sm">TokenEquityX</p>
-              <p className="text-gray-500 text-xs">Issuer Portal — {t?.company_name}</p>
-            </div>
-            <span className="ml-2 text-xs bg-purple-900 text-purple-300 px-2 py-0.5 rounded-full">ISSUER</span>
-          </div>
-          <nav className="flex gap-1 flex-wrap">
-            {[
-              { key:'overview',   label:'Dashboard' },
-              { key:'governance', label:'Governance' },
-              { key:'dividends',  label:'Dividends' },
-              { key:'reporting',  label:'Reporting' },
-              { key:'investors',  label:'Investors' },
-              { key:'resources',  label:'Resources' },
-            ].map(item=>(
-              <button key={item.key} onClick={()=>setTab(item.key)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===item.key?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                {item.label}
-              </button>
-            ))}
-          </nav>
+          <p className="text-gray-400 text-xs font-medium">Issuer Portal — {t?.company_name || 'TokenEquityX'}</p>
           <div className="flex items-center gap-3">
             <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email||'User'}</span>
             <Inbox token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} />
