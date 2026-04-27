@@ -11,12 +11,12 @@ const NAV_LINKS = {
     { href: '/investor/vote',      label: 'Vote',       icon: '🗳️' },
   ],
   ISSUER: [
-    { href: '/issuer',             label: 'Dashboard',  icon: '🏢' },
-    { href: '/issuer/governance',  label: 'Governance', icon: '⚖️' },
-    { href: '/issuer/dividends',   label: 'Dividends',  icon: '💸' },
-    { href: '/issuer',             label: 'Reporting',  icon: '📋', tab: 'reporting' },
-    { href: '/issuer',             label: 'Investors',  icon: '👥', tab: 'investors' },
-    { href: '/issuer',             label: 'Resources',  icon: '📚', tab: 'resources' },
+    { href: '/issuer',                      label: 'Dashboard',  icon: '🏢' },
+    { href: '/issuer/governance',           label: 'Governance', icon: '⚖️' },
+    { href: '/issuer/dividends',            label: 'Dividends',  icon: '💸' },
+    { href: '/issuer?tab=reporting',        label: 'Reporting',  icon: '📋' },
+    { href: '/issuer?tab=investors',        label: 'Investors',  icon: '👥' },
+    { href: '/issuer?tab=resources',        label: 'Resources',  icon: '📚' },
   ],
   AUDITOR: [
     { href: '/auditor',            label: 'Queue',      icon: '📥' },
@@ -101,7 +101,9 @@ export default function Navigation() {
               key={link.href}
               onClick={() => router.push(link.href)}
               className={`px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-1.5 ${
-                pathname === link.href || pathname.startsWith(link.href + '/')
+                (link.href === '/issuer' && !link.href.includes('?') && pathname === '/issuer' && typeof window !== 'undefined' && !window.location.search) ||
+                (link.href.includes('?') && typeof window !== 'undefined' && window.location.href.includes(link.href.split('?')[1])) ||
+                (!link.href.includes('?') && link.href !== '/issuer' && (pathname === link.href || pathname.startsWith(link.href + '/')))
                   ? 'bg-yellow-500 text-black font-semibold'
                   : 'text-gray-400 hover:text-white hover:bg-gray-800'
               }`}

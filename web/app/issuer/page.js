@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useWallet } from '../../hooks/useWallet';
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1497,7 +1497,14 @@ export default function IssuerDashboard() {
   const [myApplications, setMyApplications] = useState([]);
   const [entityKyc,      setEntityKyc]      = useState(null);
   const [kycLoaded,      setKycLoaded]      = useState(false);
-  const [tab,            setTab]            = useState('overview');
+  const [tab, setTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get('tab');
+      if (t) return t;
+    }
+    return 'overview';
+  });
   const [loading,        setLoading]        = useState(true);
   const [statement,      setStatement]      = useState('');
   const [postMsg,        setPostMsg]        = useState(null);
