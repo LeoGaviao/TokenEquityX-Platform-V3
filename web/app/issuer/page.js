@@ -1778,6 +1778,30 @@ export default function IssuerDashboard() {
                 </div>
               </div>
               <div className="p-6">
+                {myApplications.length > 0 && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-lg">My Applications</h3>
+                      <span className="text-xs text-gray-500">{myApplications.length} application(s)</span>
+                    </div>
+                    <div className="space-y-2">
+                      {myApplications.map(app => (
+                        <div key={app.id} className="flex items-center justify-between bg-gray-800/50 border border-gray-700/40 rounded-xl px-4 py-3">
+                          <div>
+                            <p className="font-semibold text-sm">{app.token_symbol} — {app.entity_name}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Ref: {app.reference_number?.substring(0,20)}... · {new Date(app.created_at).toLocaleDateString('en-GB')}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                            app.status === 'ADMIN_APPROVED' ? 'bg-green-900/40 text-green-300 border-green-700/50' :
+                            app.status === 'REJECTED'       ? 'bg-red-900/40 text-red-300 border-red-700/50' :
+                            app.status === 'UNDER_REVIEW'   ? 'bg-blue-900/40 text-blue-300 border-blue-700/50' :
+                            'bg-yellow-900/40 text-yellow-300 border-yellow-700/50'
+                          }`}>{app.application_status || app.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <TokenisationTab notify={notify}/>
               </div>
             </div>
