@@ -744,6 +744,9 @@ router.get('/migrate', async (req, res) => {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_entity_kyc_user ON entity_kyc(user_id)`,
     `CREATE INDEX IF NOT EXISTS idx_entity_kyc_status ON entity_kyc(status)`,
+    `UPDATE messages SET is_read = FALSE WHERE is_read IS NULL`,
+    `ALTER TABLE messages ALTER COLUMN is_read SET DEFAULT FALSE`,
+    `ALTER TABLE messages ALTER COLUMN is_deleted SET DEFAULT FALSE`,
   ];
   const results = [];
   for (const sql of migrations) {

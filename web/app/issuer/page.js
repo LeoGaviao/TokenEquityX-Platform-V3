@@ -828,7 +828,7 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
 }
 
 // ── TOKENISATION TAB ────────────────────────────────────────────
-function TokenisationTab({ notify }) {
+function TokenisationTab({ notify, entityKyc, setTab }) {
   const API     = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
   const FORM_KEY = 'texz_unified_app_draft';
   const savedDraft = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem(FORM_KEY) || 'null') : null;
@@ -953,6 +953,27 @@ function TokenisationTab({ notify }) {
   );
 
   return (
+    <>
+      {(!entityKyc || entityKyc.status !== 'APPROVED') && (
+        <div className="bg-amber-900/20 border border-amber-700/50 rounded-2xl p-6 text-center max-w-2xl">
+          <p className="text-3xl mb-3">🔒</p>
+          <h3 className="font-bold text-lg mb-2 text-amber-300">Entity KYC Required</h3>
+          <p className="text-gray-400 text-sm mb-4">
+            {!entityKyc
+              ? 'You must complete and receive approval for your Entity KYC & AML verification before submitting a tokenisation application.'
+              : entityKyc.status === 'PENDING'
+              ? 'Your Entity KYC is under review. You will be notified once approved — typically within 3–5 business days.'
+              : 'Your Entity KYC was not approved. Please review the feedback and resubmit via the KYC & AML tab.'}
+          </p>
+          <button onClick={()=>setTab('kyc')}
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
+            style={{background:'#1A3C5E'}}>
+            {!entityKyc ? 'Start Entity KYC →' : entityKyc.status === 'PENDING' ? 'View KYC Status →' : 'Resubmit KYC →'}
+          </button>
+        </div>
+      )}
+
+      {entityKyc?.status === 'APPROVED' && (
     <div className="space-y-6 max-w-2xl">
       {/* Existing applications */}
       {!loadingApps && applications.length > 0 && (
@@ -1289,6 +1310,8 @@ function TokenisationTab({ notify }) {
         )}
       </div>
     </div>
+    )}
+    </>
   );
 }
 
@@ -1802,7 +1825,7 @@ export default function IssuerDashboard() {
                     </div>
                   </div>
                 )}
-                <TokenisationTab notify={notify}/>
+                <TokenisationTab notify={notify} entityKyc={entityKyc} setTab={setTab}/>
               </div>
             </div>
 

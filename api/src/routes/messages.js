@@ -15,7 +15,7 @@ router.get('/', authenticate, async (req, res) => {
              u.full_name as sender_name, u.email as sender_email
       FROM messages m
       LEFT JOIN users u ON u.id = m.sender_id
-      WHERE m.recipient_id = ? AND m.is_deleted = FALSE
+      WHERE m.recipient_id = ? AND (m.is_deleted = FALSE OR m.is_deleted IS NULL)
       ORDER BY m.created_at DESC
       LIMIT ? OFFSET ?
     `, [req.user.userId, limit, offset]);
@@ -29,7 +29,7 @@ router.get('/', authenticate, async (req, res) => {
 router.get('/unread-count', authenticate, async (req, res) => {
   try {
     const [[row]] = await db.execute(
-      'SELECT COUNT(*) as count FROM messages WHERE recipient_id = ? AND is_read = FALSE AND is_deleted = FALSE',
+      'SELECT COUNT(*) as count FROM messages WHERE recipient_id = ? AND (is_read = FALSE OR is_read IS NULL) AND (is_deleted = FALSE OR is_deleted IS NULL)',
       [req.user.userId]
     );
     res.json({ count: parseInt(row.count) || 0 });

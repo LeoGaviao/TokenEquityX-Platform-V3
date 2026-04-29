@@ -1330,6 +1330,7 @@ export default function AdminDashboard() {
   const [assignNote,setAssignNote]=useState('');
   const [kycItems,setKycItems]=useState([]);
   const [entityKycList, setEntityKycList] = useState([]);
+  const [expandedKyc, setExpandedKyc] = useState(null);
   const [flaggedTxns,setFlaggedTxns]=useState([
     {id:1,title:'Unusual volume pattern — ACME',desc:'Wallet 0x7f4a…b2c1 placed 14 orders in 3 minutes, total USD 48,000. Possible wash trading.',time:'Today 08:47 AM',system:'MarketController'},
   ]);
@@ -2093,7 +2094,83 @@ export default function AdminDashboard() {
                         }`}>{kyc.status}</span>
                       </div>
                       {kyc.business_description && (
-                        <p className="text-xs text-gray-400 mb-3 line-clamp-2">{kyc.business_description}</p>
+                        <p className="text-xs text-gray-400 mb-3">{kyc.business_description}</p>
+                      )}
+                      <button onClick={()=>setExpandedKyc(expandedKyc===kyc.id?null:kyc.id)}
+                        className="text-xs text-blue-400 hover:text-blue-300 mb-2">
+                        {expandedKyc===kyc.id ? '▲ Hide details' : '▼ View full KYC details'}
+                      </button>
+                      {expandedKyc===kyc.id && (
+                        <div className="bg-gray-800/50 rounded-xl p-4 space-y-3 text-xs mb-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              ['Registration Country', kyc.registration_country],
+                              ['Business Type',        kyc.business_type],
+                              ['Date Incorporated',    kyc.date_incorporated ? new Date(kyc.date_incorporated).toLocaleDateString('en-GB') : '—'],
+                              ['Tax Clearance',        kyc.tax_clearance_number || '—'],
+                              ['Registered Address',   kyc.registered_address || '—'],
+                              ['Source of Funds',      kyc.source_of_funds || '—'],
+                            ].map(([label, value]) => (
+                              <div key={label} className="bg-gray-900/60 rounded-lg p-2">
+                                <p className="text-gray-500 mb-0.5">{label}</p>
+                                <p className="text-white font-medium">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div>
+                            <p className="text-gray-400 font-semibold mb-2">Compliance Declarations</p>
+                            <div className="space-y-1">
+                              {[
+                                ['PEP Declaration',      kyc.pep_declaration],
+                                ['Sanctions Clear',      kyc.sanctions_declaration],
+                                ['AML/CFT Declaration',  kyc.aml_declaration],
+                              ].map(([label, val]) => (
+                                <div key={label} className="flex items-center gap-2">
+                                  <span className={val ? 'text-green-400' : 'text-red-400'}>{val ? '✅' : '❌'}</span>
+                                  <span className="text-gray-300">{label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          {kyc.directors && (() => {
+                            try {
+                              const dirs = typeof kyc.directors === 'string' ? JSON.parse(kyc.directors) : kyc.directors;
+                              if (!dirs || dirs.length === 0) return null;
+                              return (
+                                <div>
+                                  <p className="text-gray-400 font-semibold mb-2">Directors ({dirs.length})</p>
+                                  <div className="space-y-1">
+                                    {dirs.map((d,i) => (
+                                      <div key={i} className="bg-gray-900/60 rounded-lg p-2">
+                                        <p className="text-white font-medium">{d.name} {d.pep && <span className="text-amber-400 ml-1">[PEP]</span>}</p>
+                                        <p className="text-gray-500">{d.id_number} · {d.email}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            } catch { return null; }
+                          })()}
+                          {kyc.beneficial_owners && (() => {
+                            try {
+                              const owners = typeof kyc.beneficial_owners === 'string' ? JSON.parse(kyc.beneficial_owners) : kyc.beneficial_owners;
+                              if (!owners || owners.length === 0) return null;
+                              return (
+                                <div>
+                                  <p className="text-gray-400 font-semibold mb-2">Beneficial Owners ≥25%</p>
+                                  <div className="space-y-1">
+                                    {owners.map((o,i) => (
+                                      <div key={i} className="bg-gray-900/60 rounded-lg p-2">
+                                        <p className="text-white font-medium">{o.name} — {o.ownership_pct}%</p>
+                                        <p className="text-gray-500">{o.nationality} · {o.id_number}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            } catch { return null; }
+                          })()}
+                        </div>
                       )}
                       {kyc.pep_declaration && <p className="text-xs text-amber-400 mb-1">⚠️ PEP declared</p>}
                       {kyc.status === 'PENDING' && (
