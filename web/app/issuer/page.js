@@ -733,13 +733,28 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
                     <div><label className="text-xs text-gray-500 block mb-1">Ownership % *</label><input type="number" value={o.ownership_pct} onChange={e=>setOwn(i,'ownership_pct',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
                     <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport</label><input value={o.id_number} onChange={e=>setOwn(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Nationality</label><input value={o.nationality} onChange={e=>setOwn(i,'nationality',e.target.value)} className={inputCls} placeholder="e.g. Zimbabwean"/></div>
+                    {parseFloat(o.ownership_pct||0) >= 25 && (
+                      <div className="col-span-2">
+                        <label className="flex items-start gap-2 cursor-pointer bg-amber-900/20 border border-amber-700/40 rounded-lg p-2">
+                          <input type="checkbox" checked={o.kyc_confirmed||false} onChange={e=>setOwn(i,'kyc_confirmed',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
+                          <span className="text-xs text-amber-300">I confirm that {o.name || 'this beneficial owner'} has submitted individual KYC on the TokenEquityX platform. (FATF Recommendation 24 — all beneficial owners with ≥25% must be individually verified)</span>
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
               <button onClick={addOwner} className="w-full py-2 rounded-xl text-sm border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500">+ Add Beneficial Owner</button>
               <div className="flex gap-3">
                 <button onClick={()=>setStep(2)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
-                <button onClick={()=>{setMsg(null);setStep(4);}} className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>Next: Compliance →</button>
+                <button onClick={()=>{
+                const unverifiedOwners = owners.filter(o => o.name && parseFloat(o.ownership_pct||0) >= 25 && !o.kyc_confirmed);
+                if (unverifiedOwners.length > 0) {
+                  setMsg({ type:'error', text: `Beneficial owners with ≥25% ownership must confirm their individual KYC: ${unverifiedOwners.map(o=>o.name).join(', ')}. Please check the box below each owner to confirm their KYC has been submitted.` });
+                  return;
+                }
+                setMsg(null); setStep(4);
+              }} className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>Next: Compliance →</button>
               </div>
             </div>
           )}
@@ -920,10 +935,19 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
     setSubmitting(true);
     try {
       const token = localStorage.getItem('token');
-      const res   = await fetch(`${API}/submissions/unified`, {
+      const fd = new FormData();
+      // Append all form fields
+      Object.entries(form).forEach(([k, v]) => {
+        if (v !== null && v !== undefined && k !== 'termsAccepted') fd.append(k, v);
+      });
+      // Append files
+      Object.entries(files).forEach(([docKey, file]) => {
+        if (file) fd.append(docKey, file, file.name);
+      });
+      const res = await fetch(`${API}/submissions/unified`, {
         method:  'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body:    JSON.stringify(form),
+        headers: { Authorization: `Bearer ${token}` },
+        body:    fd,
       });
       const data = await res.json();
       if (res.ok) {

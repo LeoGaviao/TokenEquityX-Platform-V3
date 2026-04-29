@@ -672,7 +672,15 @@ router.delete('/:id', authenticate, requireRole('ISSUER','ADMIN'), async (req, r
 });
 
 // POST /api/submissions/unified — create SPV + token + submission in one atomic transaction
-router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), async (req, res) => {
+router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fields([
+  { name: 'certificate',   maxCount: 1 },
+  { name: 'prospectus',    maxCount: 1 },
+  { name: 'financials',    maxCount: 1 },
+  { name: 'valuation',     maxCount: 1 },
+  { name: 'kyc_docs',      maxCount: 1 },
+  { name: 'legal_opinion', maxCount: 1 },
+  { name: 'regulatory',    maxCount: 1 },
+]), async (req, res) => {
   const {
     legalName, registrationNumber, jurisdiction, sector, assetType,
     description, websiteUrl, foundedYear, headquarters, useOfProceeds, numEmployees,
@@ -738,6 +746,25 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), async (req,
       jurisdiction || 'ZW'
     ]);
 
+    // Upload documents to Supabase
+    const supabase = require('../utils/supabase');
+    const uploadedDocs = {};
+    if (req.files) {
+      for (const [docKey, fileArr] of Object.entries(req.files)) {
+        const file = fileArr[0];
+        const filePath = `submissions/${sym}/${docKey}_${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: true });
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+          uploadedDocs[docKey] = { name: file.originalname, url: urlData.publicUrl, path: filePath, size: file.size };
+        } else {
+          console.error(`[UPLOAD] Failed to upload ${docKey}:`, uploadError.message);
+        }
+      }
+    }
+
     const dataJson = JSON.stringify({
       financialData: { targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency },
       keyPersonnel: [
@@ -747,6 +774,7 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), async (req,
       ].filter(p => p.name),
       sector, assetType, assetClass,
       description: description || assetDescription,
+      documents: uploadedDocs,
     });
 
     const refNum = `${sym.toLowerCase()}-${Date.now().toString(36)}`;
@@ -754,8 +782,8 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), async (req,
       INSERT INTO data_submissions
         (token_symbol, entity_name, submission_type, status, application_status,
          fee_status, issuer_wallet, reference_number, data_json, document_count)
-      VALUES (?, ?, 'TOKENISATION_APPLICATION', 'PENDING', 'PENDING_REVIEW', 'NOT_REQUIRED', ?, ?, ?, 0)
-    `, [sym, legalName, req.user.userId, refNum, dataJson]);
+      VALUES (?, ?, 'TOKENISATION_APPLICATION', 'PENDING', 'PENDING_REVIEW', 'NOT_REQUIRED', ?, ?, ?, ?)
+    `, [sym, legalName, req.user.userId, refNum, dataJson, Object.keys(uploadedDocs).length]);
 
     await conn.execute(
       'UPDATE users SET role = ? WHERE id = ? AND role = ?',

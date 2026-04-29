@@ -262,6 +262,34 @@ function SubmissionDetailPanel({ item }) {
           </div>
         </div>
       )}
+
+      {/* Documents */}
+      {(() => {
+        try {
+          const d = typeof sub.data_json === 'string' ? JSON.parse(sub.data_json) : (sub.data_json || {});
+          const docs = d.documents || {};
+          const docEntries = Object.entries(docs);
+          if (docEntries.length === 0) return (
+            <p className="text-xs text-gray-500 mt-2">No documents uploaded yet.</p>
+          );
+          return (
+            <div className="mt-3 space-y-1">
+              <p className="text-xs text-gray-400 font-semibold mb-2">📎 Uploaded Documents</p>
+              {docEntries.map(([key, doc]) => (
+                <a key={key} href={doc.url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-2 hover:bg-gray-700/50 transition-colors">
+                  <span className="text-blue-400 text-xs">📄</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white truncate">{doc.name}</p>
+                    <p className="text-xs text-gray-500 capitalize">{key.replace('_', ' ')}</p>
+                  </div>
+                  <span className="text-xs text-blue-400">↗</span>
+                </a>
+              ))}
+            </div>
+          );
+        } catch { return null; }
+      })()}
     </div>
   );
 }
