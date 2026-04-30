@@ -842,6 +842,198 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
   );
 }
 
+// ── PRIMARY FINANCIALS TAB ─────────────────────────────────────
+function PrimaryFinancialsTab({ token, notify, NAVY, GOLD }) {
+  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [form, setForm] = useState({
+    // Equity / General
+    revenueTTM: '', growthRatePct: '', ebitdaTTM: '', freeCashFlow: '',
+    totalDebt: '', cash: '', discountRatePct: '',
+    // Bond / Infrastructure Bond
+    faceValue: '', couponRatePct: '', marketYieldPct: '', periodsRemaining: '', periodsPerYear: '2',
+    // Real Estate / REIT
+    propertyValuation: '', netOperatingIncome: '', capRate: '', occupancyPct: '', unitCount: '',
+    // Mining
+    totalResourceTonnes: '', gradePercent: '', commodityPricePerTonne: '', miningCostPerTonne: '',
+    recoveryRatePct: '',
+    // Agriculture
+    annualRevenue: '', operatingMarginPct: '', landValueUsd: '',
+  });
+  const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500';
+  const set = (f, v) => setForm(p => ({...p, [f]: v}));
+
+  const assetType = (token?.asset_type || token?.assetType || 'EQUITY').toUpperCase();
+
+  const FIELD_GROUPS = {
+    EQUITY: [
+      { key:'revenueTTM',      label:'Revenue TTM (USD) *',           placeholder:'e.g. 2500000' },
+      { key:'growthRatePct',   label:'Revenue Growth Rate % *',       placeholder:'e.g. 18' },
+      { key:'ebitdaTTM',       label:'EBITDA TTM (USD)',               placeholder:'e.g. 750000' },
+      { key:'freeCashFlow',    label:'Free Cash Flow (USD)',           placeholder:'e.g. 420000' },
+      { key:'totalDebt',       label:'Total Debt (USD)',               placeholder:'e.g. 800000' },
+      { key:'cash',            label:'Cash & Equivalents (USD)',       placeholder:'e.g. 200000' },
+      { key:'discountRatePct', label:'Discount Rate % (WACC)',        placeholder:'e.g. 20' },
+    ],
+    BOND: [
+      { key:'faceValue',       label:'Face / Par Value (USD) *',      placeholder:'e.g. 1000000' },
+      { key:'couponRatePct',   label:'Coupon Rate % *',               placeholder:'e.g. 8.5' },
+      { key:'marketYieldPct',  label:'Market Yield % *',              placeholder:'e.g. 9.2' },
+      { key:'periodsRemaining',label:'Periods Remaining *',           placeholder:'e.g. 20 (10yr semi-annual)' },
+      { key:'periodsPerYear',  label:'Coupon Payments Per Year',      placeholder:'2 (semi-annual)' },
+    ],
+    INFRASTRUCTURE: [
+      { key:'faceValue',       label:'Face / Par Value (USD) *',      placeholder:'e.g. 1000000' },
+      { key:'couponRatePct',   label:'Coupon Rate % *',               placeholder:'e.g. 8.5' },
+      { key:'marketYieldPct',  label:'Market Yield % *',              placeholder:'e.g. 9.2' },
+      { key:'periodsRemaining',label:'Periods Remaining *',           placeholder:'e.g. 20' },
+      { key:'annualRevenue',   label:'Annual Revenue (USD)',          placeholder:'e.g. 5000000' },
+      { key:'operatingMarginPct', label:'Operating Margin %',        placeholder:'e.g. 35' },
+    ],
+    REAL_ESTATE: [
+      { key:'propertyValuation',label:'Property Valuation (USD) *',  placeholder:'e.g. 8200000' },
+      { key:'totalDebt',        label:'Total Debt (USD) *',          placeholder:'e.g. 2000000' },
+      { key:'netOperatingIncome',label:'Net Operating Income (USD)', placeholder:'e.g. 620000' },
+      { key:'occupancyPct',     label:'Occupancy Rate %',            placeholder:'e.g. 94' },
+      { key:'unitCount',        label:'Number of Properties/Units',  placeholder:'e.g. 12' },
+    ],
+    REIT: [
+      { key:'propertyValuation',label:'Portfolio Valuation (USD) *', placeholder:'e.g. 8200000' },
+      { key:'netOperatingIncome',label:'Net Operating Income (USD) *',placeholder:'e.g. 620000' },
+      { key:'totalDebt',        label:'Total Debt (USD)',             placeholder:'e.g. 2000000' },
+      { key:'occupancyPct',     label:'Occupancy Rate %',            placeholder:'e.g. 94' },
+      { key:'unitCount',        label:'Number of Properties',        placeholder:'e.g. 12' },
+    ],
+    MINING: [
+      { key:'totalResourceTonnes',  label:'Total Resource (tonnes) *',     placeholder:'e.g. 50000000' },
+      { key:'gradePercent',         label:'Grade % *',                     placeholder:'e.g. 4.2' },
+      { key:'commodityPricePerTonne',label:'Commodity Price / tonne (USD)*',placeholder:'e.g. 28000' },
+      { key:'miningCostPerTonne',   label:'Mining Cost / tonne (USD) *',   placeholder:'e.g. 12000' },
+      { key:'recoveryRatePct',      label:'Recovery Rate %',               placeholder:'e.g. 85' },
+      { key:'revenueTTM',           label:'Revenue TTM (USD)',              placeholder:'e.g. 4200000' },
+      { key:'ebitdaTTM',            label:'EBITDA TTM (USD)',               placeholder:'e.g. 1260000' },
+    ],
+    AGRICULTURE: [
+      { key:'revenueTTM',        label:'Annual Revenue (USD) *',        placeholder:'e.g. 3500000' },
+      { key:'growthRatePct',     label:'Revenue Growth Rate % *',       placeholder:'e.g. 12' },
+      { key:'operatingMarginPct',label:'Operating Margin %',            placeholder:'e.g. 22' },
+      { key:'landValueUsd',      label:'Land & Asset Value (USD)',      placeholder:'e.g. 2800000' },
+      { key:'totalDebt',         label:'Total Debt (USD)',              placeholder:'e.g. 400000' },
+      { key:'discountRatePct',   label:'Discount Rate %',              placeholder:'e.g. 18' },
+    ],
+  };
+
+  const fields = FIELD_GROUPS[assetType] || FIELD_GROUPS.EQUITY;
+
+  const previewValuation = async () => {
+    setMsg(null);
+    const t2 = localStorage.getItem('token');
+    const res = await fetch(`${API}/pipeline/preview`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${t2}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenSymbol: token?.token_symbol || token?.symbol, financialData: form }),
+    });
+    const data = await res.json();
+    if (res.ok) setPreview(data);
+    else setMsg({ type:'error', text: data.error || 'Preview failed' });
+  };
+
+  const submit = async () => {
+    setSubmitting(true); setMsg(null);
+    try {
+      const t2 = localStorage.getItem('token');
+      const fd = new FormData();
+      fd.append('tokenSymbol', token?.token_symbol || token?.symbol || '');
+      fd.append('period', 'Primary Listing');
+      Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
+      const res = await fetch(`${API}/submissions/financial`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t2}` },
+        body: fd,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMsg({ type:'success', text: '✅ Financial data submitted. The valuation engine has generated a reference price for auditor review.' });
+        setPreview(null);
+      } else {
+        setMsg({ type:'error', text: data.error || 'Submission failed' });
+      }
+    } catch { setMsg({ type:'error', text:'Request failed. Please try again.' }); }
+    setSubmitting(false);
+  };
+
+  if (!token) return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 text-center opacity-60">
+      <p className="text-3xl mb-2">🔒</p>
+      <p className="text-gray-400 text-sm">Complete Step 1 (Tokenisation Application) first. Financial data can only be submitted after your SPV and token are registered.</p>
+    </div>
+  );
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-5">
+      <div>
+        <h3 className="font-bold text-lg">Primary Listing Financial Data</h3>
+        <p className="text-gray-500 text-xs mt-0.5">Submit financial data for auditor review. The valuation engine will generate a reference token price based on this data.</p>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-300 border border-blue-700/50">{token?.token_symbol || '—'}</span>
+          <span className="text-xs text-gray-500">{assetType} model will be applied</span>
+        </div>
+      </div>
+
+      {msg && (
+        <div className={`rounded-xl p-3 border text-sm ${msg.type==='error'?'bg-red-900/40 border-red-700 text-red-300':'bg-green-900/40 border-green-700 text-green-300'}`}>
+          {msg.text}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        {fields.map(f => (
+          <div key={f.key}>
+            <label className="text-xs text-gray-400 block mb-1">{f.label}</label>
+            <input type="number" value={form[f.key]} onChange={e=>set(f.key,e.target.value)}
+              placeholder={f.placeholder} className={inputCls}/>
+          </div>
+        ))}
+      </div>
+
+      {preview && (
+        <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-4 space-y-2">
+          <p className="text-sm font-semibold text-blue-300">📊 Valuation Preview</p>
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="bg-gray-800/60 rounded-lg p-2 text-center">
+              <p className="text-gray-500 mb-0.5">Asset Type</p>
+              <p className="font-bold text-yellow-400">{preview.assetType}</p>
+            </div>
+            <div className="bg-gray-800/60 rounded-lg p-2 text-center">
+              <p className="text-gray-500 mb-0.5">Enterprise Value</p>
+              <p className="font-bold text-green-400">${parseFloat(preview.blended||0).toLocaleString()}</p>
+            </div>
+            <div className="bg-gray-800/60 rounded-lg p-2 text-center">
+              <p className="text-gray-500 mb-0.5">Reference Price / Token</p>
+              <p className="font-bold text-white text-base">${parseFloat(preview.pricePerToken||0).toFixed(4)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button onClick={previewValuation}
+          className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">
+          👁 Preview Valuation
+        </button>
+        <button onClick={submit} disabled={submitting}
+          className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
+          style={{background: NAVY}}>
+          {submitting ? '⏳ Submitting...' : '📋 Submit Financial Data'}
+        </button>
+      </div>
+      <p className="text-xs text-gray-600">Once submitted, the auditor will review this data and certify the oracle price. You cannot edit a submitted entry but can submit a corrected version.</p>
+    </div>
+  );
+}
+
 // ── TOKENISATION TAB ────────────────────────────────────────────
 function TokenisationTab({ notify, entityKyc, setTab }) {
   const API     = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
@@ -1862,7 +2054,7 @@ export default function IssuerDashboard() {
                   <p className="text-gray-500 text-xs mt-0.5">Submit financial data for auditor review and token pricing</p>
                 </div>
               </div>
-              <FinancialsTab t={selToken} price={price} account={account} setPostMsg={setPostMsg} NAVY={NAVY} />
+              <PrimaryFinancialsTab token={selToken} notify={notify} NAVY={NAVY} GOLD={GOLD} />
             </div>
 
             {/* ── STEP 3: Primary Offering ── */}
