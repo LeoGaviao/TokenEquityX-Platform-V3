@@ -786,11 +786,6 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
     `, [sym, legalName, req.user.userId, refNum, dataJson, Object.keys(uploadedDocs).length]);
 
     await conn.execute(
-      'UPDATE users SET role = ? WHERE id = ? AND role = ?',
-      ['ISSUER', req.user.userId, 'INVESTOR']
-    );
-
-    await conn.execute(
       'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
       ['TOKENISATION_APPLICATION', req.user.userId, sym, `Entity: ${legalName}, Ref: ${refNum}`]
     );
