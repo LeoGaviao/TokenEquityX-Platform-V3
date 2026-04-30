@@ -1516,15 +1516,31 @@ export default function AdminDashboard() {
       }
       fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001/api'}/wallet/admin/deposits`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setDeposits(d);}).catch(()=>{});
       fetch(`${process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001/api'}/wallet/admin/withdrawals`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>{if(Array.isArray(d))setWithdrawals(d);}).catch(()=>{});
+      const entityKycMap = {};
+      try {
+        const kycRes = await api.get('/entity-kyc');
+        if (Array.isArray(kycRes.data)) {
+          kycRes.data.forEach(k => { entityKycMap[k.user_id] = k.status; });
+        }
+      } catch {}
+
       if(subRes.status==='fulfilled' && subRes.value.data?.length){
         const tokenisationApps = subRes.value.data.filter(s=>s.submission_type==='TOKENISATION_APPLICATION'||s.period==='TOKENISATION_APPLICATION').map(s=>({
           id:s.id,name:s.entity_name||(s.token_symbol+' — Application'),symbol:s.token_symbol,asset_class:'Pending Classification',
-          stages:{spv:false,kyc:false,docs:(s.document_count||0)>0,auditor:!!s.assigned_auditor,contract:false,secz:s.status==='ADMIN_APPROVED',live:false},
+          stages:{
+            spv:  true,
+            kyc:  entityKycMap[s.issuer_wallet] === 'APPROVED' || s.application_status === 'APPROVED' || s.application_status === 'FEE_CONFIRMED' || s.application_status === 'UNDER_REVIEW' || s.application_status === 'AUDITOR_APPROVED' || s.status === 'ADMIN_APPROVED',
+            docs: (s.document_count||0) > 0,
+            auditor: !!s.assigned_auditor && (s.auditor_status === 'ACCEPTED' || s.status === 'AUDITOR_APPROVED' || s.status === 'ADMIN_APPROVED'),
+            contract: false,
+            secz: s.status === 'ADMIN_APPROVED',
+            live: false,
+          },
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:'Pending assignment',
           reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,
           audit_report:s.audit_report?(typeof s.audit_report==='string'?JSON.parse(s.audit_report):s.audit_report):null,
           contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
-          docs:(() => { try { const d = typeof s.data_json === 'string' ? JSON.parse(s.data_json) : (s.data_json||{}); return (d.documents||[]).map(doc=>({name:doc.name||'Document',url:doc.url||null,size:doc.size||0,status:'uploaded'})); } catch { return Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})); }})(),
+          docs:(() => { try { const d = typeof s.data_json === 'string' ? JSON.parse(s.data_json) : (s.data_json||{}); const docsObj = d.documents||{}; return Object.entries(docsObj).map(([key,doc])=>({name:doc.name||key,url:doc.url||null,size:doc.size||0,status:'uploaded',key})); } catch { return Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})); }})(),
           auditor:s.assigned_auditor||'Pending assignment',partner:'None',
           notes:`Ref: ${s.reference_number||s.id} · Status: ${s.status} · Documents: ${s.document_count||0}`,
           isNewApplication:true,
