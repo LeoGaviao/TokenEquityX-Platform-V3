@@ -1575,7 +1575,23 @@ export default function AdminDashboard() {
           notes:`Financial data submission. Period: ${s.period}. Status: ${s.status}.`,
           isNewApplication:true,
         }));
-        setPipeline([...tokenisationApps,...financialSubs]);
+        const activeSubs = Array.isArray(tokRes?.value?.data) ? tokRes.value.data
+          .filter(t => t.status === 'ACTIVE' && !tokenisationApps.find(a => a.symbol === (t.token_symbol||t.symbol)))
+          .map(t => ({
+            id: t.id,
+            name: t.token_name || t.name || t.company_name,
+            symbol: t.token_symbol || t.symbol,
+            asset_class: t.asset_type || t.asset_class || 'ACTIVE',
+            stages: { spv:true, kyc:true, docs:true, auditor:true, contract:true, secz:true, live:true },
+            amount_target: 0, amount_raised: 0,
+            submitted: t.created_at, analyst: '—',
+            status: 'ADMIN_APPROVED', application_status: 'APPROVED',
+            auditor: '—', partner: 'None',
+            contacts: [{ name: 'Live on market', role: 'ACTIVE', email: '', phone: '' }],
+            docs: [], notes: `Live listing — ${t.market_state}`,
+            isNewApplication: false,
+          })) : [];
+        setPipeline([...tokenisationApps,...financialSubs,...activeSubs]);
       }
       const token2 = localStorage.getItem('token');
       fetch(`${API}/entity-kyc`, { headers: { Authorization: `Bearer ${token2}` } })

@@ -238,7 +238,8 @@ router.get('/pending',
                  ds.auditor_status, ds.auditor_declined_reason,
                  ds.admin_approved_by, ds.admin_approved_at
           FROM data_submissions ds
-          WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
+          WHERE ds.status NOT IN ('REJECTED')
+          AND (ds.deleted_at IS NULL OR ds.deleted_at > NOW() - INTERVAL '90 days')
           ORDER BY ds.created_at ASC
         `);
       } else {
