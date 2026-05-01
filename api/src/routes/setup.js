@@ -747,6 +747,12 @@ router.get('/migrate', async (req, res) => {
     `UPDATE messages SET is_read = FALSE WHERE is_read IS NULL`,
     `ALTER TABLE messages ALTER COLUMN is_read SET DEFAULT FALSE`,
     `ALTER TABLE messages ALTER COLUMN is_deleted SET DEFAULT FALSE`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS deleted_by UUID`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS deletion_reason TEXT`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS suspended_by UUID`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS suspension_reason TEXT`,
   ];
   const results = [];
   for (const sql of migrations) {

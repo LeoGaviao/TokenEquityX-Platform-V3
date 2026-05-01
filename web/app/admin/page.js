@@ -1440,17 +1440,36 @@ export default function AdminDashboard() {
   };
 
   const deleteApplication = async (item) => {
-    if (!window.confirm(
-      `PERMANENTLY DELETE "${item.name}"?\n\nThis removes all submission data and cannot be undone.`
-    )) return;
+    const sym = item.symbol || item.name;
+    const typed = window.prompt(
+      `SUSPEND LISTING: "${item.name}"\n\nThis will:\n• Remove ${sym} from the market immediately\n• Retain all data for 90 days (appeal window)\n• Notify the issuer\n\nType the token symbol "${sym}" to confirm:`
+    );
+    if (!typed) return;
+    if (typed.toUpperCase() !== sym.toUpperCase()) {
+      notify('error', 'Symbol did not match. Action cancelled.');
+      return;
+    }
+    const reason = window.prompt('Enter reason for suspension (will be shown to issuer):');
+    if (!reason) { notify('error', 'Reason is required. Action cancelled.'); return; }
     try {
-      await api.delete(`/submissions/${item.id}`);
-      setPipeline(p => p.filter(i => i.id !== item.id));
+      await api.put(`/submissions/${item.id}/soft-delete`, { reason });
+      setPipeline(p => p.map(i => i.id === item.id ? { ...i, status: 'SUSPENDED' } : i));
       setSelPipeline(null);
       setDetailItem(null);
-      notify('error', `🗑 ${item.name} permanently deleted.`);
+      notify('success', `⚠️ ${sym} suspended. Data retained for 90-day appeal window.`);
     } catch(e) {
-      notify('error', 'Failed to delete: ' + (e.response?.data?.error || e.message));
+      notify('error', 'Failed to suspend: ' + (e.response?.data?.error || e.message));
+    }
+  };
+
+  const reinstateApplication = async (item) => {
+    if (!window.confirm(`Reinstate "${item.name}"? This will restore the listing to PENDING status.`)) return;
+    try {
+      await api.put(`/submissions/${item.id}/reinstate`);
+      setPipeline(p => p.map(i => i.id === item.id ? { ...i, status: 'PENDING' } : i));
+      notify('success', `✅ ${item.name} reinstated successfully.`);
+    } catch(e) {
+      notify('error', 'Failed to reinstate: ' + (e.response?.data?.error || e.message));
     }
   };
 
@@ -2040,8 +2059,15 @@ export default function AdminDashboard() {
                                   <button
                                     onClick={()=>deleteApplication(item)}
                                     className="w-full py-2 rounded-lg text-xs font-semibold bg-red-900/40 text-red-300 border border-red-800 hover:bg-red-900/60">
-                                    🗑 Delete Application Permanently
+                                    ⚠️ Suspend Listing (90-day appeal)
                                   </button>
+                                  {item.status === 'SUSPENDED' && (
+                                    <button
+                                      onClick={()=>reinstateApplication(item)}
+                                      className="w-full py-2 rounded-lg text-xs font-semibold bg-green-900/40 text-green-300 border border-green-800 hover:bg-green-900/60">
+                                      ✅ Reinstate Listing
+                                    </button>
+                                  )}
                                 </div>
                               </>
                             )}

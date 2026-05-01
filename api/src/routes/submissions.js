@@ -991,4 +991,81 @@ router.put('/unified', authenticate, requireRole('ISSUER','ADMIN'),
   }
 );
 
+// PUT /api/submissions/:id/soft-delete — admin soft deletes a submission (90-day appeal window)
+router.put('/:id/soft-delete', authenticate, requireRole('ADMIN'), async (req, res) => {
+  const { reason } = req.body;
+  if (!reason) return res.status(400).json({ error: 'Deletion reason is required' });
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.execute('SELECT * FROM data_submissions WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Submission not found or already deleted' });
+    const sub = rows[0];
+
+    await conn.execute(
+      'UPDATE data_submissions SET deleted_at = NOW(), deleted_by = ?, deletion_reason = ?, status = \'SUSPENDED\', updated_at = NOW() WHERE id = ?',
+      [req.user.userId, reason, req.params.id]
+    );
+
+    await conn.execute(
+      `UPDATE tokens SET status = 'SUSPENDED', market_state = 'PRE_LAUNCH',
+       suspended_at = NOW(), suspended_by = ?, suspension_reason = ?, updated_at = NOW()
+       WHERE token_symbol = ?`,
+      [req.user.userId, reason, sub.token_symbol]
+    );
+
+    const { sendMessage } = require('../utils/messenger');
+    await sendMessage({
+      recipientId: sub.issuer_wallet,
+      subject:     `⚠️ Listing Suspended — ${sub.token_symbol}`,
+      body:        `Your listing for ${sub.entity_name} (${sub.token_symbol}) has been suspended by the platform administrator.\n\nReason: ${reason}\n\nYour data will be retained for 90 days from this date. You may appeal this decision by contacting compliance@tokenequityx.co.zw within 90 days.\n\nIf no appeal is received within 90 days, all data will be permanently deleted.\n\nReference: ${sub.reference_number}`,
+      type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+    }).catch(() => {});
+
+    await conn.commit();
+    res.json({ success: true, message: `${sub.token_symbol} suspended. Data retained for 90-day appeal window.` });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: err.message });
+  } finally { conn.release(); }
+});
+
+// PUT /api/submissions/:id/reinstate — admin reinstates a soft-deleted submission
+router.put('/:id/reinstate', authenticate, requireRole('ADMIN'), async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.execute('SELECT * FROM data_submissions WHERE id = ? AND deleted_at IS NOT NULL', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Submission not found or not suspended' });
+    const sub = rows[0];
+
+    const deletedAt = new Date(sub.deleted_at);
+    const daysSince = Math.floor((Date.now() - deletedAt.getTime()) / 86400000);
+    if (daysSince > 90) return res.status(400).json({ error: 'Appeal window has expired (90 days). Data cannot be reinstated.' });
+
+    await conn.execute(
+      'UPDATE data_submissions SET deleted_at = NULL, deleted_by = NULL, deletion_reason = NULL, status = \'PENDING\', updated_at = NOW() WHERE id = ?',
+      [req.params.id]
+    );
+    await conn.execute(
+      "UPDATE tokens SET status = 'DRAFT', market_state = 'PRE_LAUNCH', suspended_at = NULL, suspended_by = NULL, suspension_reason = NULL WHERE token_symbol = ?",
+      [sub.token_symbol]
+    );
+
+    const { sendMessage } = require('../utils/messenger');
+    await sendMessage({
+      recipientId: sub.issuer_wallet,
+      subject:     `✅ Listing Reinstated — ${sub.token_symbol}`,
+      body:        `Your listing for ${sub.entity_name} (${sub.token_symbol}) has been reinstated by the platform administrator. Your application is now back in PENDING status.\n\nReference: ${sub.reference_number}`,
+      type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+    }).catch(() => {});
+
+    await conn.commit();
+    res.json({ success: true, message: `${sub.token_symbol} reinstated successfully.` });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: err.message });
+  } finally { conn.release(); }
+});
+
 module.exports = router;
