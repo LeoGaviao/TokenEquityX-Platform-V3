@@ -911,4 +911,84 @@ router.put('/:id/auditor-decline', authenticate, requireRole('AUDITOR'), async (
   }
 });
 
+// PUT /api/submissions/unified — issuer updates their existing PENDING submission
+router.put('/unified', authenticate, requireRole('ISSUER','ADMIN'),
+  upload.fields([
+    { name: 'certificate',   maxCount: 1 },
+    { name: 'prospectus',    maxCount: 1 },
+    { name: 'financials',    maxCount: 1 },
+    { name: 'valuation',     maxCount: 1 },
+    { name: 'kyc_docs',      maxCount: 1 },
+    { name: 'legal_opinion', maxCount: 1 },
+    { name: 'regulatory',    maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const { editingId, legalName, tokenSymbol, tokenName, targetRaiseUsd,
+            tokenIssuePrice, totalSupply, expectedYield, distributionFrequency,
+            ceo_name, ceo_email, ceo_id, cfo_name, cfo_email, cfo_id,
+            legal_name, legal_email, legal_id, description, assetDescription,
+            sector, assetType, assetClass, useOfProceeds } = req.body;
+
+    if (!editingId) return res.status(400).json({ error: 'editingId is required for updates' });
+
+    try {
+      const [rows] = await db.execute(
+        'SELECT * FROM data_submissions WHERE id = ? AND issuer_wallet = ?',
+        [editingId, req.user.userId]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Submission not found or access denied' });
+      const sub = rows[0];
+      if (!['PENDING', 'UNDER_REVIEW', 'REJECTED'].includes(sub.status)) {
+        return res.status(400).json({ error: `Cannot edit a submission with status: ${sub.status}` });
+      }
+
+      const supabase = require('../utils/supabase');
+      const sym = sub.token_symbol;
+      const existingData = typeof sub.data_json === 'string' ? JSON.parse(sub.data_json || '{}') : (sub.data_json || {});
+      const uploadedDocs = existingData.documents || {};
+
+      if (req.files) {
+        for (const [docKey, fileArr] of Object.entries(req.files)) {
+          const file = fileArr[0];
+          const filePath = `submissions/${sym}/${docKey}_${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: true });
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+            uploadedDocs[docKey] = { name: file.originalname, url: urlData.publicUrl, path: filePath, size: file.size };
+          }
+        }
+      }
+
+      const dataJson = JSON.stringify({
+        ...existingData,
+        financialData: { targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency },
+        keyPersonnel: [
+          { role: 'CEO',           name: ceo_name,   email: ceo_email,   idNumber: ceo_id },
+          { role: 'CFO',           name: cfo_name,   email: cfo_email,   idNumber: cfo_id },
+          { role: 'Legal Counsel', name: legal_name, email: legal_email, idNumber: legal_id },
+        ].filter(p => p.name),
+        sector, assetType, assetClass,
+        description: description || assetDescription,
+        useOfProceeds,
+        documents: uploadedDocs,
+      });
+
+      await db.execute(
+        `UPDATE data_submissions SET
+          entity_name = ?, data_json = ?, document_count = ?,
+          status = 'PENDING', application_status = 'PENDING_REVIEW',
+          updated_at = NOW()
+         WHERE id = ?`,
+        [legalName || sub.entity_name, dataJson, Object.keys(uploadedDocs).length, editingId]
+      );
+
+      res.json({ success: true, message: `Application for ${sym} updated successfully.`, tokenSymbol: sym });
+    } catch (err) {
+      res.status(500).json({ error: 'Update failed: ' + err.message });
+    }
+  }
+);
+
 module.exports = router;

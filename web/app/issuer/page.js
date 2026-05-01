@@ -509,11 +509,18 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
                           </div>
                         )}
                         {['PENDING','UNDER_REVIEW','REJECTED'].includes(app.status) && (
-                          <button
-                            onClick={() => deleteSubmission(app.id, app.token_symbol || app.reference_number)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-900/40 text-red-300 hover:bg-red-900/60 border border-red-800/50">
-                            🗑 Delete & Start Fresh
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => editSubmission(app)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-900/40 text-blue-300 hover:bg-blue-900/60 border border-blue-800/50">
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => deleteSubmission(app.id, app.token_symbol || app.reference_number)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-900/40 text-red-300 hover:bg-red-900/60 border border-red-800/50">
+                              🗑 Delete
+                            </button>
+                          </div>
                         )}
                       </>
                     )}
@@ -1044,6 +1051,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
   const [submitted,  setSubmitted]  = useState(null);
   const [files,      setFiles]      = useState({});
   const fileRefs = useRef({});
+  const [editingId, setEditingId] = useState(null);
   const [symbolStatus, setSymbolStatus] = useState(null);
   const [symbolTimer,  setSymbolTimer]  = useState(null);
   const [postMsg,      setPostMsg]      = useState(null);
@@ -1105,6 +1113,54 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       .finally(() => setLoadingApps(false));
   }, [submitted]);
 
+  const editSubmission = (app) => {
+    const data = typeof app.data_json === 'string' ? JSON.parse(app.data_json || '{}') : (app.data_json || {});
+    const fin  = data.financialData || {};
+    const pers = data.keyPersonnel   || [];
+    const ceo  = pers.find(p => p.role === 'CEO')           || {};
+    const cfo  = pers.find(p => p.role === 'CFO')           || {};
+    const leg  = pers.find(p => p.role === 'Legal Counsel') || {};
+    const restored = {
+      legalName:            app.entity_name || '',
+      registrationNumber:   data.registrationNumber || '',
+      jurisdiction:         data.jurisdiction || 'ZW',
+      sector:               data.sector || 'OTHER',
+      assetType:            data.assetType || 'EQUITY',
+      description:          data.description || '',
+      websiteUrl:           data.websiteUrl || '',
+      foundedYear:          data.foundedYear || '',
+      headquarters:         data.headquarters || '',
+      useOfProceeds:        data.useOfProceeds || '',
+      numEmployees:         data.numEmployees || '',
+      tokenName:            data.tokenName || '',
+      tokenSymbol:          app.token_symbol || '',
+      assetClass:           data.assetClass || 'Private Equity',
+      authorisedShares:     data.authorisedShares || '',
+      nominalValueCents:    '100',
+      targetRaiseUsd:       fin.targetRaiseUsd || '',
+      tokenIssuePrice:      fin.tokenIssuePrice || '1.00',
+      totalSupply:          fin.totalSupply || '',
+      expectedYield:        fin.expectedYield || '',
+      distributionFrequency: fin.distributionFrequency || 'Quarterly',
+      ceo_name:             ceo.name  || '',
+      ceo_email:            ceo.email || '',
+      ceo_id:               ceo.idNumber || '',
+      cfo_name:             cfo.name  || '',
+      cfo_email:            cfo.email || '',
+      cfo_id:               cfo.idNumber || '',
+      legal_name:           leg.name  || '',
+      legal_email:          leg.email || '',
+      legal_id:             leg.idNumber || '',
+      termsAccepted:        false,
+    };
+    setForm(restored);
+    setStep(1);
+    setEditingId(app.id);
+    setPostMsg({ type:'info', text:`Editing application for ${app.token_symbol}. Make your changes and resubmit. This will update your existing submission.` });
+    localStorage.setItem(FORM_KEY, JSON.stringify({ step: 1, form: restored }));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const deleteSubmission = async (subId, symbol) => {
     if (!window.confirm(`Delete the ${symbol} application?\n\nThis will permanently delete the token, SPV and all related data.\n\nThis cannot be undone.`)) return;
     const typed = window.prompt(`Type "${symbol}" to confirm:`);
@@ -1136,8 +1192,9 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       Object.entries(files).forEach(([docKey, file]) => {
         if (file) fd.append(docKey, file, file.name);
       });
+      if (editingId) fd.append('editingId', editingId);
       const res = await fetch(`${API}/submissions/unified`, {
-        method:  'POST',
+        method:  editingId ? 'PUT' : 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body:    fd,
       });
@@ -1145,6 +1202,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       if (res.ok) {
         localStorage.removeItem(FORM_KEY);
         setSubmitted(data);
+        setEditingId(null);
       } else {
         setPostMsg({ type: 'error', text: data.error || 'Submission failed.' });
       }
