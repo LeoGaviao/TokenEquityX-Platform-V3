@@ -234,7 +234,9 @@ router.get('/pending',
                  ds.admin_notes, ds.entity_name,
                  ds.reference_number, ds.submission_type,
                  ds.data_json, ds.application_status, ds.fee_status,
-                 ds.rejection_reason
+                 ds.rejection_reason, ds.document_count,
+                 ds.auditor_status, ds.auditor_declined_reason,
+                 ds.admin_approved_by, ds.admin_approved_at
           FROM data_submissions ds
           WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
           ORDER BY ds.created_at ASC
