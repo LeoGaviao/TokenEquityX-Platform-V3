@@ -1365,6 +1365,14 @@ export default function AdminDashboard() {
   const [tab,setTab]=useState('overview');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [settings, setSettings] = useState({});
+  const [isSuperAdmin, setIsSuperAdmin]     = useState(false);
+  const [otpSent,      setOtpSent]          = useState(false);
+  const [otpCode,      setOtpCode]          = useState('');
+  const [otpVerified,  setOtpVerified]      = useState(false);
+  const [sensitiveKey, setSensitiveKey]     = useState('');
+  const [sensitiveVal, setSensitiveVal]     = useState('');
+  const [reconLogs,    setReconLogs]        = useState([]);
+  const [reconRunning, setReconRunning]     = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [appFeeModal, setAppFeeModal] = useState(null);
@@ -1504,6 +1512,12 @@ export default function AdminDashboard() {
       .then(d => { if (d && typeof d === 'object') setSettings(d); })
       .catch(() => {})
       .finally(() => setSettingsLoading(false));
+      // Check super admin status
+      fetch(`${API}/super-admin/status`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json()).then(d => setIsSuperAdmin(d.is_super_admin)).catch(() => {});
+      // Load reconciliation logs
+      fetch(`${API}/settings/reconciliation`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json()).then(d => { if (Array.isArray(d)) setReconLogs(d); }).catch(() => {});
   }, [tab]);
 
   const loadAll = async () => {
@@ -2864,6 +2878,120 @@ export default function AdminDashboard() {
                 </table>
               </div>
             </div>
+
+          {/* SUPER ADMIN PANEL */}
+          {isSuperAdmin && (
+            <div className="bg-red-950/20 border border-red-800/40 rounded-2xl p-6 space-y-4 mt-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🔐</span>
+                <div>
+                  <h3 className="font-bold text-red-300">Super Admin — Sensitive Settings</h3>
+                  <p className="text-xs text-gray-500">OTP required. All changes are audit-logged.</p>
+                </div>
+              </div>
+              {!otpVerified ? (
+                <div className="space-y-3">
+                  {!otpSent ? (
+                    <button onClick={async()=>{
+                      const t=localStorage.getItem('token');
+                      const r=await fetch(`${API}/super-admin/request-otp`,{method:'POST',headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'}});
+                      const d=await r.json();
+                      if(r.ok){setOtpSent(true);notify('success',d.message);}else notify('error',d.error);
+                    }} className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-red-900/40 text-red-300 border border-red-800/50 hover:bg-red-900/60">
+                      📧 Send OTP to My Email
+                    </button>
+                  ) : (
+                    <div className="flex gap-3">
+                      <input value={otpCode} onChange={e=>setOtpCode(e.target.value)} maxLength={6}
+                        placeholder="Enter 6-digit OTP"
+                        className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none w-48 font-mono tracking-widest"/>
+                      <button onClick={async()=>{
+                        const t=localStorage.getItem('token');
+                        const r=await fetch(`${API}/super-admin/verify-otp`,{method:'POST',headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'},body:JSON.stringify({code:otpCode})});
+                        const d=await r.json();
+                        if(r.ok){setOtpVerified(true);notify('success','OTP verified.');}else notify('error',d.error);
+                      }} className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-green-700 hover:bg-green-600 text-white">
+                        ✅ Verify
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="text-xs text-green-300 bg-green-900/20 border border-green-700/40 rounded-lg px-3 py-2">✅ OTP verified — sensitive settings unlocked</div>
+                  {[
+                    {key:'usdc_omnibus_wallet',  label:'USDC Omnibus Wallet Address', ph:'0x...'},
+                    {key:'stripe_secret_key',    label:'Stripe Secret Key',            ph:'sk_live_...'},
+                    {key:'paynow_integration_key',label:'Paynow Integration Key',     ph:'Your key'},
+                  ].map(s=>(
+                    <div key={s.key} className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-400 block mb-1">{s.label}</label>
+                        <input type="password" placeholder={s.ph} id={`sa-${s.key}`}
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"/>
+                      </div>
+                      <button onClick={async()=>{
+                        const val=document.getElementById(`sa-${s.key}`)?.value;
+                        if(!val){notify('error','Enter a value');return;}
+                        const t=localStorage.getItem('token');
+                        const r=await fetch(`${API}/super-admin/sensitive-setting`,{method:'PUT',headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'},body:JSON.stringify({key:s.key,value:val,otpCode})});
+                        const d=await r.json();
+                        if(r.ok)notify('success',d.message);else{notify('error',d.error);setOtpVerified(false);setOtpSent(false);setOtpCode('');}
+                      }} className="px-4 py-2 rounded-lg text-xs bg-red-700 hover:bg-red-600 text-white font-semibold whitespace-nowrap">
+                        Save
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* RECONCILIATION PANEL */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm">🔄 USDC Reconciliation</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Scheduled daily at 18:00. Compares on-chain omnibus wallet vs internal ledger.</p>
+              </div>
+              <button onClick={async()=>{
+                setReconRunning(true);
+                const t=localStorage.getItem('token');
+                const r=await fetch(`${API}/settings/reconciliation/run`,{method:'POST',headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'}});
+                const d=await r.json();
+                if(r.ok){
+                  notify(d.status==='OK'?'success':d.status==='WARNING'?'warning':'error',`Recon ${d.status}: variance $${parseFloat(d.variance||0).toFixed(4)}`);
+                  fetch(`${API}/settings/reconciliation`,{headers:{Authorization:`Bearer ${t}`}}).then(r2=>r2.json()).then(d2=>{if(Array.isArray(d2))setReconLogs(d2);});
+                }else notify('error',d.error);
+                setReconRunning(false);
+              }} disabled={reconRunning} className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-white disabled:opacity-50">
+                {reconRunning?'⏳ Running...':'▶ Run Now'}
+              </button>
+            </div>
+            {reconLogs.length > 0 ? (
+              <table className="w-full text-xs border border-gray-800 rounded-xl overflow-hidden">
+                <thead><tr className="text-gray-500 border-b border-gray-800 bg-gray-800/40">
+                  {['Time','Trigger','On-Chain','Ledger','Variance','Status'].map(h=><th key={h} className="text-left py-2 px-3 font-medium">{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {reconLogs.slice(0,10).map((r,i)=>(
+                    <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                      <td className="py-2 px-3 text-gray-400">{new Date(r.reconciled_at).toLocaleString('en-GB')}</td>
+                      <td className="py-2 px-3">{r.trigger}</td>
+                      <td className="py-2 px-3 font-mono">${parseFloat(r.on_chain_balance||0).toFixed(2)}</td>
+                      <td className="py-2 px-3 font-mono">${parseFloat(r.ledger_total||0).toFixed(2)}</td>
+                      <td className="py-2 px-3 font-mono">${parseFloat(r.variance||0).toFixed(4)}</td>
+                      <td className="py-2 px-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs ${r.status==='OK'?'bg-green-900/40 text-green-300':r.status==='WARNING'?'bg-amber-900/40 text-amber-300':'bg-red-900/40 text-red-300'}`}>{r.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-xs text-gray-500 text-center py-3">No reconciliation logs yet.</p>
+            )}
+          </div>
           </div>
         )}
 

@@ -293,4 +293,27 @@ router.get('/applications', authenticate, requireRole('ADMIN'), async (req, res)
   }
 });
 
+// GET /api/settings/reconciliation — get reconciliation logs
+router.get('/reconciliation', authenticate, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM reconciliation_logs ORDER BY reconciled_at DESC LIMIT 30'
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/settings/reconciliation/run — trigger manual reconciliation
+router.post('/reconciliation/run', authenticate, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const { runReconciliation } = require('../services/reconciliation');
+    const result = await runReconciliation('MANUAL', req.user.userId);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

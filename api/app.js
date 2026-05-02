@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express   = require('express');
+const cron = require('node-cron');
 const http      = require('http');
 const cors      = require('cors');
 const helmet    = require('helmet');
@@ -82,6 +83,15 @@ app.use('/api/blog', require('./src/routes/blog'));
 app.use('/api/settings', require('./src/routes/settings'));
 app.use('/api/messages', require('./src/routes/messages'));
 app.use('/api/profile',  require('./src/routes/profile'));
+app.use('/api/super-admin', require('./src/routes/superAdmin'));
+app.use('/api/payments',    require('./src/routes/payments'));
+
+// Daily reconciliation at 18:00
+cron.schedule('0 18 * * *', async () => {
+  console.log('[CRON] Running daily USDC reconciliation...');
+  const { runReconciliation } = require('./src/services/reconciliation');
+  runReconciliation('SCHEDULED').catch(err => console.error('[CRON] Reconciliation failed:', err.message));
+});
 // ─── 404 HANDLER ──────────────────────────────────────────────────
 
 // Handle multer/upload errors cleanly

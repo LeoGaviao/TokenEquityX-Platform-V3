@@ -756,6 +756,37 @@ router.get('/migrate', async (req, res) => {
     `ALTER TABLE kyc_documents ADD COLUMN IF NOT EXISTS file_url TEXT`,
     `ALTER TABLE kyc_documents ADD COLUMN IF NOT EXISTS file_name VARCHAR(255)`,
     `ALTER TABLE kyc_documents ADD COLUMN IF NOT EXISTS file_size INTEGER`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN NOT NULL DEFAULT FALSE`,
+    `CREATE TABLE IF NOT EXISTS otps (
+      id          UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id     UUID          NOT NULL,
+      code        VARCHAR(6)    NOT NULL,
+      purpose     VARCHAR(50)   NOT NULL DEFAULT 'SETTINGS_CHANGE',
+      used        BOOLEAN       NOT NULL DEFAULT FALSE,
+      expires_at  TIMESTAMP     NOT NULL,
+      created_at  TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_otps_user ON otps(user_id)`,
+    `CREATE TABLE IF NOT EXISTS reconciliation_logs (
+      id                  UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+      reconciled_at       TIMESTAMP     NOT NULL DEFAULT NOW(),
+      trigger             VARCHAR(30)   NOT NULL DEFAULT 'SCHEDULED',
+      on_chain_balance    NUMERIC(20,6) NOT NULL DEFAULT 0,
+      ledger_total        NUMERIC(20,6) NOT NULL DEFAULT 0,
+      variance            NUMERIC(20,6) NOT NULL DEFAULT 0,
+      status              VARCHAR(20)   NOT NULL DEFAULT 'OK',
+      notes               TEXT,
+      performed_by        UUID
+    )`,
+    `INSERT INTO platform_settings (key, value, description) VALUES
+      ('usdc_omnibus_wallet', '', 'USDC custodial omnibus wallet address (super admin only)'),
+      ('reconciliation_mode', 'DAILY', 'Reconciliation frequency: REALTIME, HOURLY, or DAILY'),
+      ('reconciliation_cutoff', '18:00', 'Daily reconciliation cutoff time (HH:MM)'),
+      ('paynow_integration_id', '', 'Paynow Zimbabwe integration ID'),
+      ('paynow_integration_key', '', 'Paynow Zimbabwe integration key'),
+      ('stripe_publishable_key', '', 'Stripe publishable key (diaspora investors)'),
+      ('stripe_secret_key', '', 'Stripe secret key (super admin only)')
+    ON CONFLICT (key) DO NOTHING`,
   ];
   const results = [];
   for (const sql of migrations) {
