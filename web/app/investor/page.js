@@ -99,6 +99,8 @@ export default function InvestorDashboard() {
   const [loading,     setLoading]     = useState(true);
   const [activeAsset, setActiveAsset] = useState(null);
   const [tab,         setTab]         = useState('portfolio');
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [p2pHistory,    setP2pHistory]    = useState([]);
   const [marketSearch,setMarketSearch]= useState('');
   const [marketSort,  setMarketSort]  = useState('volume');
   const [prices,      setPrices]      = useState({});
@@ -318,6 +320,11 @@ export default function InvestorDashboard() {
         setOfferings(open);
         setOfferingsLoaded(true);
       }).catch(() => setOfferingsLoaded(true));
+      const token2 = localStorage.getItem('token');
+      fetch(`${API}/offerings/my-subscriptions`, { headers:{ Authorization:`Bearer ${token2}` } })
+        .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setSubscriptions(d); }).catch(()=>{});
+      fetch(`${API}/p2p/my`, { headers:{ Authorization:`Bearer ${token2}` } })
+        .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setP2pHistory(d); }).catch(()=>{});
     } catch(e){ console.error(e); }
     finally { setLoading(false); }
   };
@@ -373,10 +380,10 @@ export default function InvestorDashboard() {
 
   const portfolio = holdings.filter(h => parseFloat(h.balance) > 0).map(h => {
     const sym   = h.symbol || h.token_symbol || '';
-    const md    = MARKET_DATA[sym] || {};
-    const price = prices[sym] || parseFloat(h.current_price_usd || h.oracle_price || md.price || 1);
+    const price = prices[sym] || parseFloat(h.current_price_usd || h.oracle_price || 1);
     const qty   = parseFloat(h.balance || 0);
-    const cost  = qty * parseFloat(h.average_cost_usd || price);
+    const avgCost = parseFloat(h.average_cost_usd || 0);
+    const cost  = avgCost > 0 ? qty * avgCost : qty * price;
     const value = qty * price;
     const pnl   = value - cost;
     const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
@@ -992,6 +999,84 @@ export default function InvestorDashboard() {
                 </div>
               );
             })()}
+
+              {/* Subscription History */}
+              {subscriptions.length > 0 && (
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden mt-6">
+                  <div className="px-4 py-3 border-b border-gray-800">
+                    <h3 className="font-semibold text-sm">📋 Primary Subscription History</h3>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-500 text-xs border-b border-gray-800">
+                        <th className="text-left py-2 px-4">Token</th>
+                        <th className="text-right py-2 px-4">Amount</th>
+                        <th className="text-right py-2 px-4">Tokens</th>
+                        <th className="text-right py-2 px-4">Price</th>
+                        <th className="text-right py-2 px-4">Status</th>
+                        <th className="text-right py-2 px-4">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {subscriptions.map((s,i) => (
+                        <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                          <td className="py-2 px-4 font-semibold">{s.token_symbol||s.symbol||'—'}</td>
+                          <td className="py-2 px-4 text-right text-yellow-400">${parseFloat(s.amount_usd||s.subscription_amount||0).toLocaleString()}</td>
+                          <td className="py-2 px-4 text-right">{parseFloat(s.tokens_allocated||0).toLocaleString()}</td>
+                          <td className="py-2 px-4 text-right font-mono">${parseFloat(s.price_per_token||s.offering_price_usd||0).toFixed(4)}</td>
+                          <td className="py-2 px-4 text-right">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${s.status==='ALLOCATED'?'bg-green-900/40 text-green-300':s.status==='PENDING'?'bg-yellow-900/40 text-yellow-300':'bg-gray-800 text-gray-400'}`}>{s.status}</span>
+                          </td>
+                          <td className="py-2 px-4 text-right text-gray-400 text-xs">{s.created_at?new Date(s.created_at).toLocaleDateString('en-GB'):'-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* P2P Activity History */}
+              {p2pHistory.length > 0 && (
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden mt-4">
+                  <div className="px-4 py-3 border-b border-gray-800">
+                    <h3 className="font-semibold text-sm">🔄 P2P Activity History</h3>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-500 text-xs border-b border-gray-800">
+                        <th className="text-left py-2 px-4">Token</th>
+                        <th className="text-right py-2 px-4">Quantity</th>
+                        <th className="text-right py-2 px-4">Price</th>
+                        <th className="text-right py-2 px-4">Total</th>
+                        <th className="text-right py-2 px-4">Role</th>
+                        <th className="text-right py-2 px-4">Status</th>
+                        <th className="text-right py-2 px-4">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {p2pHistory.map((o,i) => {
+                        const userId = JSON.parse(localStorage.getItem('user')||'{}')?.id;
+                        const isSeller = o.seller_id === userId;
+                        return (
+                          <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                            <td className="py-2 px-4 font-semibold">{o.token_symbol}</td>
+                            <td className="py-2 px-4 text-right">{parseFloat(o.quantity).toLocaleString()}</td>
+                            <td className="py-2 px-4 text-right font-mono text-yellow-400">${parseFloat(o.price_per_token).toFixed(4)}</td>
+                            <td className="py-2 px-4 text-right">${parseFloat(o.total_value).toLocaleString()}</td>
+                            <td className="py-2 px-4 text-right">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${isSeller?'bg-red-900/40 text-red-300':'bg-green-900/40 text-green-300'}`}>{isSeller?'Seller':'Buyer'}</span>
+                            </td>
+                            <td className="py-2 px-4 text-right">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${o.status==='ACCEPTED'?'bg-green-900/40 text-green-300':o.status==='OPEN'?'bg-blue-900/40 text-blue-300':o.status==='CANCELLED'?'bg-red-900/40 text-red-300':'bg-gray-800 text-gray-400'}`}>{o.status}</span>
+                            </td>
+                            <td className="py-2 px-4 text-right text-gray-400 text-xs">{o.created_at?new Date(o.created_at).toLocaleDateString('en-GB'):'-'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
           </div>
         )}
 

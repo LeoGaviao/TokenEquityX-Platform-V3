@@ -304,7 +304,7 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
                       <div className="flex items-center gap-2 mb-1">
                         <span>{cfg.icon}</span>
                         <h3 className="font-bold text-base">
-                          {app.token_symbol} — {isTokenisation ? 'Tokenisation Application' : `Financial Submission (${app.period})`}
+                          {app.token_symbol} — {isTokenisation ? 'Tokenisation Application' : `Financial Submission${app.period ? ` (${app.period})` : ''}`}
                         </h3>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
@@ -1951,7 +1951,7 @@ export default function IssuerDashboard() {
                             <span className="font-bold text-sm">{app.token_symbol}</span>
                             <span className={`text-xs font-bold ${SC[app.status]||'text-gray-400'}`}>{SI[app.status]} {app.status?.replace('_',' ')}</span>
                           </div>
-                          <p className="text-gray-400 text-xs">{app.submission_type==='TOKENISATION_APPLICATION'?'Tokenisation Application':`Financial Submission — ${app.period}`}</p>
+                          <p className="text-gray-400 text-xs">{app.submission_type==='TOKENISATION_APPLICATION'?'Tokenisation Application':`Financial Submission${app.period ? ` — ${app.period}` : ''}`}</p>
                           {app.reference_number&&<p className="font-mono text-xs text-gray-500 mt-1">Ref: {app.reference_number}</p>}
                         </div>
                       );

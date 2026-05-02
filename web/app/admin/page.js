@@ -2382,7 +2382,22 @@ export default function AdminDashboard() {
                   <td className="py-3 pr-4 text-gray-400 text-xs">{u.created_at?dt(u.created_at):'-'}</td>
                   <td className="py-3">
                     <button onClick={()=>{setSelectedUser(u);setUserModalRole(u.role);}} className="text-xs text-blue-400 hover:text-blue-300 mr-2">View</button>
-                    <button onClick={async()=>{const token=localStorage.getItem('token');await fetch(`${API}/admin/users/${u.id}/suspend`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({suspended:u.account_status!=='SUSPENDED'})});fetchUsers();}}
+                    <button onClick={async()=>{
+                      const isSuspended = u.account_status === 'SUSPENDED';
+                      if (!isSuspended && !window.confirm(`Suspend ${u.email}?\n\nThis will prevent them from logging in or trading.`)) return;
+                      const token = localStorage.getItem('token');
+                      const res = await fetch(`${API}/admin/users/${u.id}/suspend`, {
+                        method:'PUT',
+                        headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+                        body:JSON.stringify({suspended:!isSuspended})
+                      });
+                      if (res.ok) {
+                        notify(isSuspended?'success':'warning', isSuspended?`✅ ${u.email} unsuspended.`:`⚠️ ${u.email} suspended.`);
+                        fetchUsers();
+                      } else {
+                        notify('error', 'Failed to update user status.');
+                      }
+                    }}
                       className={`text-xs ${u.account_status==='SUSPENDED'?'text-green-400 hover:text-green-300':'text-red-400 hover:text-red-300'}`}>
                       {u.account_status==='SUSPENDED'?'Unsuspend':'Suspend'}
                     </button>
@@ -2990,8 +3005,20 @@ export default function AdminDashboard() {
           <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between"><h2 className="text-lg font-bold">User Profile</h2><button onClick={()=>setSelectedUser(null)} className="text-gray-500 hover:text-white text-xl">✕</button></div>
             <div className="space-y-2 text-sm">
-              {[['Email',selectedUser.email||'—'],['Wallet',selectedUser.wallet_address?`${selectedUser.wallet_address.slice(0,8)}…${selectedUser.wallet_address.slice(-6)}`:'—'],['Current Role',selectedUser.role],['KYC Status',selectedUser.kyc_status],['Account Status',selectedUser.account_status||'ACTIVE'],['Joined',dt(selectedUser.created_at)],['Last Login',selectedUser.last_login?dt(selectedUser.last_login):'Never']].map(([l,v])=>(
-                <div key={l} className="flex justify-between"><span className="text-gray-400">{l}</span><span className={l==='Current Role'?'text-yellow-400 font-bold':l==='KYC Status'?selectedUser.kyc_status==='APPROVED'?'text-green-400':'text-amber-400':l==='Account Status'?selectedUser.account_status==='SUSPENDED'?'text-red-400':'text-green-400':''}>{v}</span></div>
+              {[
+                ['Email',         selectedUser.email||'—'],
+                ['Phone',         selectedUser.phone||'—'],
+                ['Country',       selectedUser.country||'—'],
+                ['City',          selectedUser.city||'—'],
+                ['Date of Birth', selectedUser.date_of_birth?dt(selectedUser.date_of_birth):'—'],
+                ['Wallet',        selectedUser.wallet_address?`${selectedUser.wallet_address.slice(0,8)}…${selectedUser.wallet_address.slice(-6)}`:'—'],
+                ['Current Role',  selectedUser.role],
+                ['KYC Status',    selectedUser.kyc_status],
+                ['Account Status',selectedUser.account_status||'ACTIVE'],
+                ['Joined',        dt(selectedUser.created_at)],
+                ['Last Login',    selectedUser.last_login?dt(selectedUser.last_login):'Never'],
+              ].map(([l,v])=>(
+                <div key={l} className="flex justify-between py-1 border-b border-gray-800/50 last:border-0"><span className="text-gray-400 text-xs">{l}</span><span className={`text-xs ${l==='Current Role'?'text-yellow-400 font-bold':l==='KYC Status'?selectedUser.kyc_status==='APPROVED'?'text-green-400':'text-amber-400':l==='Account Status'?selectedUser.account_status==='SUSPENDED'?'text-red-400':'text-green-400':''}`}>{v}</span></div>
               ))}
             </div>
             <div>
