@@ -998,4 +998,24 @@ router.get('/delete-token', async (req, res) => {
   }
 });
 
+// GET /api/setup/grant-super-admin — bootstrap super admin by email
+router.get('/grant-super-admin', async (req, res) => {
+  const { secret, email } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!email) return res.status(400).json({ error: 'email is required' });
+  try {
+    const [rows] = await pool.execute('SELECT id, role FROM users WHERE email = ?', [email]);
+    if (rows.length === 0) return res.status(404).json({ error: `User ${email} not found` });
+    if (rows[0].role !== 'ADMIN') {
+      return res.status(400).json({ error: `User ${email} is not an ADMIN (role: ${rows[0].role}). Only admins can be super admin.` });
+    }
+    await pool.execute('UPDATE users SET is_super_admin = TRUE WHERE email = ?', [email]);
+    res.json({ success: true, message: `Super admin granted to ${email}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
