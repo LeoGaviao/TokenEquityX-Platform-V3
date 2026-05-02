@@ -2172,6 +2172,27 @@ export default function AdminDashboard() {
                           <p className="font-semibold text-sm text-white">{kyc.entity_name}</p>
                           <p className="text-xs text-gray-500">{kyc.registration_number} · {kyc.registration_country} · {new Date(kyc.created_at).toLocaleDateString('en-GB')}</p>
                           <p className="text-xs text-gray-400 mt-1">{kyc.email} — {kyc.full_name}</p>
+                          {kyc.documents && (() => {
+                            try {
+                              const docs = typeof kyc.documents === 'string' ? JSON.parse(kyc.documents) : kyc.documents;
+                              if (!docs || docs.length === 0) return (
+                                <p className="text-xs text-gray-500 mt-2">No documents uploaded</p>
+                              );
+                              return (
+                                <div className="mt-2 space-y-1">
+                                  <p className="text-xs text-gray-400 font-semibold">📎 KYC Documents</p>
+                                  {docs.map((doc, i) => (
+                                    <a key={i} href={doc.file_url} target="_blank" rel="noopener noreferrer"
+                                      className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-1.5 hover:bg-gray-700/50 text-xs">
+                                      <span className="text-blue-400">📄</span>
+                                      <span className="text-white flex-1 truncate">{doc.file_name || doc.doc_type}</span>
+                                      <span className="text-blue-400">↗</span>
+                                    </a>
+                                  ))}
+                                </div>
+                              );
+                            } catch { return null; }
+                          })()}
                         </div>
                         <span className={`text-xs px-2 py-0.5 rounded-full border ${
                           kyc.status==='APPROVED' ? 'bg-green-900/40 text-green-300 border-green-700/50' :

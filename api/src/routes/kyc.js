@@ -38,12 +38,27 @@ router.post('/submit', authenticate, upload.array('documents', 5), async (req, r
       investorTier || 'RETAIL', accreditedInvestor ? true : false
     ]);
 
-    // Save uploaded documents
+    // Save uploaded documents to Supabase
     if (req.files && req.files.length > 0) {
+      const supabase = require('../utils/supabase');
       for (const file of req.files) {
+        let fileUrl = null;
+        let filePath = null;
+        try {
+          filePath = `kyc/${req.user.userId}/${file.fieldname}_${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: true });
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+            fileUrl = urlData.publicUrl;
+          }
+        } catch (uploadErr) {
+          console.error('[KYC UPLOAD] Failed:', uploadErr.message);
+        }
         await db.execute(
-          'INSERT INTO kyc_documents (id, kyc_id, doc_type, file_path) VALUES (?, ?, ?, ?)',
-          [uuidv4(), kycId, file.fieldname || 'document', file.path]
+          'INSERT INTO kyc_documents (id, kyc_id, doc_type, file_path, file_url, file_name, file_size) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+          [uuidv4(), kycId, file.fieldname || 'document', filePath || file.originalname, fileUrl, file.originalname, file.size]
         );
       }
     }
@@ -118,11 +133,16 @@ router.get('/pending',
   async (req, res) => {
     try {
       const [rows] = await db.execute(`
-        SELECT k.*, u.wallet_address, u.email
+        SELECT k.*, u.wallet_address, u.email, u.full_name as user_full_name,
+               COALESCE(
+                 (SELECT json_agg(json_build_object('doc_type', d.doc_type, 'file_url', d.file_url, 'file_name', d.file_name, 'file_size', d.file_size))
+                  FROM kyc_documents d WHERE d.kyc_id = k.id AND d.file_url IS NOT NULL),
+                 '[]'::json
+               ) as documents
         FROM kyc_records k
         JOIN users u ON u.id = k.user_id
-        WHERE k.status = 'PENDING'
-        ORDER BY k.submitted_at ASC
+        WHERE k.status IN ('PENDING', 'APPROVED', 'REJECTED')
+        ORDER BY k.submitted_at DESC
       `);
       res.json(rows);
     } catch (err) {

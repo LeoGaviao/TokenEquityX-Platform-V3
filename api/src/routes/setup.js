@@ -753,6 +753,9 @@ router.get('/migrate', async (req, res) => {
     `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP`,
     `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS suspended_by UUID`,
     `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS suspension_reason TEXT`,
+    `ALTER TABLE kyc_documents ADD COLUMN IF NOT EXISTS file_url TEXT`,
+    `ALTER TABLE kyc_documents ADD COLUMN IF NOT EXISTS file_name VARCHAR(255)`,
+    `ALTER TABLE kyc_documents ADD COLUMN IF NOT EXISTS file_size INTEGER`,
   ];
   const results = [];
   for (const sql of migrations) {
