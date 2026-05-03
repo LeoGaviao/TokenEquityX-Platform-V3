@@ -41,6 +41,7 @@ async function sendMessage(opts) {
   // Send external email notification if requested
   if (sendEmail && recipientEmail) {
     try {
+      const mailer = require('./mailer');
       await mailer.send(
         recipientEmail,
         `[TokenEquityX] ${subject}`,

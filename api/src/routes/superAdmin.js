@@ -2,38 +2,7 @@ const router = require('express').Router();
 const db     = require('../db/pool');
 const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roles');
-const nodemailer = require('nodemailer');
-
-const transporter = nodemailer.createTransport({
-  host:   process.env.SMTP_HOST || 'smtp.resend.com',
-  port:   parseInt(process.env.SMTP_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER || 'resend',
-    pass: process.env.SMTP_PASS,
-  },
-});
-
-async function sendOtpEmail(to, code) {
-  if (!process.env.SMTP_PASS) {
-    console.log(`[SUPER ADMIN OTP] SMTP not configured. Code: ${code}`);
-    return;
-  }
-  await transporter.sendMail({
-    from:    process.env.SMTP_FROM || 'TokenEquityX <notifications@tokenequityx.co.zw>',
-    to,
-    subject: '[TokenEquityX] Super Admin OTP Verification',
-    html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px">
-      <h2 style="color:#1A3C5E">Super Admin Verification</h2>
-      <p>Your one-time verification code:</p>
-      <div style="background:#f4f4f5;border-radius:8px;padding:20px;text-align:center;margin:20px 0">
-        <span style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#1A3C5E">${code}</span>
-      </div>
-      <p style="color:#666;font-size:14px">Expires in 10 minutes. Do not share this code.</p>
-      <p style="color:#999;font-size:12px">TokenEquityX (Private) Limited &middot; tokenequityx.co.zw</p>
-    </div>`,
-  });
-}
+const { send }         = require('../utils/mailer');
 const crypto           = require('crypto');
 
 const requireSuperAdmin = async (req, res, next) => {
@@ -66,7 +35,19 @@ router.post('/request-otp', authenticate, requireRole('ADMIN'), requireSuperAdmi
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await db.execute("UPDATE otps SET used = TRUE WHERE user_id = ? AND used = FALSE AND purpose = 'SETTINGS_CHANGE'", [req.user.userId]);
     await db.execute("INSERT INTO otps (user_id, code, purpose, expires_at) VALUES (?, ?, 'SETTINGS_CHANGE', ?)", [req.user.userId, code, expiresAt.toISOString()]);
-    await sendOtpEmail(email, code);
+
+    await send(email, '[TokenEquityX] Super Admin OTP Verification',
+      `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px">
+        <h2 style="color:#1A3C5E">Super Admin Verification</h2>
+        <p>Your one-time verification code:</p>
+        <div style="background:#f4f4f5;border-radius:8px;padding:20px;text-align:center;margin:20px 0">
+          <span style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#1A3C5E">${code}</span>
+        </div>
+        <p style="color:#666;font-size:14px">Expires in 10 minutes. Do not share this code.</p>
+        <p style="color:#999;font-size:12px">TokenEquityX (Private) Limited &middot; tokenequityx.co.zw</p>
+      </div>`
+    );
+
     res.json({ success: true, message: `OTP sent to ${email.replace(/(.{2}).*(@.*)/, '$1***$2')}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
