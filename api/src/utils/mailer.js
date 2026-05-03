@@ -4,7 +4,13 @@
 
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy-initialize so missing key doesn't crash the server on startup
+let _resend = null;
+function getResend() {
+  if (!process.env.RESEND_API_KEY) return null;
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 
 const FROM     = process.env.SMTP_FROM    || 'TokenEquityX <notifications@tokenequityx.co.zw>';
 const ADMIN    = process.env.ADMIN_EMAIL  || 'admin@tokenequityx.co.zw';
@@ -59,7 +65,8 @@ async function send(to, subject, html) {
     return { skipped: true };
   }
   try {
-    const { data, error } = await resend.emails.send({
+    const client = getResend();
+    const { data, error } = await client.emails.send({
       from:    FROM,
       to:      [to],
       subject,
