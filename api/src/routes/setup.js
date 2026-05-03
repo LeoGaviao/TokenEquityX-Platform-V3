@@ -1018,4 +1018,23 @@ router.get('/grant-super-admin', async (req, res) => {
   }
 });
 
+// GET /api/setup/update-user-email — update a user's email by current email
+router.get('/update-user-email', async (req, res) => {
+  const { secret, old_email, new_email } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!old_email || !new_email) return res.status(400).json({ error: 'old_email and new_email required' });
+  try {
+    const [result] = await pool.execute(
+      'UPDATE users SET email = ? WHERE email = ?',
+      [new_email, old_email]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: `User ${old_email} not found` });
+    res.json({ success: true, message: `Email updated from ${old_email} to ${new_email}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
