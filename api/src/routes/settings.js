@@ -31,6 +31,8 @@ router.put('/:key', authenticate, requireRole('ADMIN'), async (req, res) => {
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
       [req.params.key, value, req.user.userId]
     );
+    const { invalidateCache } = require('../utils/platformSettings');
+    invalidateCache();
     res.json({ success: true, key: req.params.key, value });
   } catch (err) {
     res.status(500).json({ error: 'Could not update setting: ' + err.message });

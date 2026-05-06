@@ -9,9 +9,10 @@ const router = require('express').Router();
 const db     = require('../db/pool');
 const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roles');
-const { sendMessage }  = require('../utils/messenger');
+const { sendMessage }      = require('../utils/messenger');
+const { getNumericSetting } = require('../utils/platformSettings');
 
-const ISSUANCE_FEE_RATE = 0.02; // 2%
+const ISSUANCE_FEE_RATE = 0.02; // 2% — fallback if platform_fee_rate not set
 
 // ── GET /api/offerings — list offerings
 // Admin sees all. Auditor sees PENDING_APPROVAL + AUDITOR_REVIEWED.
@@ -461,7 +462,13 @@ router.post('/:id/close',
       const token = tokens[0];
 
       const totalRaised = parseFloat(offering.total_raised_usd);
-      const issuanceFee = parseFloat((totalRaised * parseFloat(offering.issuance_fee_rate)).toFixed(2));
+      const platformFeeRate = await getNumericSetting('platform_fee_rate', 0.005);
+      const seczLevyRate    = await getNumericSetting('secz_levy_rate', 0.0032);
+      const vatRate         = await getNumericSetting('vat_rate', 0.155);
+      const feeRate = parseFloat(offering.issuance_fee_rate) || platformFeeRate;
+      const issuanceFee  = parseFloat((totalRaised * feeRate).toFixed(2));
+      const seczLevy     = parseFloat((totalRaised * seczLevyRate).toFixed(2));
+      const vatOnFees    = parseFloat((issuanceFee * vatRate).toFixed(2));
       const netProceeds = parseFloat((totalRaised - issuanceFee).toFixed(2));
 
       const [subscriptions] = await conn.execute(

@@ -16,24 +16,24 @@ const db     = require('../db/pool');
 const logger = require('../utils/logger');
 const { authenticate }            = require('../middleware/auth');
 const { requireRole, requireKYC } = require('../middleware/roles');
-const { sendMessage }             = require('../utils/messenger');
+const { sendMessage }              = require('../utils/messenger');
+const { getNumericSetting }        = require('../utils/platformSettings');
 
-const WHT_RESIDENT     = 0.10; // 10% — Zimbabwe residents
-const WHT_NON_RESIDENT = 0.15; // 15% — non-residents
-
-// ── Determine withholding rate from KYC country
+// ── Determine withholding rate from KYC country (reads rates dynamically from platform_settings)
 async function getWithholdingRate(db, userId) {
+  const whtResidentRate    = await getNumericSetting('wht_resident_rate', 0.10);
+  const whtNonResidentRate = await getNumericSetting('wht_non_resident_rate', 0.15);
   try {
     const [rows] = await db.execute(
       'SELECT country FROM kyc_records WHERE user_id = ? AND status = ? ORDER BY submitted_at DESC LIMIT 1',
       [userId, 'APPROVED']
     );
-    if (rows.length === 0) return WHT_NON_RESIDENT; // default to higher rate if no KYC
+    if (rows.length === 0) return whtNonResidentRate; // default to higher rate if no KYC
     const country = (rows[0].country || '').toLowerCase().trim();
     const isZimbabwe = ['zimbabwe', 'zw', 'zimbabwe (zw)', 'zimbabwe'].includes(country);
-    return isZimbabwe ? WHT_RESIDENT : WHT_NON_RESIDENT;
+    return isZimbabwe ? whtResidentRate : whtNonResidentRate;
   } catch {
-    return WHT_NON_RESIDENT;
+    return whtNonResidentRate;
   }
 }
 

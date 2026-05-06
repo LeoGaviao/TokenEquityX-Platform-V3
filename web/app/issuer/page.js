@@ -728,9 +728,9 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
           {/* STEP 3: Beneficial Ownership */}
           {step === 3 && (
             <div className="space-y-4">
-              <p className="text-gray-400 text-sm">List all beneficial owners holding 25% or more of the entity.</p>
+              <p className="text-gray-400 text-sm">List all beneficial owners holding 10% or more of the entity.</p>
               <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-3 text-xs text-blue-300">
-                ℹ️ FATF requirements mandate disclosure of all beneficial owners with ≥25% ownership or control.
+                ℹ️ FATF requirements mandate disclosure of all beneficial owners with ≥10% ownership or control.
               </div>
               {owners.map((o, i) => (
                 <div key={i} className="bg-gray-800/50 rounded-xl p-4 space-y-3">
@@ -740,11 +740,11 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
                     <div><label className="text-xs text-gray-500 block mb-1">Ownership % *</label><input type="number" value={o.ownership_pct} onChange={e=>setOwn(i,'ownership_pct',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
                     <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport</label><input value={o.id_number} onChange={e=>setOwn(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Nationality</label><input value={o.nationality} onChange={e=>setOwn(i,'nationality',e.target.value)} className={inputCls} placeholder="e.g. Zimbabwean"/></div>
-                    {parseFloat(o.ownership_pct||0) >= 25 && (
+                    {parseFloat(o.ownership_pct||0) >= 10 && (
                       <div className="col-span-2">
                         <label className="flex items-start gap-2 cursor-pointer bg-amber-900/20 border border-amber-700/40 rounded-lg p-2">
                           <input type="checkbox" checked={o.kyc_confirmed||false} onChange={e=>setOwn(i,'kyc_confirmed',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
-                          <span className="text-xs text-amber-300">I confirm that {o.name || 'this beneficial owner'} has submitted individual KYC on the TokenEquityX platform. (FATF Recommendation 24 — all beneficial owners with ≥25% must be individually verified)</span>
+                          <span className="text-xs text-amber-300">I confirm that {o.name || 'this beneficial owner'} has submitted individual KYC on the TokenEquityX platform. (FATF Recommendation 24 — all beneficial owners with ≥10% must be individually verified)</span>
                         </label>
                       </div>
                     )}
@@ -755,9 +755,9 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
               <div className="flex gap-3">
                 <button onClick={()=>setStep(2)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
                 <button onClick={()=>{
-                const unverifiedOwners = owners.filter(o => o.name && parseFloat(o.ownership_pct||0) >= 25 && !o.kyc_confirmed);
+                const unverifiedOwners = owners.filter(o => o.name && parseFloat(o.ownership_pct||0) >= 10 && !o.kyc_confirmed);
                 if (unverifiedOwners.length > 0) {
-                  setMsg({ type:'error', text: `Beneficial owners with ≥25% ownership must confirm their individual KYC: ${unverifiedOwners.map(o=>o.name).join(', ')}. Please check the box below each owner to confirm their KYC has been submitted.` });
+                  setMsg({ type:'error', text: `Beneficial owners with ≥10% ownership must confirm their individual KYC: ${unverifiedOwners.map(o=>o.name).join(', ')}. Please check the box below each owner to confirm their KYC has been submitted.` });
                   return;
                 }
                 setMsg(null); setStep(4);

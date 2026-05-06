@@ -787,6 +787,16 @@ router.get('/migrate', async (req, res) => {
       ('stripe_publishable_key', '', 'Stripe publishable key (diaspora investors)'),
       ('stripe_secret_key', '', 'Stripe secret key (super admin only)')
     ON CONFLICT (key) DO NOTHING`,
+    `INSERT INTO platform_settings (key, value, description) VALUES
+      ('platform_fee_rate',      '0.0050', 'Platform trading fee rate (e.g. 0.0050 = 0.50%)'),
+      ('secz_levy_rate',         '0.0032', 'SECZ regulatory levy rate (e.g. 0.0032 = 0.32%)'),
+      ('vat_rate',               '0.155',  'VAT rate (e.g. 0.155 = 15.5% per Finance Act 2025)'),
+      ('wht_resident_rate',      '0.10',   'Withholding tax rate for Zimbabwe residents (10%)'),
+      ('wht_non_resident_rate',  '0.15',   'Withholding tax rate for non-residents (15%)'),
+      ('cgt_rate',               '0.20',   'Capital gains tax rate on land-holding entity shares (20%)'),
+      ('imtt_rate',              '0.02',   'Intermediate Money Transfer Tax rate (2%)'),
+      ('beneficial_owner_threshold', '0.10', 'Minimum ownership % requiring beneficial owner KYC declaration (10% per FATF Rec 24)')
+    ON CONFLICT (key) DO NOTHING`,
   ];
   const results = [];
   for (const sql of migrations) {
