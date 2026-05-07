@@ -713,12 +713,14 @@ router.post('/:id/send-progress', authenticate, requireRole('ADMIN', 'ISSUER'), 
 router.get('/my-subscriptions', authenticate, async (req, res) => {
   try {
     const [rows] = await db.execute(`
-      SELECT os.*, o.token_id, o.offering_price_usd,
+      SELECT os.id, os.investor_id, os.status, os.created_at,
+             os.amount_usd, os.tokens_allocated,
+             o.offering_price_usd, o.token_id,
              t.token_symbol, t.token_name
       FROM offering_subscriptions os
-      JOIN primary_offerings o ON o.id = os.offering_id
-      JOIN tokens t ON t.id = o.token_id
-      WHERE os.investor_id = ?
+      LEFT JOIN primary_offerings o ON o.id = os.offering_id
+      LEFT JOIN tokens t ON t.id = o.token_id
+      WHERE os.investor_id = $1
       ORDER BY os.created_at DESC
     `, [req.user.userId]);
     res.json(rows);

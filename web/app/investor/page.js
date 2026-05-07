@@ -983,7 +983,7 @@ export default function InvestorDashboard() {
             </div>
 
             {activeAsset && (() => {
-              const md = MARKET_DATA[activeAsset] || portfolio.find(p=>p.symbol===activeAsset) || {};
+              const md = portfolio.find(p=>p.symbol===activeAsset) || {};
               return (
                 <div className="bg-gray-900 border border-blue-800/50 rounded-xl p-6 space-y-6">
                   <div className="flex items-center justify-between">
