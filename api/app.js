@@ -83,8 +83,9 @@ app.use('/api/blog', require('./src/routes/blog'));
 app.use('/api/settings', require('./src/routes/settings'));
 app.use('/api/messages', require('./src/routes/messages'));
 app.use('/api/profile',  require('./src/routes/profile'));
-app.use('/api/super-admin', require('./src/routes/superAdmin'));
-app.use('/api/payments',    require('./src/routes/payments'));
+app.use('/api/super-admin',     require('./src/routes/superAdmin'));
+app.use('/api/payments',        require('./src/routes/payments'));
+app.use('/api/banking-partner', require('./src/routes/bankingPartner'));
 
 // Daily reconciliation at 18:00
 cron.schedule('0 18 * * *', async () => {

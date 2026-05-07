@@ -797,6 +797,73 @@ router.get('/migrate', async (req, res) => {
       ('imtt_rate',              '0.02',   'Intermediate Money Transfer Tax rate (2%)'),
       ('beneficial_owner_threshold', '0.10', 'Minimum ownership % requiring beneficial owner KYC declaration (10% per FATF Rec 24)')
     ON CONFLICT (key) DO NOTHING`,
+    `CREATE TABLE IF NOT EXISTS settlement_instructions (
+      id               UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+      type             VARCHAR(30)   NOT NULL DEFAULT 'TRADE',
+      reference        VARCHAR(100)  NOT NULL,
+      token_symbol     VARCHAR(10),
+      investor_id      UUID,
+      issuer_id        UUID,
+      amount_usd       NUMERIC(20,6) NOT NULL DEFAULT 0,
+      fee_usd          NUMERIC(20,6) NOT NULL DEFAULT 0,
+      wht_usd          NUMERIC(20,6) NOT NULL DEFAULT 0,
+      net_amount_usd   NUMERIC(20,6) NOT NULL DEFAULT 0,
+      status           VARCHAR(20)   NOT NULL DEFAULT 'PENDING',
+      bank_reference   VARCHAR(100),
+      notes            TEXT,
+      processed_at     TIMESTAMP,
+      processed_by     UUID,
+      created_at       TIMESTAMP     NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_settlement_status ON settlement_instructions(status)`,
+    `CREATE INDEX IF NOT EXISTS idx_settlement_type   ON settlement_instructions(type)`,
+    `CREATE TABLE IF NOT EXISTS wht_batches (
+      id                  UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+      period              VARCHAR(20)   NOT NULL,
+      wht_type            VARCHAR(30)   NOT NULL DEFAULT 'DIVIDEND',
+      total_amount_usd    NUMERIC(20,6) NOT NULL DEFAULT 0,
+      resident_amount     NUMERIC(20,6) NOT NULL DEFAULT 0,
+      non_resident_amount NUMERIC(20,6) NOT NULL DEFAULT 0,
+      transaction_count   INTEGER       NOT NULL DEFAULT 0,
+      status              VARCHAR(20)   NOT NULL DEFAULT 'PENDING',
+      zimra_reference     VARCHAR(100),
+      remitted_at         TIMESTAMP,
+      remitted_by         UUID,
+      created_at          TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS disbursement_queue (
+      id               UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+      offering_id      UUID,
+      token_symbol     VARCHAR(10),
+      issuer_id        UUID,
+      entity_name      VARCHAR(255),
+      gross_amount     NUMERIC(20,6) NOT NULL DEFAULT 0,
+      platform_fee     NUMERIC(20,6) NOT NULL DEFAULT 0,
+      secz_levy        NUMERIC(20,6) NOT NULL DEFAULT 0,
+      vat_on_fees      NUMERIC(20,6) NOT NULL DEFAULT 0,
+      net_amount       NUMERIC(20,6) NOT NULL DEFAULT 0,
+      bank_name        VARCHAR(100),
+      account_name     VARCHAR(100),
+      account_number   VARCHAR(50),
+      branch           VARCHAR(100),
+      swift_code       VARCHAR(20),
+      status           VARCHAR(20)   NOT NULL DEFAULT 'PENDING',
+      bank_reference   VARCHAR(100),
+      notes            TEXT,
+      disbursed_at     TIMESTAMP,
+      disbursed_by     UUID,
+      created_at       TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `INSERT INTO users (id, email, password_hash, role, kyc_status, onboarding_complete)
+     VALUES (
+       '00000000-0000-0000-0000-000000000006',
+       'banking@tokenequityx.co.zw',
+       '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+       'BANKING_PARTNER',
+       'APPROVED',
+       TRUE
+     ) ON CONFLICT (id) DO NOTHING`,
   ];
   const results = [];
   for (const sql of migrations) {

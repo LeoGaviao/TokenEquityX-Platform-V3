@@ -43,7 +43,7 @@ export default function LoginPage() {
       console.log('role:', data.user?.role);
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      const exemptRoles = ['ADMIN','AUDITOR','PARTNER','DFI','COMPLIANCE_OFFICER'];
+      const exemptRoles = ['ADMIN','AUDITOR','PARTNER','BANKING_PARTNER','DFI','COMPLIANCE_OFFICER'];
       const isExempt = exemptRoles.includes(data.user?.role);
       console.log('isExempt:', isExempt);
       console.log('onboarding check:', !data.user?.onboarding_complete && !isExempt);
@@ -76,7 +76,7 @@ export default function LoginPage() {
       if (!res.ok) return setError(data.error || 'MetaMask login failed');
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      const exemptRoles = ['ADMIN','AUDITOR','PARTNER','DFI','COMPLIANCE_OFFICER'];
+      const exemptRoles = ['ADMIN','AUDITOR','PARTNER','BANKING_PARTNER','DFI','COMPLIANCE_OFFICER'];
 if (!data.user.onboarding_complete && !exemptRoles.includes(data.user.role)) {
   window.location.href = '/role-select';
   return;
