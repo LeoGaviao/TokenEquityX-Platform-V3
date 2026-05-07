@@ -2803,6 +2803,29 @@ export default function AdminDashboard() {
                 Open Portal →
               </a>
             </div>
+            {/* Banking Partner Webhook URL */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4">
+              <h3 className="font-bold text-sm mb-1">🔗 Banking Partner Webhook</h3>
+              <p className="text-xs text-gray-500 mb-3">The platform will push JSON notifications to this URL on key events: deposits, trades, disbursements, WHT batches and reconciliation alerts.</p>
+              <div className="flex gap-2">
+                <input
+                  id="webhook-url-input"
+                  type="url"
+                  defaultValue={settings['banking_partner_webhook_url']?.value ?? ''}
+                  placeholder="https://banking-partner-endpoint.com/tokenequityx/webhook"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
+                />
+                <button onClick={()=>{
+                  const val = document.getElementById('webhook-url-input')?.value;
+                  if (val !== undefined) handleSaveSetting('banking_partner_webhook_url', val);
+                }} className="px-4 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold whitespace-nowrap">
+                  Save URL
+                </button>
+              </div>
+              {settings['banking_partner_webhook_url']?.updated_at && (
+                <p className="text-xs text-gray-600 mt-2">Last updated: {new Date(settings['banking_partner_webhook_url'].updated_at).toLocaleDateString('en-GB')}</p>
+              )}
+            </div>
             <div>
               <h2 className="text-xl font-bold mb-1">Platform Settings</h2>
               <p className="text-gray-500 text-sm">Configure fees, meeting schedules, and platform-wide defaults.</p>

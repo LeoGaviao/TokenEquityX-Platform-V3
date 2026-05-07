@@ -119,6 +119,13 @@ export default function BankingPartnerPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-xs text-gray-400">{user.email}</span>
+          <button onClick={async()=>{
+            const res = await fetch(`${API}/banking-partner/test-webhook`,{method:'POST',headers:hdrs()});
+            const data = await res.json();
+            notify(data.success?'success':'error', data.message || data.error);
+          }} className="text-xs text-blue-400 hover:text-blue-300 border border-blue-800 rounded-lg px-3 py-1.5">
+            🔗 Test Webhook
+          </button>
           <button onClick={()=>{localStorage.clear();window.location.href='/login';}}
             className="text-xs text-red-400 hover:text-red-300">Logout</button>
         </div>

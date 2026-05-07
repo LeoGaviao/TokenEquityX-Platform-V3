@@ -324,6 +324,15 @@ router.put('/deposit/:id/confirm',
         referenceId: String(req.params.id),
       }).catch(() => {});
 
+      // Push webhook to banking partner
+      const { notifyDepositReceived } = require('../../services/webhook');
+      notifyDepositReceived({
+        investorId:    dep.user_id,
+        investorEmail: dep.email || '',
+        amount:        dep.amount_usd,
+        reference:     dep.reference || dep.id,
+      }).catch(() => {});
+
       res.json({
         success:    true,
         newBalance: newBal,

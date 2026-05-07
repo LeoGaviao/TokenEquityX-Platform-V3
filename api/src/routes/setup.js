@@ -879,6 +879,12 @@ router.get('/migrate', async (req, res) => {
       acknowledged_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
       UNIQUE (investor_id, token_symbol)
     )`,
+
+    // ── Banking Partner Webhook ───────────────────────────────────────
+    `INSERT INTO platform_settings (key, value, description) VALUES
+      ('banking_partner_webhook_url', '', 'Banking partner webhook endpoint URL for push notifications'),
+      ('banking_partner_name', 'Stanbic Bank Zimbabwe', 'Name of the banking partner')
+    ON CONFLICT (key) DO NOTHING`,
   ];
   const results = [];
   for (const sql of migrations) {

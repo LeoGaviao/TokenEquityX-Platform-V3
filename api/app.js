@@ -91,7 +91,66 @@ app.use('/api/banking-partner', require('./src/routes/bankingPartner'));
 cron.schedule('0 18 * * *', async () => {
   console.log('[CRON] Running daily USDC reconciliation...');
   const { runReconciliation } = require('./src/services/reconciliation');
-  runReconciliation('SCHEDULED').catch(err => console.error('[CRON] Reconciliation failed:', err.message));
+  try {
+    const result = await runReconciliation('SCHEDULED');
+    // Push webhook alert if reconciliation has issues
+    if (result.status !== 'OK') {
+      const { notifyReconciliationAlert } = require('./src/services/webhook');
+      notifyReconciliationAlert(result).catch(() => {});
+    }
+  } catch (err) {
+    console.error('[CRON] Reconciliation failed:', err.message);
+  }
+});
+
+// Daily settlement batch file generation at 16:00
+cron.schedule('0 16 * * *', async () => {
+  console.log('[CRON] Generating daily settlement batch...');
+  try {
+    const db = require('./src/db/pool');
+    const today = new Date().toISOString().split('T')[0];
+
+    // Get all pending settlement instructions for today
+    const [rows] = await db.execute(
+      `SELECT COUNT(*) as count, COALESCE(SUM(net_amount_usd), 0) as total
+       FROM settlement_instructions
+       WHERE created_at::date = $1 AND status = 'PENDING'`,
+      [today]
+    );
+
+    const count = parseInt(rows[0]?.count || 0);
+    const total = parseFloat(rows[0]?.total || 0);
+
+    console.log(`[CRON] Settlement batch: ${count} pending instructions, total $${total.toFixed(2)}`);
+
+    // Push webhook to banking partner
+    if (count > 0) {
+      const { pushWebhook } = require('./src/services/webhook');
+      pushWebhook('settlement.daily_batch_ready', {
+        date: today,
+        pending_count: count,
+        total_amount_usd: total,
+        batch_file_url: `${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/api/banking-partner/batch-file?date=${today}`,
+        requires_action: `Process ${count} settlement instruction(s) totalling $${total.toFixed(2)} USD. Download batch file for details.`,
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.error('[CRON] Settlement batch failed:', err.message);
+  }
+});
+
+// Hourly reconciliation option (runs when reconciliation_mode = HOURLY)
+cron.schedule('0 * * * *', async () => {
+  try {
+    const db = require('./src/db/pool');
+    const [rows] = await db.execute(
+      "SELECT value FROM platform_settings WHERE key = 'reconciliation_mode'"
+    );
+    if (rows[0]?.value === 'HOURLY') {
+      const { runReconciliation } = require('./src/services/reconciliation');
+      runReconciliation('HOURLY').catch(() => {});
+    }
+  } catch {}
 });
 // ─── 404 HANDLER ──────────────────────────────────────────────────
 

@@ -148,4 +148,25 @@ router.get('/reconciliation', ...auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/banking-partner/test-webhook — send a test webhook to verify connectivity
+router.post('/test-webhook', ...auth, async (req, res) => {
+  try {
+    const { pushWebhook } = require('../services/webhook');
+    const result = await pushWebhook('system.test', {
+      message: 'TokenEquityX webhook connectivity test',
+      timestamp: new Date().toISOString(),
+      sent_by: req.user.userId,
+    });
+    if (result.skipped) {
+      return res.json({ success: false, message: 'No webhook URL configured. Set it in Admin → Settings.' });
+    }
+    if (result.error) {
+      return res.status(502).json({ success: false, message: `Webhook delivery failed: ${result.error}` });
+    }
+    res.json({ success: true, message: 'Test webhook delivered successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
