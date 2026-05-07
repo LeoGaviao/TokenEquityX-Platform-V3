@@ -2777,6 +2777,21 @@ export default function AdminDashboard() {
         {/* ══ SETTINGS ══ */}
         {tab==='settings' && (
           <div className="space-y-6">
+            {/* Banking Partner Portal Link */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🏦</span>
+                <div>
+                  <h3 className="font-bold text-sm">Banking Partner Portal</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Settlement instructions, disbursements, WHT batches and reconciliation for the banking partner.</p>
+                </div>
+              </div>
+              <a href="/banking-partner" target="_blank" rel="noopener noreferrer"
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center gap-2 hover:opacity-80 transition-opacity"
+                style={{background:'#1A3C5E'}}>
+                Open Portal →
+              </a>
+            </div>
             <div>
               <h2 className="text-xl font-bold mb-1">Platform Settings</h2>
               <p className="text-gray-500 text-sm">Configure fees, meeting schedules, and platform-wide defaults.</p>
