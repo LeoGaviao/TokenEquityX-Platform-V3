@@ -398,20 +398,20 @@ export default function InvestorDashboard() {
     const pnl   = value - cost;
     const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
     return {
-      symbol:     sym,
-      name:       h.name || md.name || sym,
-      company:    h.name || md.name || sym,
-      asset_class: h.asset_type || md.asset_class || 'Equity',
+      symbol:      sym,
+      name:        h.name || h.token_name || sym,
+      company:     h.name || h.token_name || sym,
+      asset_class: h.asset_type || 'Equity',
       price,
       qty,
       value,
       cost,
       pnl,
       pnlPct,
-      change24h:  parseFloat(h.change24h || md.change24h || 0),
-      volume24h:  parseFloat(h.volume24h || md.volume24h || 0),
-      yield_pa:   md.yield_pa || 0,
-      chart:      md.chart || Array.from({length:30},(_,i)=>({ t:`Day ${i+1}`, p: price })),
+      change24h:   parseFloat(h.change24h || 0),
+      volume24h:   parseFloat(h.volume24h || 0),
+      yield_pa:    parseFloat(h.yield_pa || 0),
+      chart:       Array.from({length:30},(_,i)=>({ t:`Day ${i+1}`, p: price })),
       market_state: h.market_state || 'FULL_TRADING',
     };
   });
