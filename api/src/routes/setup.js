@@ -906,6 +906,18 @@ router.get('/migrate', async (req, res) => {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_spv_fees_token ON spv_annual_fees(token_symbol)`,
     `CREATE INDEX IF NOT EXISTS idx_spv_fees_status ON spv_annual_fees(status)`,
+    `DELETE FROM token_holdings WHERE user_id IN (SELECT id FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com'))`,
+    `DELETE FROM investor_wallets WHERE user_id IN (SELECT id FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com'))`,
+    `DELETE FROM kyc_records WHERE user_id IN (SELECT id FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com'))`,
+    `DELETE FROM messages WHERE recipient_id IN (SELECT id FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com'))`,
+    `DELETE FROM entity_kyc WHERE user_id IN (SELECT id FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com'))`,
+    `DELETE FROM p2p_offers WHERE seller_id IN (SELECT id FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com'))`,
+    `DELETE FROM offering_subscriptions WHERE investor_id IN (SELECT id FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com'))`,
+    `UPDATE data_submissions SET issuer_wallet = '00000000-0000-0000-0000-000000000001' WHERE issuer_wallet IN (SELECT id FROM users WHERE email = 'venturesgaviao@gmail.com')`,
+    `UPDATE tokens SET issuer_id = '00000000-0000-0000-0000-000000000001' WHERE issuer_id IN (SELECT id FROM users WHERE email = 'venturesgaviao@gmail.com')`,
+    `DELETE FROM data_submissions WHERE token_symbol IN ('HCPR','GDMR') AND issuer_wallet IN (SELECT id FROM users WHERE email IN ('leomanezh@gmail.com','standube34@gmail.com'))`,
+    `DELETE FROM tokens WHERE token_symbol IN ('HCPR','GDMR')`,
+    `DELETE FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com')`,
   ];
   const results = [];
   for (const sql of migrations) {
