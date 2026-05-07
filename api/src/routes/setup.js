@@ -1170,4 +1170,53 @@ router.get('/set-token-risk', async (req, res) => {
   }
 });
 
+// GET /api/setup/cleanup-users — delete test users and all their related data
+router.get('/cleanup-users', async (req, res) => {
+  const { secret } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const TEST_EMAILS = [
+    'investor@test.com',
+    'issuer@test.com',
+    'auditor@test.com',
+    'admin@test.com',
+    'partner@test.com',
+  ];
+
+  try {
+    const deleted = [];
+
+    for (const email of TEST_EMAILS) {
+      const [rows] = await pool.execute('SELECT id FROM users WHERE email = $1', [email]);
+      if (rows.length === 0) continue;
+
+      const userId = rows[0].id;
+
+      // Delete all related data before removing the user
+      await pool.execute('DELETE FROM token_holdings          WHERE user_id = $1', [userId]);
+      await pool.execute('DELETE FROM investor_wallets         WHERE user_id = $1', [userId]);
+      await pool.execute('DELETE FROM kyc_documents            WHERE kyc_id IN (SELECT id FROM kyc_records WHERE user_id = $1)', [userId]);
+      await pool.execute('DELETE FROM kyc_records              WHERE user_id = $1', [userId]);
+      await pool.execute('DELETE FROM messages                 WHERE recipient_id = $1 OR sender_id = $1', [userId]);
+      await pool.execute('DELETE FROM entity_kyc               WHERE user_id = $1', [userId]);
+      await pool.execute('DELETE FROM p2p_offers               WHERE seller_id = $1 OR buyer_id = $1', [userId]);
+      await pool.execute('DELETE FROM offering_subscriptions   WHERE investor_id = $1', [userId]);
+      await pool.execute('DELETE FROM risk_acknowledgements    WHERE investor_id = $1', [userId]);
+      await pool.execute('DELETE FROM users                    WHERE id = $1', [userId]);
+
+      deleted.push(email);
+    }
+
+    res.json({
+      success: true,
+      deleted,
+      message: `Deleted ${deleted.length} test user(s) and all associated data.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
