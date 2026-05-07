@@ -1654,91 +1654,91 @@ export default function InvestorDashboard() {
         <TokenChartModal token={chartToken} onClose={() => setChartToken(null)} />
       )}
 
-          {/* Token Information Document Modal */}
-          {tidToken && (
-            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto">
-              <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl my-4">
-                {/* Modal Header */}
-                <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between" style={{background:'#1A3C5E'}}>
-                  <div>
-                    <h2 className="font-bold text-white text-lg">📄 Token Information Document</h2>
-                    <p className="text-xs text-blue-300 mt-0.5">Required disclosure document — please read carefully before investing</p>
-                  </div>
-                  <button onClick={()=>{setTidToken(null);setTidAcknowledged(false);}} className="text-gray-400 hover:text-white text-xl">✕</button>
+      {/* Token Information Document Modal */}
+      {tidToken && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl my-4">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between" style={{background:'#1A3C5E'}}>
+              <div>
+                <h2 className="font-bold text-white text-lg">📄 Token Information Document</h2>
+                <p className="text-xs text-blue-300 mt-0.5">Required disclosure document — please read carefully before investing</p>
+              </div>
+              <button onClick={()=>{setTidToken(null);setTidAcknowledged(false);}} className="text-gray-400 hover:text-white text-xl">✕</button>
+            </div>
+
+            {/* Token Summary */}
+            <div className="p-6 space-y-5">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-bold text-white" style={{background:'#C8972B'}}>
+                  {tidToken.token_symbol?.[0]}
                 </div>
-
-                {/* Token Summary */}
-                <div className="p-6 space-y-5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-bold text-white" style={{background:'#C8972B'}}>
-                      {tidToken.token_symbol?.[0]}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-xl text-white">{tidToken.token_symbol}</h3>
-                      <p className="text-gray-400 text-sm">{tidToken.issuer_name || tidToken.token_name}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">ISIN-equivalent: TEXZ-{tidToken.token_symbol}-{new Date().getFullYear()}</p>
-                    </div>
-                  </div>
-
-                  {/* Key Details Grid */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      ['Asset Class',       tidToken.asset_type || 'Equity'],
-                      ['Issue Price',       `$${parseFloat(tidToken.offering_price_usd||0).toFixed(4)}`],
-                      ['Target Raise',      `$${(parseFloat(tidToken.target_raise_usd||0)/1000).toFixed(0)}K`],
-                      ['Subscription Closes', tidToken.subscription_deadline ? new Date(tidToken.subscription_deadline).toLocaleDateString('en-GB') : '—'],
-                      ['Min Investment',    tidToken.min_investment_usd ? `$${tidToken.min_investment_usd}` : 'Platform minimum'],
-                      ['Max Investment',    tidToken.max_investment_usd ? `$${tidToken.max_investment_usd}` : 'No limit'],
-                      ['Expected Yield',    tidToken.expected_yield_pct ? `${tidToken.expected_yield_pct}% p.a.` : '—'],
-                      ['Distribution',      tidToken.distribution_frequency || '—'],
-                    ].map(([label,value])=>(
-                      <div key={label} className="bg-gray-800/40 rounded-lg px-3 py-2">
-                        <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-                        <p className="text-sm font-medium text-white">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Risk Warning */}
-                  <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-4">
-                    <p className="text-xs font-bold text-amber-300 mb-2">⚠️ Risk Disclosure</p>
-                    <p className="text-xs text-gray-300 leading-relaxed">This is a tokenised security issued under the TokenEquityX SECZ Innovation Hub Regulatory Sandbox. Investing in securities involves risk including the possible loss of principal. Past performance does not guarantee future results. This investment is not covered by the Zimbabwe Deposit Protection Board. The value of tokens may go down as well as up. You should not invest money you cannot afford to lose.</p>
-                  </div>
-
-                  {/* Regulatory Info */}
-                  <div className="bg-gray-800/40 rounded-xl p-4 space-y-1 text-xs text-gray-400">
-                    <p>🏛 <strong className="text-gray-300">Regulator:</strong> Securities and Exchange Commission of Zimbabwe (SECZ) — Innovation Hub Regulatory Sandbox</p>
-                    <p>🔗 <strong className="text-gray-300">Blockchain:</strong> Polygon PoS — smart contract enforced transfer restrictions</p>
-                    <p>💼 <strong className="text-gray-300">Custodian:</strong> Stanbic Trustees (Zimbabwe) Limited</p>
-                    <p>📋 <strong className="text-gray-300">Governing Law:</strong> Zimbabwe — Securities and Exchange Act [Chapter 24:25], Finance Act 2025 Part VA</p>
-                    <p>🧾 <strong className="text-gray-300">Tax:</strong> WHT applies on distributions. CGT may apply on disposal of real estate tokens. Consult your tax advisor.</p>
-                  </div>
-
-                  {/* Acknowledgement */}
-                  <label className="flex items-start gap-3 cursor-pointer bg-blue-900/20 border border-blue-700/40 rounded-xl p-4">
-                    <input type="checkbox" checked={tidAcknowledged} onChange={e=>setTidAcknowledged(e.target.checked)}
-                      className="mt-0.5 flex-shrink-0 w-4 h-4"/>
-                    <span className="text-sm text-blue-200">I confirm that I have read and understood this Token Information Document. I understand the risks involved and that this investment is not guaranteed. I am making this investment decision of my own free will.</span>
-                  </label>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-3">
-                    <button onClick={()=>{setTidToken(null);setTidAcknowledged(false);}}
-                      className="flex-1 py-2.5 rounded-xl text-sm border border-gray-700 text-gray-400 hover:bg-gray-800">
-                      Close
-                    </button>
-                    <button
-                      disabled={!tidAcknowledged}
-                      onClick={()=>{setTidToken(null);}}
-                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
-                      style={{background:'#1A3C5E'}}>
-                      ✅ Proceed to Subscribe
-                    </button>
-                  </div>
+                <div>
+                  <h3 className="font-bold text-xl text-white">{tidToken.token_symbol}</h3>
+                  <p className="text-gray-400 text-sm">{tidToken.issuer_name || tidToken.token_name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">ISIN-equivalent: TEXZ-{tidToken.token_symbol}-{new Date().getFullYear()}</p>
                 </div>
               </div>
+
+              {/* Key Details Grid */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ['Asset Class',          tidToken.asset_type || 'Equity'],
+                  ['Issue Price',          `$${parseFloat(tidToken.offering_price_usd||0).toFixed(4)}`],
+                  ['Target Raise',         `$${(parseFloat(tidToken.target_raise_usd||0)/1000).toFixed(0)}K`],
+                  ['Subscription Closes',  tidToken.subscription_deadline ? new Date(tidToken.subscription_deadline).toLocaleDateString('en-GB') : '—'],
+                  ['Min Investment',       tidToken.min_investment_usd ? `$${tidToken.min_investment_usd}` : 'Platform minimum'],
+                  ['Max Investment',       tidToken.max_investment_usd ? `$${tidToken.max_investment_usd}` : 'No limit'],
+                  ['Expected Yield',       tidToken.expected_yield_pct ? `${tidToken.expected_yield_pct}% p.a.` : '—'],
+                  ['Distribution',         tidToken.distribution_frequency || '—'],
+                ].map(([label,value])=>(
+                  <div key={label} className="bg-gray-800/40 rounded-lg px-3 py-2">
+                    <p className="text-xs text-gray-500 mb-0.5">{label}</p>
+                    <p className="text-sm font-medium text-white">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Risk Warning */}
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-4">
+                <p className="text-xs font-bold text-amber-300 mb-2">⚠️ Risk Disclosure</p>
+                <p className="text-xs text-gray-300 leading-relaxed">This is a tokenised security issued under the TokenEquityX SECZ Innovation Hub Regulatory Sandbox. Investing in securities involves risk including the possible loss of principal. Past performance does not guarantee future results. This investment is not covered by the Zimbabwe Deposit Protection Board. The value of tokens may go down as well as up. You should not invest money you cannot afford to lose.</p>
+              </div>
+
+              {/* Regulatory Info */}
+              <div className="bg-gray-800/40 rounded-xl p-4 space-y-1 text-xs text-gray-400">
+                <p>🏛 <strong className="text-gray-300">Regulator:</strong> Securities and Exchange Commission of Zimbabwe (SECZ) — Innovation Hub Regulatory Sandbox</p>
+                <p>🔗 <strong className="text-gray-300">Blockchain:</strong> Polygon PoS — smart contract enforced transfer restrictions</p>
+                <p>💼 <strong className="text-gray-300">Custodian:</strong> Stanbic Trustees (Zimbabwe) Limited</p>
+                <p>📋 <strong className="text-gray-300">Governing Law:</strong> Zimbabwe — Securities and Exchange Act [Chapter 24:25], Finance Act 2025 Part VA</p>
+                <p>🧾 <strong className="text-gray-300">Tax:</strong> WHT applies on distributions. CGT may apply on disposal of real estate tokens. Consult your tax advisor.</p>
+              </div>
+
+              {/* Acknowledgement */}
+              <label className="flex items-start gap-3 cursor-pointer bg-blue-900/20 border border-blue-700/40 rounded-xl p-4">
+                <input type="checkbox" checked={tidAcknowledged} onChange={e=>setTidAcknowledged(e.target.checked)}
+                  className="mt-0.5 flex-shrink-0 w-4 h-4"/>
+                <span className="text-sm text-blue-200">I confirm that I have read and understood this Token Information Document. I understand the risks involved and that this investment is not guaranteed. I am making this investment decision of my own free will.</span>
+              </label>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button onClick={()=>{setTidToken(null);setTidAcknowledged(false);}}
+                  className="flex-1 py-2.5 rounded-xl text-sm border border-gray-700 text-gray-400 hover:bg-gray-800">
+                  Close
+                </button>
+                <button
+                  disabled={!tidAcknowledged}
+                  onClick={()=>{setTidToken(null);}}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
+                  style={{background:'#1A3C5E'}}>
+                  ✅ Proceed to Subscribe
+                </button>
+              </div>
             </div>
-          )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
