@@ -241,4 +241,35 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Could not fetch assets' }); }
 });
 
+// POST /api/assets/acknowledge-risk — investor acknowledges risk mismatch
+router.post('/acknowledge-risk', authenticate, async (req, res) => {
+  const { token_symbol, investor_profile, token_category } = req.body;
+  if (!token_symbol || !investor_profile || !token_category) {
+    return res.status(400).json({ error: 'token_symbol, investor_profile and token_category are required' });
+  }
+  try {
+    await db.execute(
+      `INSERT INTO risk_acknowledgements (investor_id, token_symbol, investor_profile, token_category)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (investor_id, token_symbol) DO UPDATE SET
+         investor_profile = EXCLUDED.investor_profile,
+         token_category   = EXCLUDED.token_category,
+         acknowledged_at  = NOW()`,
+      [req.user.userId, token_symbol, investor_profile, token_category]
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/assets/my-acknowledgements — list tokens the investor already acknowledged
+router.get('/my-acknowledgements', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.execute(
+      'SELECT token_symbol FROM risk_acknowledgements WHERE investor_id = ?',
+      [req.user.userId]
+    );
+    res.json(rows.map(r => r.token_symbol));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

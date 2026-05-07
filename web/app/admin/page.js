@@ -41,13 +41,14 @@ const MODEL_LABELS = {
 // ── Admin Final Approval
 function AdminFinalApproval({ item, onApprove, onReject }) {
   const [listingType, setListingType] = useState(item.audit_report?.suggestedListingType || '');
+  const [riskCategory, setRiskCategory] = useState('BALANCED');
   const [adminNotes, setAdminNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const report = item.audit_report || {};
   const handleApprove = async () => {
     if (!listingType) { alert('Please select a listing type.'); return; }
     setSubmitting(true);
-    await onApprove(listingType, adminNotes);
+    await onApprove(listingType, adminNotes, riskCategory);
     setSubmitting(false);
   };
   return (
@@ -77,6 +78,16 @@ function AdminFinalApproval({ item, onApprove, onReject }) {
             </div>
           ))}
         </div>
+      </div>
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Token Risk Category <span className="text-red-400">*</span></label>
+        <select value={riskCategory} onChange={e => setRiskCategory(e.target.value)}
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600">
+          <option value="CONSERVATIVE">CONSERVATIVE — Low risk, capital preservation</option>
+          <option value="BALANCED">BALANCED — Moderate risk/return</option>
+          <option value="GROWTH">GROWTH — Higher risk, equity-like</option>
+          <option value="SPECULATIVE">SPECULATIVE — High risk, digital/early-stage</option>
+        </select>
       </div>
       <div>
         <label className="text-xs text-gray-400 block mb-1">Admin Notes (visible to issuer)</label>
@@ -2066,8 +2077,8 @@ export default function AdminDashboard() {
                                 </button>
                               </div>
                             ) : item.status === 'AUDITOR_APPROVED' ? (
-                              <AdminFinalApproval item={item} onApprove={(listingType, notes) => {
-                                api.put(`/submissions/${item.id}/admin-approve`, { listingType, adminNotes:notes, tokenSymbol:item.symbol })
+                              <AdminFinalApproval item={item} onApprove={(listingType, notes, riskCategory) => {
+                                api.put(`/submissions/${item.id}/admin-approve`, { listingType, adminNotes:notes, tokenSymbol:item.symbol, riskCategory })
                                   .then(r => { setPipeline(p => p.map(i => i.id===item.id ? { ...i, status:'ADMIN_APPROVED', stages:{...i.stages,secz:true} } : i)); notify('success', r.data.message); })
                                   .catch(e => notify('error', e.response?.data?.error || 'Approval failed'));
                               }} onReject={() => rejectApplication(item)}/>

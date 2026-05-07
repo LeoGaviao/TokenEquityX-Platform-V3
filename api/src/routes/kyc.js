@@ -12,7 +12,8 @@ router.post('/submit', authenticate, upload.array('documents', 5), async (req, r
   const {
     fullName, dateOfBirth, nationality, idType, idNumber,
     addressLine1, addressLine2, city, country,
-    investorTier, accreditedInvestor
+    investorTier, accreditedInvestor,
+    riskProfile, riskScore, riskAnswers
   } = req.body;
 
   if (!fullName || !country) {
@@ -26,16 +27,22 @@ router.post('/submit', authenticate, upload.array('documents', 5), async (req, r
       INSERT INTO kyc_records
         (id, user_id, full_name, date_of_birth, nationality,
          id_type, id_number, address_line1, address_line2,
-         city, country, investor_tier, accredited_investor, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+         city, country, investor_tier, accredited_investor, status,
+         risk_profile, risk_score, risk_answers)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
       ON CONFLICT (user_id) DO UPDATE SET
-        full_name  = EXCLUDED.full_name,
-        status     = 'PENDING',
-        updated_at = NOW()
+        full_name     = EXCLUDED.full_name,
+        status        = 'PENDING',
+        risk_profile  = EXCLUDED.risk_profile,
+        risk_score    = EXCLUDED.risk_score,
+        risk_answers  = EXCLUDED.risk_answers,
+        updated_at    = NOW()
     `, [
       kycId, req.user.userId, fullName, dateOfBirth, nationality,
       idType, idNumber, addressLine1, addressLine2, city, country,
-      investorTier || 'RETAIL', accreditedInvestor ? true : false
+      investorTier || 'RETAIL', accreditedInvestor ? true : false,
+      riskProfile || 'BALANCED', parseInt(riskScore) || 0,
+      riskAnswers ? JSON.stringify(riskAnswers) : null
     ]);
 
     // Save uploaded documents to Supabase

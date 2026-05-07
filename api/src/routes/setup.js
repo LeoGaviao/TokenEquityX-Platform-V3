@@ -864,6 +864,21 @@ router.get('/migrate', async (req, res) => {
        'APPROVED',
        TRUE
      ) ON CONFLICT (id) DO NOTHING`,
+
+    // ── Risk Profile ─────────────────────────────────────────────────
+    `ALTER TABLE kyc_records ADD COLUMN IF NOT EXISTS risk_profile VARCHAR(20) DEFAULT 'BALANCED'`,
+    `ALTER TABLE kyc_records ADD COLUMN IF NOT EXISTS risk_score INTEGER DEFAULT 0`,
+    `ALTER TABLE kyc_records ADD COLUMN IF NOT EXISTS risk_answers JSONB`,
+    `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS risk_category VARCHAR(20) DEFAULT 'BALANCED'`,
+    `CREATE TABLE IF NOT EXISTS risk_acknowledgements (
+      id               UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+      investor_id      UUID          NOT NULL REFERENCES users(id),
+      token_symbol     VARCHAR(20)   NOT NULL,
+      investor_profile VARCHAR(20)   NOT NULL,
+      token_category   VARCHAR(20)   NOT NULL,
+      acknowledged_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
+      UNIQUE (investor_id, token_symbol)
+    )`,
   ];
   const results = [];
   for (const sql of migrations) {

@@ -114,6 +114,8 @@ export default function InvestorDashboard() {
   const [offeringsLoaded, setOfferingsLoaded] = useState(false);
   const [priceFlash,  setPriceFlash]  = useState({});
   const [preListingDetail, setPreListingDetail] = useState(null);
+  const [kycData,          setKycData]          = useState(null);
+  const [riskAcknowledged, setRiskAcknowledged] = useState([]);
   const wsRef = useRef(null);
 
   // ── Wallet state
@@ -325,6 +327,10 @@ export default function InvestorDashboard() {
         .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setSubscriptions(d); }).catch(()=>{});
       fetch(`${API}/p2p/my`, { headers:{ Authorization:`Bearer ${token2}` } })
         .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setP2pHistory(d); }).catch(()=>{});
+      fetch(`${API}/kyc/status`, { headers:{ Authorization:`Bearer ${token2}` } })
+        .then(r=>r.json()).then(d=>{ if(d.risk_profile) setKycData(d); }).catch(()=>{});
+      fetch(`${API}/assets/my-acknowledgements`, { headers:{ Authorization:`Bearer ${token2}` } })
+        .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setRiskAcknowledged(d); }).catch(()=>{});
     } catch(e){ console.error(e); }
     finally { setLoading(false); }
   };
@@ -435,12 +441,45 @@ export default function InvestorDashboard() {
         description:  t.description || '',
         jurisdiction: t.jurisdiction || 'Zimbabwe',
         total_supply: t.total_supply || 0,
-        isPreListing: t.status === 'DRAFT' || t.market_state === 'PRE_LAUNCH',
-        fromDB:       true,
+        isPreListing:  t.status === 'DRAFT' || t.market_state === 'PRE_LAUNCH',
+        risk_category: t.risk_category || 'BALANCED',
+        fromDB:        true,
       };
     });
     return Object.entries(result).map(([sym, data]) => ({ ...data, symbol:sym, price:prices[sym]||data.price }));
   })();
+
+  const RISK_RANK = { CONSERVATIVE:1, BALANCED:2, GROWTH:3, SPECULATIVE:4 };
+  const investorRank = RISK_RANK[kycData?.risk_profile] || 0;
+
+  const acknowledgeRisk = async (tokenSymbol, tokenCategory, e) => {
+    e.stopPropagation();
+    const investorProfile = kycData?.risk_profile || 'BALANCED';
+    try {
+      await fetch(`${API}/assets/acknowledge-risk`, {
+        method: 'POST',
+        headers: { Authorization:`Bearer ${localStorage.getItem('token')}`, 'Content-Type':'application/json' },
+        body: JSON.stringify({ token_symbol: tokenSymbol, investor_profile: investorProfile, token_category: tokenCategory }),
+      });
+      setRiskAcknowledged(prev => [...prev, tokenSymbol]);
+    } catch {}
+  };
+
+  const RiskBadge = ({ token }) => {
+    const sym = token.symbol || token.token_symbol;
+    const cat = token.risk_category || 'BALANCED';
+    const tokenRank = RISK_RANK[cat] || 2;
+    if (!investorRank || tokenRank <= investorRank) return null;
+    if (riskAcknowledged.includes(sym)) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-900/40 border border-yellow-700/40 text-yellow-400">⚠ Risk noted</span>;
+    }
+    return (
+      <button onClick={e => acknowledgeRisk(sym, cat, e)}
+        className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/40 border border-red-700/40 text-red-400 hover:bg-red-900/70 transition">
+        ⚠ {cat} — tap to acknowledge
+      </button>
+    );
+  };
 
   if (typeof window === 'undefined') return null;
   if (!JSON.parse(localStorage.getItem('user') || '{}')?.role) return null;
@@ -1197,6 +1236,7 @@ export default function InvestorDashboard() {
                         <div>
                           <p className="font-semibold text-white text-xs">{t.symbol||t.token_symbol}</p>
                           <p className="text-gray-500 text-[10px] truncate max-w-[100px]">{t.name||t.company_name}</p>
+                          <RiskBadge token={t} />
                         </div>
                       </div>
                     </td>
@@ -1244,6 +1284,7 @@ export default function InvestorDashboard() {
                         <div>
                           <p className="font-semibold text-white text-xs">{t.symbol||t.token_symbol}</p>
                           <p className="text-gray-500 text-[10px] truncate max-w-[100px]">{t.name||t.company_name}</p>
+                          <RiskBadge token={t} />
                         </div>
                       </div>
                     </td>
