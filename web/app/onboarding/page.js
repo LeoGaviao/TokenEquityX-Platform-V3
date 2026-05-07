@@ -110,7 +110,21 @@ export default function OnboardingPage() {
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (!stored) return router.push('/signup');
-    setUser(JSON.parse(stored));
+    const u = JSON.parse(stored);
+    setUser(u);
+    // Issuers and Partners skip full KYC onboarding — they do it in their dashboard
+    if (u.role === 'ISSUER' || u.role === 'PARTNER') {
+      // Mark onboarding complete immediately and redirect
+      const token = localStorage.getItem('token');
+      fetch('/api/auth/complete-onboarding', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      }).then(() => {
+        const updatedUser = { ...u, onboarding_complete: 1 };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        router.push(`/${u.role.toLowerCase()}`);
+      });
+    }
   }, []);
 
   const uploadFile = (field, file) => setFiles(prev => ({ ...prev, [field]: file }));

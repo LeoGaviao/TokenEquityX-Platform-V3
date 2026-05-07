@@ -195,14 +195,39 @@ router.put('/approve/:kycId',
         ['APPROVED', records[0].user_id]
       );
 
+      const { send } = require('../utils/mailer');
+      const [userRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [records[0].user_id]);
+      const approvedUser = userRows[0];
+
       await sendMessage({
         recipientId: records[0].user_id,
-        subject:     `✅ KYC Approved`,
-        body:        `Your identity verification (KYC) has been approved. You now have full access to all platform features including investing and trading.`,
+        subject:     '✅ KYC Approved — You can now invest',
+        body:        `Your identity verification (KYC) has been approved.\n\nYou now have full access to all platform features including investing and trading.\n\nLog in to your dashboard to start exploring available securities.`,
         type:        'SYSTEM',
         category:    'KYC',
         referenceId: req.params.kycId,
+        sendEmail:   true,
+        recipientEmail: approvedUser?.email,
+        recipientName:  approvedUser?.full_name,
       }).catch(() => {});
+
+      // Also send external email
+      if (approvedUser?.email) {
+        send(approvedUser.email, '✅ KYC Approved — TokenEquityX',
+          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+            <div style="background:#1A3C5E;padding:28px 32px">
+              <h1 style="color:#C8972B;margin:0;font-size:22px">⬡ TokenEquityX</h1>
+            </div>
+            <div style="padding:28px 32px;background:#fff">
+              <h2 style="color:#16a34a">✅ KYC Approved</h2>
+              <p style="color:#374151">Dear ${approvedUser.full_name},</p>
+              <p style="color:#374151">Your identity verification has been approved. You now have full access to the TokenEquityX platform.</p>
+              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/investor" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;margin-top:16px">Go to Dashboard →</a>
+            </div>
+            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
+          </div>`
+        ).catch(() => {});
+      }
 
       logger.info('KYC approved', {
         kycId:      req.params.kycId,

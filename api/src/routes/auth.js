@@ -55,6 +55,54 @@ router.post('/signup', async (req, res) => {
     const user   = rows[0];
     const token  = makeToken(user);
 
+    // Send welcome message to new user
+    try {
+      const { sendMessage } = require('../utils/messenger');
+      const { send } = require('../utils/mailer');
+
+      // In-platform welcome message
+      await sendMessage({
+        recipientId: id,
+        subject:     '👋 Welcome to TokenEquityX',
+        body:        `Welcome to TokenEquityX, ${full_name}!\n\nYour account has been created successfully.\n\nNext steps:\n${user.role === 'ISSUER' ? '1. Complete your profile in the issuer dashboard\n2. Submit your Entity KYC & AML verification\n3. Prepare your tokenisation application' : '1. Complete your KYC verification\n2. Fund your wallet\n3. Browse available securities in the Market tab'}\n\nIf you have any questions, contact support@tokenequityx.co.zw`,
+        type:        'SYSTEM',
+        category:    'GENERAL',
+      });
+
+      // External welcome email
+      await send(email.toLowerCase(), 'Welcome to TokenEquityX — Africa\'s Digital Capital Market',
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <div style="background:#1A3C5E;padding:28px 32px">
+            <h1 style="color:#C8972B;margin:0;font-size:22px">⬡ TokenEquityX</h1>
+          </div>
+          <div style="padding:28px 32px;background:#fff">
+            <h2 style="color:#1A3C5E">Welcome, ${full_name}!</h2>
+            <p style="color:#374151">Your account has been created successfully on Africa's first regulated tokenised securities marketplace.</p>
+            <p style="color:#374151"><strong>Your role:</strong> ${user.role}</p>
+            <p style="color:#374151">Please log in and complete your profile to get started.</p>
+            <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/login" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;margin-top:16px">Log In to Your Dashboard →</a>
+          </div>
+          <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">
+            TokenEquityX (Private) Limited · Harare, Zimbabwe · tokenequityx.co.zw
+          </div>
+        </div>`
+      );
+
+      // Notify admin of new registration
+      const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' AND is_active = TRUE LIMIT 1");
+      if (adminRows.length > 0) {
+        await sendMessage({
+          recipientId: adminRows[0].id,
+          subject:     `🆕 New ${user.role} Registration — ${full_name}`,
+          body:        `A new user has registered on the platform.\n\nName: ${full_name}\nEmail: ${email}\nRole: ${user.role}\nTime: ${new Date().toLocaleString('en-GB')}\n\nPlease review in the Users tab.`,
+          type:        'SYSTEM',
+          category:    'GENERAL',
+        });
+      }
+    } catch (notifyErr) {
+      console.error('[SIGNUP] Notification failed:', notifyErr.message);
+    }
+
     res.status(201).json({
       token,
       user: {
