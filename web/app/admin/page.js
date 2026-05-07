@@ -1384,6 +1384,7 @@ export default function AdminDashboard() {
   const [sensitiveVal, setSensitiveVal]     = useState('');
   const [reconLogs,    setReconLogs]        = useState([]);
   const [reconRunning, setReconRunning]     = useState(false);
+  const [spvFees, setSpvFees] = useState([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [appFeeModal, setAppFeeModal] = useState(null);
@@ -1529,6 +1530,8 @@ export default function AdminDashboard() {
       // Load reconciliation logs
       fetch(`${API}/settings/reconciliation`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json()).then(d => { if (Array.isArray(d)) setReconLogs(d); }).catch(() => {});
+      fetch(`${API}/settings/spv-fees`, { headers:{ Authorization:`Bearer ${token}` } })
+        .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setSpvFees(d); }).catch(()=>{});
   }, [tab]);
 
   const loadAll = async () => {
@@ -3078,6 +3081,51 @@ export default function AdminDashboard() {
             ) : (
               <p className="text-xs text-gray-500 text-center py-3">No reconciliation logs yet.</p>
             )}
+
+          {/* ANNUAL SPV FEES */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mt-4 space-y-4">
+            <div>
+              <h3 className="font-bold text-sm">📋 Annual SPV Fees</h3>
+              <p className="text-xs text-gray-500 mt-0.5">USD 2,500 per listed SPV per annum. Generated automatically on each token's listing anniversary.</p>
+            </div>
+            {spvFees.length === 0 ? (
+              <p className="text-xs text-gray-500 text-center py-3">No annual SPV fees generated yet. Fees are created automatically on each token's listing anniversary.</p>
+            ) : (
+              <table className="w-full text-xs border border-gray-800 rounded-xl overflow-hidden">
+                <thead><tr className="text-gray-500 border-b border-gray-800 bg-gray-800/40">
+                  {['Token','Entity','Period','Amount','Due Date','Status','Action'].map(h=><th key={h} className="text-left py-2 px-3 font-medium">{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {spvFees.map((f,i)=>(
+                    <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                      <td className="py-2 px-3 font-bold text-yellow-400">{f.token_symbol}</td>
+                      <td className="py-2 px-3 text-gray-300 truncate max-w-xs">{f.entity_name||'—'}</td>
+                      <td className="py-2 px-3">{f.fee_period}</td>
+                      <td className="py-2 px-3 font-mono">${parseFloat(f.amount_usd).toFixed(2)}</td>
+                      <td className="py-2 px-3 text-gray-400">{f.due_date}</td>
+                      <td className="py-2 px-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs ${f.status==='PAID'?'bg-green-900/40 text-green-300':'bg-amber-900/40 text-amber-300'}`}>{f.status}</span>
+                      </td>
+                      <td className="py-2 px-3">
+                        {f.status==='DUE' && (
+                          <button onClick={async()=>{
+                            const ref=window.prompt(`Enter payment reference for ${f.token_symbol} annual fee:`);
+                            if(!ref) return;
+                            const t=localStorage.getItem('token');
+                            const r=await fetch(`${API}/settings/spv-fees/${f.id}/mark-paid`,{method:'PUT',headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'},body:JSON.stringify({payment_ref:ref})});
+                            const d=await r.json();
+                            if(r.ok){notify('success','Fee marked as paid.');setSpvFees(s=>s.map(x=>x.id===f.id?{...x,status:'PAID',payment_ref:ref}:x));}else notify('error',d.error);
+                          }} className="px-2 py-1 rounded text-xs bg-green-700 hover:bg-green-600 text-white">
+                            ✅ Mark Paid
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
           </div>
           </div>
         )}

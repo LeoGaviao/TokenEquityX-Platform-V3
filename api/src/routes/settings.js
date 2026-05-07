@@ -294,7 +294,6 @@ router.get('/applications', authenticate, requireRole('ADMIN'), async (req, res)
     res.status(500).json({ error: 'Could not fetch applications: ' + err.message });
   }
 });
-
 // GET /api/settings/reconciliation — get reconciliation logs
 router.get('/reconciliation', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
@@ -316,6 +315,29 @@ router.post('/reconciliation/run', authenticate, requireRole('ADMIN'), async (re
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/settings/spv-fees — get all SPV annual fees
+router.get('/spv-fees', authenticate, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM spv_annual_fees ORDER BY due_date DESC'
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/settings/spv-fees/:id/mark-paid — admin marks SPV fee as paid
+router.put('/spv-fees/:id/mark-paid', authenticate, requireRole('ADMIN'), async (req, res) => {
+  const { payment_ref } = req.body;
+  if (!payment_ref) return res.status(400).json({ error: 'Payment reference required' });
+  try {
+    await db.execute(
+      "UPDATE spv_annual_fees SET status='PAID', paid_at=NOW(), payment_ref=? WHERE id=?",
+      [payment_ref, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

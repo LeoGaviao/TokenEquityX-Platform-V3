@@ -152,6 +152,76 @@ cron.schedule('0 * * * *', async () => {
     }
   } catch {}
 });
+
+// Check for annual SPV fee anniversaries — runs daily at 09:00
+cron.schedule('0 9 * * *', async () => {
+  console.log('[CRON] Checking SPV annual fee anniversaries...');
+  try {
+    const db = require('./src/db/pool');
+    const { sendMessage } = require('./src/utils/messenger');
+
+    // Get annual fee amount from settings
+    const [feeRows] = await db.execute(
+      "SELECT value FROM platform_settings WHERE key = 'annual_spv_fee_usd'"
+    );
+    const feeAmount = parseFloat(feeRows[0]?.value || 2500);
+
+    // Get all ACTIVE tokens with their listing dates
+    const [tokens] = await db.execute(
+      `SELECT t.token_symbol, t.listed_at, t.issuer_id,
+              s.entity_name, s.issuer_wallet
+       FROM tokens t
+       LEFT JOIN data_submissions s ON s.token_symbol = t.token_symbol
+         AND s.submission_type = 'TOKENISATION_APPLICATION'
+       WHERE t.status = 'ACTIVE' AND t.listed_at IS NOT NULL
+       ORDER BY t.listed_at ASC`
+    );
+
+    const today = new Date();
+
+    for (const token of tokens) {
+      const listedAt  = new Date(token.listed_at);
+      const monthDay  = `${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+      const listedMD  = `${String(listedAt.getMonth()+1).padStart(2,'0')}-${String(listedAt.getDate()).padStart(2,'0')}`;
+
+      if (monthDay !== listedMD) continue; // Not anniversary today
+
+      const year      = today.getFullYear();
+      const period    = `${year}`;
+      const dueDate   = today.toISOString().split('T')[0];
+
+      // Check if fee already created for this period
+      const [existing] = await db.execute(
+        'SELECT id FROM spv_annual_fees WHERE token_symbol = ? AND fee_period = ?',
+        [token.token_symbol, period]
+      );
+      if (existing.length > 0) continue;
+
+      // Create fee record
+      await db.execute(
+        `INSERT INTO spv_annual_fees (token_symbol, issuer_id, entity_name, fee_period, amount_usd, due_date)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [token.token_symbol, token.issuer_id || token.issuer_wallet, token.entity_name, period, feeAmount, dueDate]
+      );
+
+      // Notify issuer
+      const recipientId = token.issuer_id || token.issuer_wallet;
+      if (recipientId) {
+        await sendMessage({
+          recipientId,
+          subject: `📋 Annual SPV Fee Due — ${token.token_symbol} (${period})`,
+          body: `Your annual SPV maintenance fee for ${token.entity_name} (${token.token_symbol}) is now due.\n\nAmount: $${feeAmount.toFixed(2)} USD\nDue Date: ${dueDate}\nPeriod: ${period}\n\nPlease make payment using the bank details in your issuer dashboard. Use reference: TEXZ-SPV-${token.token_symbol}-${period}`,
+          type: 'SYSTEM',
+          category: 'APPLICATION',
+        }).catch(() => {});
+      }
+
+      console.log(`[CRON] Annual fee created for ${token.token_symbol} — $${feeAmount}`);
+    }
+  } catch (err) {
+    console.error('[CRON] Annual SPV fee check failed:', err.message);
+  }
+});
 // ─── 404 HANDLER ──────────────────────────────────────────────────
 
 // Handle multer/upload errors cleanly

@@ -885,6 +885,27 @@ router.get('/migrate', async (req, res) => {
       ('banking_partner_webhook_url', '', 'Banking partner webhook endpoint URL for push notifications'),
       ('banking_partner_name', 'Stanbic Bank Zimbabwe', 'Name of the banking partner')
     ON CONFLICT (key) DO NOTHING`,
+
+    // ── Annual SPV Fees ───────────────────────────────────────────────
+    `INSERT INTO platform_settings (key, value, description) VALUES
+      ('annual_spv_fee_usd', '2500.00', 'Annual SPV maintenance fee per listed token (USD)')
+    ON CONFLICT (key) DO NOTHING`,
+    `CREATE TABLE IF NOT EXISTS spv_annual_fees (
+      id              UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+      token_symbol    VARCHAR(10)   NOT NULL,
+      issuer_id       UUID,
+      entity_name     VARCHAR(255),
+      fee_period      VARCHAR(20)   NOT NULL,
+      amount_usd      NUMERIC(10,2) NOT NULL DEFAULT 2500.00,
+      due_date        DATE          NOT NULL,
+      status          VARCHAR(20)   NOT NULL DEFAULT 'DUE',
+      paid_at         TIMESTAMP,
+      payment_ref     VARCHAR(100),
+      invoice_sent_at TIMESTAMP,
+      created_at      TIMESTAMP     NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_spv_fees_token ON spv_annual_fees(token_symbol)`,
+    `CREATE INDEX IF NOT EXISTS idx_spv_fees_status ON spv_annual_fees(status)`,
   ];
   const results = [];
   for (const sql of migrations) {
