@@ -1156,4 +1156,18 @@ router.get('/update-user-email', async (req, res) => {
   }
 });
 
+// GET /api/setup/set-token-risk — set risk category for a token
+router.get('/set-token-risk', async (req, res) => {
+  const { secret, symbol, category } = req.query;
+  if (secret !== 'tokenequityx-setup-2024') return res.status(403).json({ error: 'Forbidden' });
+  const VALID = ['CONSERVATIVE','BALANCED','GROWTH','SPECULATIVE'];
+  if (!symbol || !VALID.includes(category)) return res.status(400).json({ error: 'Valid symbol and category required' });
+  try {
+    await pool.execute('UPDATE tokens SET risk_category = ? WHERE token_symbol = ?', [category, symbol.toUpperCase()]);
+    res.json({ success: true, message: `${symbol} risk category set to ${category}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -470,7 +470,7 @@ export default function InvestorDashboard() {
   };
 
   const RiskBadge = ({ token }) => {
-    const sym = token.symbol || token.token_symbol;
+    if (!kycData?.risk_profile) return null; // Don't show badge if investor has no profile yet
     const cat = token.risk_category || 'BALANCED';
     const tokenRank = RISK_RANK[cat] || 2;
     if (!investorRank || tokenRank <= investorRank) return null;
