@@ -671,7 +671,7 @@ if (!['AUDITOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; retur
           const isTokenisation = s.submission_type === 'TOKENISATION_APPLICATION';
           return {
             id:             s.id,
-            issuer:         s.issuer_wallet ? `${s.issuer_wallet.slice(0,6)}…${s.issuer_wallet.slice(-4)}` : 'Unknown',
+            issuer:         s.display_name || s.entity_name || s.token_symbol || (s.issuer_wallet ? `${s.issuer_wallet.slice(0,6)}…${s.issuer_wallet.slice(-4)}` : 'Unknown'),
             token:          s.token_symbol,
             period:         s.period,
             submitted:      s.created_at,
@@ -831,7 +831,7 @@ api.get('/auditor/completed').then(r => {
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <p className="font-bold text-sm">{item.entity_name||item.issuer}</p>
+                        <p className="font-bold text-sm">{item.display_name || item.entity_name || item.issuer}</p>
                         <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full">{item.symbol}</span>
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                           item.priority==='HIGH'?'bg-red-900/60 text-red-300':

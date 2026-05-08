@@ -1847,8 +1847,11 @@ export default function IssuerDashboard() {
 
   useEffect(() => {
     const _u = JSON.parse(localStorage.getItem('user') || '{}');
-    if (!_u?.role) return;
-    if (!['ISSUER','ADMIN'].includes(_u?.role)) { window.location.href = '/'; return; }
+    if (!_u?.id) { window.location.href = '/login'; return; }
+    if (_u.role !== 'ISSUER' && _u.role !== 'ADMIN') {
+      window.location.href = `/${(_u.role || 'investor').toLowerCase()}`;
+      return;
+    }
     loadAll();
   }, [ready]);
 

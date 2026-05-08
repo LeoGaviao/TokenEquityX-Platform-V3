@@ -307,6 +307,76 @@ router.put('/:id/assign',
          `Assigned to: ${assignedAuditor}`]
       );
 
+      // Get submission details for notifications
+      const { sendMessage } = require('../utils/messenger');
+      const { send } = require('../utils/mailer');
+      const [subRows] = await db.execute(
+        'SELECT token_symbol, issuer_wallet, entity_name, reference_number FROM data_submissions WHERE id = ?',
+        [req.params.id]
+      );
+      const sub = subRows[0] || {};
+
+      // Find auditor user by email or UUID
+      const [auditorRows] = await db.execute(
+        'SELECT id, email, full_name FROM users WHERE email = ? OR id = ?',
+        [assignedAuditor, assignedAuditor]
+      );
+      const auditor = auditorRows[0];
+
+      // Notify auditor
+      if (auditor?.id) {
+        await sendMessage({
+          recipientId: auditor.id,
+          subject:     `🔍 New Assignment — ${sub.token_symbol}`,
+          body:        `You have been assigned to review a tokenisation application.\n\nCompany: ${sub.entity_name || sub.token_symbol}\nToken Symbol: ${sub.token_symbol}\nReference: ${sub.reference_number}\n\nPlease log into the auditor dashboard to accept or decline this assignment within 48 hours.`,
+          type:        'SYSTEM',
+          category:    'APPLICATION',
+          referenceId: sub.reference_number,
+        }).catch(() => {});
+
+        if (auditor.email) {
+          send(auditor.email, `[TokenEquityX] New Audit Assignment — ${sub.token_symbol}`,
+            `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+              <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
+              <div style="padding:24px 32px;background:#fff">
+                <h2 style="color:#1A3C5E">New Audit Assignment</h2>
+                <p>Dear ${auditor.full_name || 'Auditor'},</p>
+                <p>You have been assigned to review the following tokenisation application:</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0">
+                  <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Company</td><td style="padding:8px 12px">${sub.entity_name || sub.token_symbol}</td></tr>
+                  <tr><td style="padding:8px 12px;font-weight:600">Token Symbol</td><td style="padding:8px 12px">${sub.token_symbol}</td></tr>
+                  <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Reference</td><td style="padding:8px 12px;font-family:monospace">${sub.reference_number}</td></tr>
+                </table>
+                <p>Please log into your auditor dashboard to <strong>accept or decline</strong> within 48 hours.</p>
+                <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/auditor" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">Go to Auditor Dashboard →</a>
+              </div>
+              <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
+            </div>`
+          ).catch(() => {});
+        }
+      }
+
+      // Notify issuer
+      if (sub.issuer_wallet) {
+        await sendMessage({
+          recipientId: sub.issuer_wallet,
+          subject:     `🔍 Auditor Assigned — ${sub.token_symbol}`,
+          body:        `An auditor has been assigned to your tokenisation application for ${sub.entity_name} (${sub.token_symbol}).\n\nThe auditor will contact you directly to agree the scope and fee. Please have your documents ready.\n\nReference: ${sub.reference_number}`,
+          type:        'SYSTEM',
+          category:    'APPLICATION',
+          referenceId: sub.reference_number,
+        }).catch(() => {});
+      }
+
+      // Confirm to admin
+      await sendMessage({
+        recipientId: req.user.userId,
+        subject:     `✅ Auditor Assigned — ${sub.token_symbol}`,
+        body:        `Auditor successfully assigned to ${sub.entity_name} (${sub.token_symbol}).\n\nAssigned to: ${assignedAuditor}\nReference: ${sub.reference_number}`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+      }).catch(() => {});
+
       res.json({ success: true, assignedAuditor, message: `Submission assigned to ${assignedAuditor}` });
     } catch (err) {
       res.status(500).json({ error: 'Could not assign auditor: ' + err.message });
@@ -843,7 +913,12 @@ router.put('/:id/auditor-accept', authenticate, requireRole('AUDITOR'), async (r
     if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
     const sub = rows[0];
 
-    if (sub.assigned_auditor !== req.user.email && sub.assigned_auditor !== req.user.userId) {
+    // Look up auditor email from DB since JWT doesn't contain email
+    const [auditorUser] = await db.execute('SELECT email FROM users WHERE id = ?', [req.user.userId]);
+    const auditorEmail = auditorUser[0]?.email || '';
+    if (sub.assigned_auditor !== auditorEmail &&
+        sub.assigned_auditor !== req.user.userId &&
+        sub.assigned_auditor !== req.user.wallet) {
       return res.status(403).json({ error: 'This submission is not assigned to you' });
     }
 
@@ -883,6 +958,15 @@ router.put('/:id/auditor-decline', authenticate, requireRole('AUDITOR'), async (
     const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
     const sub = rows[0];
+
+    // Look up auditor email from DB since JWT doesn't contain email
+    const [auditorUser] = await db.execute('SELECT email FROM users WHERE id = ?', [req.user.userId]);
+    const auditorEmail = auditorUser[0]?.email || '';
+    if (sub.assigned_auditor !== auditorEmail &&
+        sub.assigned_auditor !== req.user.userId &&
+        sub.assigned_auditor !== req.user.wallet) {
+      return res.status(403).json({ error: 'This submission is not assigned to you' });
+    }
 
     await db.execute(
       "UPDATE data_submissions SET auditor_status = 'DECLINED', auditor_declined_reason = ?, updated_at = NOW() WHERE id = ?",

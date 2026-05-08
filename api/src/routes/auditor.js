@@ -179,8 +179,13 @@ router.get('/completed', authenticate, requireRole('AUDITOR','ADMIN'), async (re
       SELECT
         ds.id, ds.token_symbol, ds.status,
         ds.entity_name, ds.updated_at as reviewed_at,
-        ds.admin_notes, ds.audit_report, ds.assigned_auditor, ds.data_json
+        ds.admin_notes, ds.audit_report, ds.assigned_auditor, ds.data_json,
+        COALESCE(ek.entity_name, ds.entity_name, u.full_name, ds.issuer_wallet) as display_name,
+        COALESCE(ek.registration_number, '') as registration_number,
+        u.email as issuer_email
       FROM data_submissions ds
+      LEFT JOIN entity_kyc ek ON ek.user_id = ds.issuer_wallet
+      LEFT JOIN users u ON u.id = ds.issuer_wallet
       WHERE ds.status IN ('AUDITOR_APPROVED','ADMIN_APPROVED','REJECTED')
       ORDER BY ds.updated_at DESC
       LIMIT 50
