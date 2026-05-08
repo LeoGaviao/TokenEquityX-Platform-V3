@@ -64,7 +64,7 @@ router.post('/signup', async (req, res) => {
       await sendMessage({
         recipientId: id,
         subject:     '👋 Welcome to TokenEquityX',
-        body:        `Welcome to TokenEquityX, ${full_name}!\n\nYour account has been created successfully.\n\nNext steps:\n${user.role === 'ISSUER' ? '1. Complete your profile in the issuer dashboard\n2. Submit your Entity KYC & AML verification\n3. Prepare your tokenisation application' : '1. Complete your KYC verification\n2. Fund your wallet\n3. Browse available securities in the Market tab'}\n\nIf you have any questions, contact support@tokenequityx.co.zw`,
+        body:        `Welcome to TokenEquityX, ${full_name}!\n\nYour account has been created successfully.\n\nYou will be guided through the next steps after selecting your role.\n\nIf you have any questions, contact support@tokenequityx.co.zw`,
         type:        'SYSTEM',
         category:    'GENERAL',
       });
@@ -93,8 +93,8 @@ router.post('/signup', async (req, res) => {
       if (adminRows.length > 0) {
         await sendMessage({
           recipientId: adminRows[0].id,
-          subject:     `🆕 New ${user.role} Registration — ${full_name}`,
-          body:        `A new user has registered on the platform.\n\nName: ${full_name}\nEmail: ${email}\nRole: ${user.role}\nTime: ${new Date().toLocaleString('en-GB')}\n\nPlease review in the Users tab.`,
+          subject:     `🆕 New User Registration — ${full_name}`,
+          body:        `A new user has registered on the platform.\n\nName: ${full_name}\nEmail: ${email}\nRole: Set during onboarding (role-select step)\nTime: ${new Date().toLocaleString('en-GB')}\n\nPlease review in the Users tab.`,
           type:        'SYSTEM',
           category:    'GENERAL',
         });
@@ -173,6 +173,37 @@ router.post('/role-select', authenticate, async (req, res) => {
     const user   = rows[0];
     const token  = makeToken(user); // re-issue token with new role
 
+    // Send role-specific welcome message now that we know the role
+    try {
+      const { sendMessage } = require('../utils/messenger');
+      const roleMessages = {
+        INVESTOR: '1. Complete your KYC verification\n2. Fund your wallet\n3. Browse available securities in the Market tab',
+        ISSUER:   '1. Submit your Entity KYC & AML verification in your dashboard\n2. Prepare your tokenisation application documents\n3. Submit your application for committee review',
+        PARTNER:  '1. Complete your partner profile\n2. Add your first client lead\n3. Share your referral link with potential investors and issuers',
+      };
+      await sendMessage({
+        recipientId: req.user.userId,
+        subject:     `👋 Welcome to TokenEquityX — ${role} Account`,
+        body:        `Your account is set up as ${role}.\n\nNext steps:\n${roleMessages[role] || 'Log in to your dashboard to get started.'}\n\nIf you have any questions, contact support@tokenequityx.co.zw`,
+        type:        'SYSTEM',
+        category:    'GENERAL',
+      });
+
+      // Update admin notification with correct role
+      const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' AND is_active = TRUE LIMIT 1");
+      if (adminRows.length > 0) {
+        await sendMessage({
+          recipientId: adminRows[0].id,
+          subject:     `🔄 User Role Confirmed — ${user.full_name} is now ${role}`,
+          body:        `A user has confirmed their role.\n\nName: ${user.full_name}\nEmail: ${user.email}\nRole: ${role}\nTime: ${new Date().toLocaleString('en-GB')}`,
+          type:        'SYSTEM',
+          category:    'GENERAL',
+        });
+      }
+    } catch (notifyErr) {
+      console.error('[ROLE-SELECT] Notification failed:', notifyErr.message);
+    }
+
     res.json({ token, user: { id: user.id, role: user.role, email: user.email, full_name: user.full_name } });
   } catch (err) {
     console.error('Role select error:', err);
@@ -184,6 +215,12 @@ router.post('/role-select', authenticate, async (req, res) => {
 // Mark onboarding as complete (after KYC docs uploaded)
 router.post('/complete-onboarding', authenticate, async (req, res) => {
   try {
+    // Get user role to determine correct kyc_status
+    const [rows] = await db.execute('SELECT role FROM users WHERE id = ?', [req.user.userId]);
+    const role = rows[0]?.role || 'INVESTOR';
+
+    // Issuers and Partners don't go through investor KYC — keep status PENDING
+    // Only set PENDING (never APPROVED) via this endpoint
     await db.execute(
       'UPDATE users SET onboarding_complete = TRUE WHERE id = ?',
       [req.user.userId]

@@ -548,7 +548,7 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
 }
 
 // ── ENTITY KYC TAB ──────────────────────────────────────────────
-function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
+function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, onRefresh, refreshing, boThreshold = 10, API, NAVY, GOLD }) {
   const [step,        setStep]        = useState(1);
   const [submitting,  setSubmitting]  = useState(false);
   const [msg,         setMsg]         = useState(null);
@@ -560,6 +560,21 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
     date_incorporated: '', tax_clearance_number: '', source_of_funds: '',
     pep_declaration: false, sanctions_declaration: false, aml_declaration: false,
   });
+
+  useEffect(() => {
+    if (entityKyc && entityKyc.entity_name) {
+      setForm(prev => ({
+        ...prev,
+        entity_name:         entityKyc.entity_name          || '',
+        registration_number: entityKyc.registration_number  || '',
+        registration_country:entityKyc.country              || 'Zimbabwe',
+        registered_address:  entityKyc.registered_address   || '',
+        business_description:entityKyc.business_description || '',
+        business_type:       entityKyc.business_type        || '',
+      }));
+    }
+  }, [entityKyc]);
+
   const inputCls = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500';
   const set = (f, v) => setForm(p => ({...p, [f]: v}));
 
@@ -616,7 +631,13 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
             <p className="text-xs mt-2 text-green-300">✅ Your entity KYC is approved. You may proceed with tokenisation applications.</p>
           )}
           {entityKyc.status === 'PENDING' && (
-            <p className="text-xs mt-2">⏳ Under review. Our compliance team will respond within 3-5 business days.</p>
+            <div>
+              <p className="text-xs mt-2">⏳ Under review. Our compliance team will respond within 3-5 business days.</p>
+              <button onClick={onRefresh}
+                className="mt-3 px-4 py-2 rounded-xl text-xs font-semibold border border-blue-700/50 text-blue-300 hover:bg-blue-900/20">
+                {refreshing ? '⏳ Checking...' : '🔄 Refresh Status'}
+              </button>
+            </div>
           )}
           {entityKyc.status === 'REJECTED' && (
             <div className="mt-2">
@@ -728,9 +749,9 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
           {/* STEP 3: Beneficial Ownership */}
           {step === 3 && (
             <div className="space-y-4">
-              <p className="text-gray-400 text-sm">List all beneficial owners holding 10% or more of the entity.</p>
+              <p className="text-gray-400 text-sm">List all beneficial owners holding {boThreshold}% or more of the entity.</p>
               <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-3 text-xs text-blue-300">
-                ℹ️ FATF requirements mandate disclosure of all beneficial owners with ≥10% ownership or control.
+                ℹ️ FATF requirements mandate disclosure of all beneficial owners with ≥{boThreshold}% ownership or control.
               </div>
               {owners.map((o, i) => (
                 <div key={i} className="bg-gray-800/50 rounded-xl p-4 space-y-3">
@@ -740,12 +761,28 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
                     <div><label className="text-xs text-gray-500 block mb-1">Ownership % *</label><input type="number" value={o.ownership_pct} onChange={e=>setOwn(i,'ownership_pct',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
                     <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport</label><input value={o.id_number} onChange={e=>setOwn(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/></div>
                     <div><label className="text-xs text-gray-500 block mb-1">Nationality</label><input value={o.nationality} onChange={e=>setOwn(i,'nationality',e.target.value)} className={inputCls} placeholder="e.g. Zimbabwean"/></div>
-                    {parseFloat(o.ownership_pct||0) >= 10 && (
+                    {parseFloat(o.ownership_pct||0) >= boThreshold && (
                       <div className="col-span-2">
                         <label className="flex items-start gap-2 cursor-pointer bg-amber-900/20 border border-amber-700/40 rounded-lg p-2">
                           <input type="checkbox" checked={o.kyc_confirmed||false} onChange={e=>setOwn(i,'kyc_confirmed',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
-                          <span className="text-xs text-amber-300">I confirm that {o.name || 'this beneficial owner'} has submitted individual KYC on the TokenEquityX platform. (FATF Recommendation 24 — all beneficial owners with ≥10% must be individually verified)</span>
+                          <span className="text-xs text-amber-300">I confirm that {o.name || 'this beneficial owner'} has submitted individual KYC on the TokenEquityX platform. (FATF Recommendation 24 — all beneficial owners with ≥{boThreshold}% must be individually verified)</span>
                         </label>
+                        <div className="mt-2">
+                          <label className="text-xs text-gray-500 block mb-1">Upload ID Document</label>
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const updated = [...owners];
+                                updated[i] = { ...updated[i], kyc_doc: file, kyc_doc_name: file.name };
+                                setOwners(updated);
+                              }
+                            }}
+                            className="text-xs text-gray-400 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-blue-900/40 file:text-blue-300 hover:file:bg-blue-900/60"/>
+                          {owners[i]?.kyc_doc_name && (
+                            <p className="text-xs text-green-400 mt-1">✔ {owners[i].kyc_doc_name}</p>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -755,9 +792,9 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, API, NAVY, GOLD }) {
               <div className="flex gap-3">
                 <button onClick={()=>setStep(2)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
                 <button onClick={()=>{
-                const unverifiedOwners = owners.filter(o => o.name && parseFloat(o.ownership_pct||0) >= 10 && !o.kyc_confirmed);
+                const unverifiedOwners = owners.filter(o => o.name && parseFloat(o.ownership_pct||0) >= boThreshold && !o.kyc_confirmed);
                 if (unverifiedOwners.length > 0) {
-                  setMsg({ type:'error', text: `Beneficial owners with ≥10% ownership must confirm their individual KYC: ${unverifiedOwners.map(o=>o.name).join(', ')}. Please check the box below each owner to confirm their KYC has been submitted.` });
+                  setMsg({ type:'error', text: `Beneficial owners with ≥${boThreshold}% ownership must confirm their individual KYC: ${unverifiedOwners.map(o=>o.name).join(', ')}. Please check the box below each owner to confirm their KYC has been submitted.` });
                   return;
                 }
                 setMsg(null); setStep(4);
@@ -1794,6 +1831,8 @@ export default function IssuerDashboard() {
   const [myApplications, setMyApplications] = useState([]);
   const [entityKyc,      setEntityKyc]      = useState(null);
   const [kycLoaded,      setKycLoaded]      = useState(false);
+  const [kycRefreshing,  setKycRefreshing]  = useState(false);
+  const [boThreshold,    setBoThreshold]    = useState(10);
   const [tab, setTab] = useState('overview');
 
   useEffect(() => {
@@ -1813,15 +1852,22 @@ export default function IssuerDashboard() {
     loadAll();
   }, [ready]);
 
+  useEffect(() => {
+    if (tab === 'kyc' && entityKyc?.status === 'PENDING') {
+      refreshEntityKyc();
+    }
+  }, [tab]);
+
   const loadAll = async () => {
     try {
-      const [tokRes, tradeRes, divRes, propRes, appRes, kycRes] = await Promise.allSettled([
+      const [tokRes, tradeRes, divRes, propRes, appRes, kycRes, settingsRes] = await Promise.allSettled([
         api.get('/assets/my'),
         api.get('/trading/recent?limit=20'),
         api.get('/dividends/rounds'),
         api.get('/governance/proposals'),
         api.get('/submissions/my'),
         api.get('/entity-kyc/my'),
+        api.get('/settings/public'),
       ]);
       const myToks = (tokRes.status==='fulfilled' ? tokRes.value.data : []);
       setMyTokens(myToks);
@@ -1831,8 +1877,22 @@ export default function IssuerDashboard() {
       if (propRes.status==='fulfilled')  setProposals(propRes.value.data||[]);
       if (appRes.status==='fulfilled')   setMyApplications(appRes.value.data||[]);
       if (kycRes.status==='fulfilled')   { setEntityKyc(kycRes.value.data); setKycLoaded(true); }
+      if (settingsRes.status==='fulfilled') {
+        const raw = settingsRes.value.data?.beneficial_owner_threshold;
+        if (raw != null) setBoThreshold(parseFloat(raw) <= 1 ? parseFloat(raw) * 100 : parseFloat(raw));
+      }
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
+  };
+
+  const refreshEntityKyc = async () => {
+    setKycRefreshing(true);
+    try {
+      const res = await api.get('/entity-kyc/my');
+      if (res.data) { setEntityKyc(res.data); setKycLoaded(true); }
+      else { setEntityKyc(null); setKycLoaded(true); }
+    } catch {}
+    setKycRefreshing(false);
   };
 
   const t       = selToken;
@@ -2227,6 +2287,9 @@ export default function IssuerDashboard() {
             entityKyc={entityKyc}
             kycLoaded={kycLoaded}
             onSubmitted={(kyc) => setEntityKyc(kyc)}
+            onRefresh={refreshEntityKyc}
+            refreshing={kycRefreshing}
+            boThreshold={boThreshold}
             API={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}
             NAVY={NAVY}
             GOLD={GOLD}

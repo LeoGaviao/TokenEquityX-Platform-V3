@@ -8,6 +8,22 @@ const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roles');
 const { sendMessage }  = require('../utils/messenger');
 
+// ── GET /api/settings/public — unauthenticated subset of settings for frontend use
+router.get('/public', async (req, res) => {
+  const PUBLIC_KEYS = ['beneficial_owner_threshold'];
+  try {
+    const [rows] = await db.execute(
+      `SELECT key, value FROM platform_settings WHERE key = ANY($1::text[])`,
+      [PUBLIC_KEYS]
+    );
+    const settings = {};
+    rows.forEach(r => { settings[r.key] = r.value; });
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not fetch public settings' });
+  }
+});
+
 // ── GET /api/settings — get all platform settings
 router.get('/', authenticate, requireRole('ADMIN'), async (req, res) => {
   try {
