@@ -543,6 +543,63 @@ router.put('/:id/admin-approve',
          `Listing type: ${listingType}. Certified price: $${certifiedPrice}. Notes: ${adminNotes||'None'}`]
       );
 
+      // Create compliance fee record
+      const { getNumericSetting } = require('../utils/platformSettings');
+      const { sendMessage } = require('../utils/messenger');
+      const { send } = require('../utils/mailer');
+
+      const complianceFee = await getNumericSetting('compliance_fee_usd', 1500);
+      const feeRef = `TEXZ-APP-${sub.token_symbol}-${Date.now().toString().slice(-6)}`;
+
+      await db.execute(
+        `INSERT INTO application_fees (submission_id, token_symbol, fee_type, amount_usd, reference, status)
+         VALUES (?, ?, 'COMPLIANCE_REVIEW', ?, ?, 'PENDING')
+         ON CONFLICT DO NOTHING`,
+        [req.params.id, sub.token_symbol, complianceFee, feeRef]
+      );
+
+      const [bankSettings] = await db.execute(
+        "SELECT key, value FROM platform_settings WHERE key IN ('bank_name','bank_account_name','bank_account_number','bank_branch','bank_swift_code')"
+      );
+      const bankMap = {};
+      bankSettings.forEach(s => { bankMap[s.key] = s.value; });
+
+      await sendMessage({
+        recipientId: sub.issuer_wallet,
+        subject:     `✅ Application Approved — Fee Invoice: ${sub.token_symbol}`,
+        body:        `Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been approved by the Applications Appraisal Committee.\n\nCompliance Review Fee: $${complianceFee.toFixed(2)} USD\nPayment Reference: ${feeRef}\nBank: ${bankMap.bank_name || 'Stanbic Bank Zimbabwe'}\nAccount Name: ${bankMap.bank_account_name || 'TokenEquityX Ltd'}\nAccount Number: ${bankMap.bank_account_number || 'TBC'}\n\nPlease make payment using the reference above. Your application will proceed to audit review once payment is confirmed.\n\nAn auditor will be assigned shortly.`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+      }).catch(() => {});
+
+      const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      const issuer = issuerRows[0];
+      if (issuer?.email) {
+        send(issuer.email, `✅ Application Approved — ${sub.token_symbol} — Fee Invoice`,
+          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+            <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
+            <div style="padding:24px 32px;background:#fff">
+              <h2 style="color:#16a34a">✅ Application Approved</h2>
+              <p>Dear ${issuer.full_name},</p>
+              <p>Your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) has been approved.</p>
+              <h3 style="color:#1A3C5E">Compliance Review Fee Invoice</h3>
+              <table style="width:100%;border-collapse:collapse;margin:16px 0">
+                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Amount</td><td style="padding:8px 12px;font-weight:700;color:#1A3C5E">$${complianceFee.toFixed(2)} USD</td></tr>
+                <tr><td style="padding:8px 12px;font-weight:600">Payment Reference</td><td style="padding:8px 12px;font-family:monospace;font-weight:700;color:#C8972B">${feeRef}</td></tr>
+                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Bank</td><td style="padding:8px 12px">${bankMap.bank_name || 'Stanbic Bank Zimbabwe'}</td></tr>
+                <tr><td style="padding:8px 12px;font-weight:600">Account Name</td><td style="padding:8px 12px">${bankMap.bank_account_name || 'TokenEquityX Ltd'}</td></tr>
+                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Account Number</td><td style="padding:8px 12px;font-family:monospace">${bankMap.bank_account_number || 'TBC'}</td></tr>
+                <tr><td style="padding:8px 12px;font-weight:600">Branch</td><td style="padding:8px 12px">${bankMap.bank_branch || 'Harare Main Branch'}</td></tr>
+                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">SWIFT</td><td style="padding:8px 12px;font-family:monospace">${bankMap.bank_swift_code || 'SBICZWHX'}</td></tr>
+              </table>
+              <p style="color:#dc2626;font-size:13px"><strong>Important:</strong> Use the payment reference exactly as shown. Payments without the correct reference cannot be matched to your application.</p>
+              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/issuer" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">View Application →</a>
+            </div>
+            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
+          </div>`
+        ).catch(() => {});
+      }
+
       res.json({
         success: true, listingType, certifiedPrice, symbol: symbol.toUpperCase(),
         message: `${symbol.toUpperCase()} approved for ${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse' : 'Peer-to-Peer trading'}. Ready for token minting.`,

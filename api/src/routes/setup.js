@@ -918,6 +918,8 @@ router.get('/migrate', async (req, res) => {
     `DELETE FROM data_submissions WHERE token_symbol IN ('HCPR','GDMR') AND issuer_wallet IN (SELECT id FROM users WHERE email IN ('leomanezh@gmail.com','standube34@gmail.com'))`,
     `DELETE FROM tokens WHERE token_symbol IN ('HCPR','GDMR')`,
     `DELETE FROM users WHERE email IN ('leomgaviao@outlook.com','jdube@gmail.com','standube34@gmail.com','leomanezh@gmail.com','venturesgaviao@gmail.com')`,
+    `UPDATE data_submissions SET issuer_wallet = 'e0e8278a-1906-4fb9-896e-2b295d9ed335' WHERE token_symbol = 'VFHG' AND issuer_wallet = '00000000-0000-0000-0000-000000000001'`,
+    `UPDATE tokens SET issuer_id = 'e0e8278a-1906-4fb9-896e-2b295d9ed335' WHERE token_symbol = 'VFHG' AND issuer_id = '00000000-0000-0000-0000-000000000001'`,
   ];
   const results = [];
   for (const sql of migrations) {
