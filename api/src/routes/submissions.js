@@ -294,12 +294,49 @@ router.put('/:id/assign',
       return res.status(400).json({ error: 'assignedAuditor is required' });
     }
     try {
+      // Resolve auditor identifier to UUID
+      // assignedAuditor could be email, UUID, or wallet address
+      let auditorUUID = assignedAuditor;
+      let auditorEmailResolved = assignedAuditor;
+
+      if (assignedAuditor.includes('@')) {
+        const [audRows] = await db.execute(
+          "SELECT id, email FROM users WHERE email = ? AND role = 'AUDITOR'",
+          [assignedAuditor]
+        );
+        if (audRows.length > 0) {
+          auditorUUID = audRows[0].id;
+          auditorEmailResolved = audRows[0].email;
+        } else {
+          return res.status(404).json({ error: `Auditor with email ${assignedAuditor} not found` });
+        }
+      } else if (!assignedAuditor.match(/^[0-9a-f]{8}-[0-9a-f]{4}-/i)) {
+        // Not a UUID — try looking up by name or wallet
+        const [audRows] = await db.execute(
+          "SELECT id, email FROM users WHERE (full_name ILIKE ? OR wallet = ?) AND role = 'AUDITOR'",
+          [`%${assignedAuditor}%`, assignedAuditor]
+        );
+        if (audRows.length > 0) {
+          auditorUUID = audRows[0].id;
+          auditorEmailResolved = audRows[0].email;
+        }
+      } else {
+        // It's a UUID — look up the email
+        const [audRows] = await db.execute(
+          "SELECT id, email FROM users WHERE id = ? AND role = 'AUDITOR'",
+          [assignedAuditor]
+        );
+        if (audRows.length > 0) {
+          auditorEmailResolved = audRows[0].email;
+        }
+      }
+
       await db.execute(`
         UPDATE data_submissions
         SET assigned_auditor = ?, status = 'UNDER_REVIEW',
-            auditor_notes = COALESCE(auditor_notes,'') || ' | Assigned to: ' || ?
+            auditor_notes = COALESCE(auditor_notes, '') || ' | Assigned to: ' || ?
         WHERE id = ?
-      `, [assignedAuditor, assignedAuditor, req.params.id]);
+      `, [auditorUUID, auditorEmailResolved, req.params.id]);
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
@@ -970,12 +1007,8 @@ router.put('/:id/auditor-accept', authenticate, requireRole('AUDITOR'), async (r
     if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
     const sub = rows[0];
 
-    // Look up auditor email from DB since JWT doesn't contain email
-    const [auditorUser] = await db.execute('SELECT email FROM users WHERE id = ?', [req.user.userId]);
-    const auditorEmail = auditorUser[0]?.email || '';
-    if (sub.assigned_auditor !== auditorEmail &&
-        sub.assigned_auditor !== req.user.userId &&
-        sub.assigned_auditor !== req.user.wallet) {
+    // assigned_auditor is now always stored as UUID
+    if (sub.assigned_auditor !== req.user.userId) {
       return res.status(403).json({ error: 'This submission is not assigned to you' });
     }
 
@@ -1016,12 +1049,8 @@ router.put('/:id/auditor-decline', authenticate, requireRole('AUDITOR'), async (
     if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
     const sub = rows[0];
 
-    // Look up auditor email from DB since JWT doesn't contain email
-    const [auditorUser] = await db.execute('SELECT email FROM users WHERE id = ?', [req.user.userId]);
-    const auditorEmail = auditorUser[0]?.email || '';
-    if (sub.assigned_auditor !== auditorEmail &&
-        sub.assigned_auditor !== req.user.userId &&
-        sub.assigned_auditor !== req.user.wallet) {
+    // assigned_auditor is now always stored as UUID
+    if (sub.assigned_auditor !== req.user.userId) {
       return res.status(403).json({ error: 'This submission is not assigned to you' });
     }
 

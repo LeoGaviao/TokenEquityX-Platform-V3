@@ -1367,6 +1367,7 @@ export default function AdminDashboard() {
   const [selPipeline,setSelPipeline]=useState(null);
   const [assignModal,setAssignModal]=useState(null);
   const [assignNote,setAssignNote]=useState('');
+  const [auditorList,setAuditorList]=useState([]);
   const [kycItems,setKycItems]=useState([]);
   const [entityKycList, setEntityKycList] = useState([]);
   const [expandedKyc, setExpandedKyc] = useState(null);
@@ -1492,6 +1493,14 @@ export default function AdminDashboard() {
       notify('error', 'Failed to reinstate: ' + (e.response?.data?.error || e.message));
     }
   };
+
+  useEffect(() => {
+    if (!assignModal) return;
+    api.get('/auth/staff-list').then(r => {
+      const auditors = (r.data || []).filter(u => u.role === 'AUDITOR');
+      setAuditorList(auditors);
+    }).catch(() => {});
+  }, [assignModal]);
 
   const assignAuditor = async (item, auditorName) => {
     try {
@@ -3176,14 +3185,12 @@ export default function AdminDashboard() {
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Select Auditor</label>
-                <select value={assignNote} onChange={e=>setAssignNote(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-600">
-                  <option value="">— Select an auditor —</option>
-                  {users.filter(u=>u.role==='AUDITOR').map(u=>(
-                    <option key={u.id} value={u.wallet_address||u.wallet||u.id}>{u.email||(u.wallet_address?`${u.wallet_address.slice(0,10)}…`:`Auditor ${u.id}`)} (AUDITOR)</option>
+                <select onChange={e=>setAssignNote(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-600">
+                  <option value="">-- Select Auditor --</option>
+                  {(auditorList.length ? auditorList : users.filter(u=>u.role==='AUDITOR')).map(a=>(
+                    <option key={a.id} value={a.email}>{a.full_name || a.email} ({a.email})</option>
                   ))}
-                  <option value="J. Sibanda CPA (ICAZ)">J. Sibanda CPA (ICAZ)</option>
-                  <option value="T. Moyo CA(Z)">T. Moyo CA(Z)</option>
-                  <option value="R. Chikwanda CFA">R. Chikwanda CFA</option>
                 </select>
               </div>
               <div>
