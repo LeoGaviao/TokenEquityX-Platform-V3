@@ -925,6 +925,10 @@ router.get('/migrate', async (req, res) => {
       ('supabase_anon_key',    '', 'Supabase anon/public key'),
       ('supabase_service_key', '', 'Supabase service role key (super admin only)')
     ON CONFLICT (key) DO NOTHING`,
+    `DELETE FROM tokens WHERE token_symbol = 'VFHG'`,
+    `DELETE FROM spvs WHERE symbol = 'VFHG'`,
+    `DELETE FROM entity_kyc WHERE user_id = 'e0e8278a-1906-4fb9-896e-2b295d9ed335'`,
+    `DELETE FROM application_fees WHERE token_symbol = 'VFHG'`,
   ];
   const results = [];
   for (const sql of migrations) {
