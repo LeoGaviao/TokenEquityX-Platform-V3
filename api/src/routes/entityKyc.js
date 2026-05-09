@@ -70,11 +70,11 @@ router.post('/submit', authenticate, requireRole('ISSUER','ADMIN'), async (req, 
 
     await sendMessage({
       recipientId: req.user.userId,
-      subject:     '📋 Entity KYC Submitted',
+      subject:     `📋 Entity KYC Submitted — ${entity_name}`,
       body:        `Your Entity KYC & AML application for ${entity_name} has been received.\n\nWhat happens next:\n1. Our compliance team will review your submission within 3-5 business days\n2. You may be contacted for additional information\n3. Once approved, you can proceed with your tokenisation application\n4. If rejected, you will receive detailed feedback and may resubmit\n\nKYC Reference: ${kycId}`,
       type:        'SYSTEM',
       category:    'KYC',
-      referenceId: kycId,
+      referenceId: String(kycId),
     }).catch(() => {});
 
     const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
@@ -165,6 +165,23 @@ router.put('/:id/reject', authenticate, requireRole('ADMIN','COMPLIANCE_OFFICER'
     }).catch(() => {});
 
     res.json({ success: true, message: 'KYC rejected. Issuer has been notified.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/entity-kyc/upload-bo-doc — upload a beneficial owner ID document
+router.post('/upload-bo-doc', authenticate, requireRole('ISSUER','ADMIN'), async (req, res) => {
+  try {
+    const upload = require('../middleware/upload');
+    const uploadMiddleware = upload.single('file');
+    uploadMiddleware(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      const { uploadToSupabase } = require('../middleware/upload');
+      const result = await uploadToSupabase(req.file, 'entity-kyc', req.user.userId);
+      res.json({ success: true, url: result.url, path: result.path, name: result.name });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

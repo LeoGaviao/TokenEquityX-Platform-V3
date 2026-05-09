@@ -596,7 +596,15 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, onRefresh, refreshing
       const res   = await fetch(`${API}/entity-kyc/submit`, {
         method:  'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ ...form, directors, beneficial_owners: owners }),
+        body:    JSON.stringify({ ...form, directors, beneficial_owners: owners.map(o => ({
+          name:          o.name,
+          ownership_pct: o.ownership_pct,
+          nationality:   o.nationality,
+          id_number:     o.id_number,
+          kyc_confirmed: o.kyc_confirmed,
+          kyc_doc_url:   o.kyc_doc_url || null,
+          kyc_doc_name:  o.kyc_doc_name || null,
+        })) }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -770,17 +778,42 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, onRefresh, refreshing
                         <div className="mt-2">
                           <label className="text-xs text-gray-500 block mb-1">Upload ID Document</label>
                           <input type="file" accept=".pdf,.jpg,.jpeg,.png"
-                            onChange={e => {
+                            onChange={async e => {
                               const file = e.target.files?.[0];
-                              if (file) {
-                                const updated = [...owners];
-                                updated[i] = { ...updated[i], kyc_doc: file, kyc_doc_name: file.name };
-                                setOwners(updated);
+                              if (!file) return;
+                              const updated = [...owners];
+                              updated[i] = { ...updated[i], kyc_doc_name: `Uploading ${file.name}...`, kyc_doc_uploading: true };
+                              setOwners([...updated]);
+                              try {
+                                const token = localStorage.getItem('token');
+                                const formData = new FormData();
+                                formData.append('file', file);
+                                const res = await fetch(`${API}/entity-kyc/upload-bo-doc`, {
+                                  method: 'POST',
+                                  headers: { Authorization: `Bearer ${token}` },
+                                  body: formData,
+                                });
+                                const data = await res.json();
+                                if (res.ok) {
+                                  const updated2 = [...owners];
+                                  updated2[i] = { ...updated2[i], kyc_doc_url: data.url, kyc_doc_path: data.path, kyc_doc_name: file.name, kyc_doc_uploading: false };
+                                  setOwners([...updated2]);
+                                } else {
+                                  const updated2 = [...owners];
+                                  updated2[i] = { ...updated2[i], kyc_doc_name: `Upload failed: ${data.error}`, kyc_doc_uploading: false };
+                                  setOwners([...updated2]);
+                                }
+                              } catch (err) {
+                                const updated2 = [...owners];
+                                updated2[i] = { ...updated2[i], kyc_doc_name: 'Upload failed', kyc_doc_uploading: false };
+                                setOwners([...updated2]);
                               }
                             }}
                             className="text-xs text-gray-400 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-blue-900/40 file:text-blue-300 hover:file:bg-blue-900/60"/>
                           {owners[i]?.kyc_doc_name && (
-                            <p className="text-xs text-green-400 mt-1">✔ {owners[i].kyc_doc_name}</p>
+                            <p className={`text-xs mt-1 ${owners[i].kyc_doc_uploading ? 'text-yellow-400' : owners[i].kyc_doc_url ? 'text-green-400' : 'text-red-400'}`}>
+                              {owners[i].kyc_doc_uploading ? '⏳' : owners[i].kyc_doc_url ? '✔' : '⚠'} {owners[i].kyc_doc_name}
+                            </p>
                           )}
                         </div>
                       </div>
