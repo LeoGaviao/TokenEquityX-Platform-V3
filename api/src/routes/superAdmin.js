@@ -73,7 +73,7 @@ router.post('/verify-otp', authenticate, requireRole('ADMIN'), requireSuperAdmin
 router.put('/sensitive-setting', authenticate, requireRole('ADMIN'), requireSuperAdmin, async (req, res) => {
   const { key, value, otpCode } = req.body;
   if (!key || value === undefined || !otpCode) return res.status(400).json({ error: 'key, value and otpCode required' });
-  const SENSITIVE_KEYS = ['usdc_omnibus_wallet', 'stripe_secret_key', 'paynow_integration_key'];
+  const SENSITIVE_KEYS = ['usdc_omnibus_wallet', 'stripe_secret_key', 'paynow_integration_key', 'supabase_service_key'];
   if (!SENSITIVE_KEYS.includes(key)) return res.status(400).json({ error: 'Not a sensitive setting' });
   try {
     const [rows] = await db.execute(

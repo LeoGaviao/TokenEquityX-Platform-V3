@@ -69,7 +69,13 @@ async function uploadToSupabase(file, folder = 'general', userId = 'anon') {
 
 // Helper function — generates a fresh signed URL for an existing file
 async function getSignedUrl(filePath, expiresIn = 3600) {
-  const { data, error } = await supabase.storage
+  // Use service key for signed URL generation (required for private buckets)
+  const { createClient } = require('@supabase/supabase-js');
+  const url = process.env.SUPABASE_URL || 'https://uainioygsgoorbwpksna.supabase.co';
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+  const adminClient = createClient(url, key);
+
+  const { data, error } = await adminClient.storage
     .from('documents')
     .createSignedUrl(filePath, expiresIn);
 

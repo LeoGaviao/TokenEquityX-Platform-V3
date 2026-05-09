@@ -2829,6 +2829,36 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-600 mt-2">Last updated: {new Date(settings['banking_partner_webhook_url'].updated_at).toLocaleDateString('en-GB')}</p>
               )}
             </div>
+
+          {/* Supabase Integration */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4">
+            <h3 className="font-bold text-sm mb-1">📦 Supabase Storage</h3>
+            <p className="text-xs text-gray-500 mb-3">Document storage configuration. The service key is managed in the Super Admin panel below.</p>
+            <div className="space-y-3">
+              {[
+                { key:'supabase_url', label:'Supabase Project URL', ph:'https://xxx.supabase.co' },
+                { key:'supabase_anon_key', label:'Supabase Anon Key', ph:'eyJ...' },
+              ].map(s=>(
+                <div key={s.key}>
+                  <label className="text-xs text-gray-400 block mb-1">{s.label}</label>
+                  <div className="flex gap-2">
+                    <input id={`sb-${s.key}`} type="text"
+                      defaultValue={settings[s.key]?.value ?? ''}
+                      placeholder={s.ph}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500 font-mono text-xs"/>
+                    <button onClick={()=>{
+                      const val=document.getElementById(`sb-${s.key}`)?.value;
+                      if(val!==undefined) handleSaveSetting(s.key,val);
+                    }} className="px-4 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold">Save</button>
+                  </div>
+                  {settings[s.key]?.updated_at && (
+                    <p className="text-xs text-gray-600 mt-1">Last updated: {new Date(settings[s.key].updated_at).toLocaleDateString('en-GB')}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
             <div>
               <h2 className="text-xl font-bold mb-1">Platform Settings</h2>
               <p className="text-gray-500 text-sm">Configure fees, meeting schedules, and platform-wide defaults.</p>
@@ -3010,9 +3040,10 @@ export default function AdminDashboard() {
                 <div className="space-y-3">
                   <div className="text-xs text-green-300 bg-green-900/20 border border-green-700/40 rounded-lg px-3 py-2">✅ OTP verified — sensitive settings unlocked</div>
                   {[
-                    {key:'usdc_omnibus_wallet',  label:'USDC Omnibus Wallet Address', ph:'0x...'},
-                    {key:'stripe_secret_key',    label:'Stripe Secret Key',            ph:'sk_live_...'},
-                    {key:'paynow_integration_key',label:'Paynow Integration Key',     ph:'Your key'},
+                    {key:'usdc_omnibus_wallet',   label:'USDC Omnibus Wallet Address', ph:'0x...'},
+                    {key:'stripe_secret_key',     label:'Stripe Secret Key',           ph:'sk_live_...'},
+                    {key:'paynow_integration_key',label:'Paynow Integration Key',      ph:'Your Paynow key'},
+                    {key:'supabase_service_key',  label:'Supabase Service Role Key',   ph:'eyJ...'},
                   ].map(s=>(
                     <div key={s.key} className="flex gap-2 items-end">
                       <div className="flex-1">
