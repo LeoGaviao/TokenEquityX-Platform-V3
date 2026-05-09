@@ -929,6 +929,8 @@ router.get('/migrate', async (req, res) => {
     `DELETE FROM spvs WHERE symbol = 'VFHG'`,
     `DELETE FROM entity_kyc WHERE user_id = 'e0e8278a-1906-4fb9-896e-2b295d9ed335'`,
     `DELETE FROM application_fees WHERE token_symbol = 'VFHG'`,
+    `DELETE FROM application_fees WHERE token_symbol IN ('HCPR','GDMR','ZWGB')`,
+    `UPDATE application_fees SET status = 'PENDING_REVIEW' WHERE token_symbol = 'VFHG' AND status = 'PENDING_REVIEW'`,
   ];
   const results = [];
   for (const sql of migrations) {

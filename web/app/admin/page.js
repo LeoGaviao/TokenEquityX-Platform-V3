@@ -2830,14 +2830,14 @@ export default function AdminDashboard() {
               )}
             </div>
 
-          {/* Supabase Integration */}
+          {/* Supabase Storage Settings */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4">
             <h3 className="font-bold text-sm mb-1">📦 Supabase Storage</h3>
-            <p className="text-xs text-gray-500 mb-3">Document storage configuration. The service key is managed in the Super Admin panel below.</p>
+            <p className="text-xs text-gray-500 mb-3">Document storage configuration. The service role key is managed in the Super Admin panel below.</p>
             <div className="space-y-3">
               {[
-                { key:'supabase_url', label:'Supabase Project URL', ph:'https://xxx.supabase.co' },
-                { key:'supabase_anon_key', label:'Supabase Anon Key', ph:'eyJ...' },
+                { key:'supabase_url',      label:'Supabase Project URL',  ph:'https://xxx.supabase.co' },
+                { key:'supabase_anon_key', label:'Supabase Anon Key',     ph:'eyJ...' },
               ].map(s=>(
                 <div key={s.key}>
                   <label className="text-xs text-gray-400 block mb-1">{s.label}</label>
