@@ -1386,6 +1386,10 @@ export default function AdminDashboard() {
   const [reconLogs,    setReconLogs]        = useState([]);
   const [reconRunning, setReconRunning]     = useState(false);
   const [spvFees, setSpvFees] = useState([]);
+  const [staffList,    setStaffList]    = useState([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [newStaff,     setNewStaff]     = useState({ email:'', password:'', full_name:'', role:'AUDITOR' });
+  const [staffMsg,     setStaffMsg]     = useState('');
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [appFeeModal, setAppFeeModal] = useState(null);
@@ -1541,6 +1545,10 @@ export default function AdminDashboard() {
         .then(r => r.json()).then(d => { if (Array.isArray(d)) setReconLogs(d); }).catch(() => {});
       fetch(`${API}/settings/spv-fees`, { headers:{ Authorization:`Bearer ${token}` } })
         .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setSpvFees(d); }).catch(()=>{});
+      setStaffLoading(true);
+      fetch(`${API}/auth/staff-list`, { headers:{ Authorization:`Bearer ${token}` } })
+        .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setStaffList(d); }).catch(()=>{})
+        .finally(()=>setStaffLoading(false));
   }, [tab]);
 
   const loadAll = async () => {
@@ -2816,75 +2824,6 @@ export default function AdminDashboard() {
               </a>
             </div>
             {/* Banking Partner Webhook URL */}
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4">
-              <h3 className="font-bold text-sm mb-1">🔗 Banking Partner Webhook</h3>
-              <p className="text-xs text-gray-500 mb-3">The platform will push JSON notifications to this URL on key events: deposits, trades, disbursements, WHT batches and reconciliation alerts.</p>
-              <div className="flex gap-2">
-                <input
-                  id="webhook-url-input"
-                  type="url"
-                  defaultValue={settings['banking_partner_webhook_url']?.value ?? ''}
-                  placeholder="https://banking-partner-endpoint.com/tokenequityx/webhook"
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
-                />
-                <button onClick={()=>{
-                  const val = document.getElementById('webhook-url-input')?.value;
-                  if (val !== undefined) handleSaveSetting('banking_partner_webhook_url', val);
-                }} className="px-4 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold whitespace-nowrap">
-                  Save URL
-                </button>
-              </div>
-              {settings['banking_partner_webhook_url']?.updated_at && (
-                <p className="text-xs text-gray-600 mt-2">Last updated: {new Date(settings['banking_partner_webhook_url'].updated_at).toLocaleDateString('en-GB')}</p>
-              )}
-            </div>
-
-          {/* Supabase Storage Settings */}
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4">
-            <h3 className="font-bold text-sm mb-1">📦 Supabase Storage</h3>
-            <p className="text-xs text-gray-500 mb-3">Document storage configuration. The service role key is managed in the Super Admin panel below.</p>
-            <div className="space-y-3">
-              {[
-                { key:'supabase_url',      label:'Supabase Project URL',  ph:'https://xxx.supabase.co' },
-                { key:'supabase_anon_key', label:'Supabase Anon Key',     ph:'eyJ...' },
-              ].map(s=>(
-                <div key={s.key}>
-                  <label className="text-xs text-gray-400 block mb-1">{s.label}</label>
-                  <div className="flex gap-2">
-                    <input id={`sb-${s.key}`} type="text"
-                      defaultValue={settings[s.key]?.value ?? ''}
-                      placeholder={s.ph}
-                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500 font-mono text-xs"/>
-                    <button onClick={()=>{
-                      const val=document.getElementById(`sb-${s.key}`)?.value;
-                      if(val!==undefined) handleSaveSetting(s.key,val);
-                    }} className="px-4 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold">Save</button>
-                  </div>
-                  {settings[s.key]?.updated_at && (
-                    <p className="text-xs text-gray-600 mt-1">Last updated: {new Date(settings[s.key].updated_at).toLocaleDateString('en-GB')}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-            <div>
-              <h2 className="text-xl font-bold mb-1">Platform Settings</h2>
-              <p className="text-gray-500 text-sm">Configure fees, meeting schedules, and platform-wide defaults.</p>
-            </div>
-
-            {settingsSaved && (
-              <div className="bg-green-900/40 border border-green-700 text-green-300 rounded-xl px-4 py-3 text-sm">✅ Setting saved successfully.</div>
-            )}
-
-            {settingsLoading ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-3xl mb-2">⏳</p><p>Loading settings…</p>
-              </div>
-            ) : (
-              <>
-              {/* TAX AND FEE RATES */}
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4">
                 <h3 className="font-bold text-sm mb-1">💰 Tax & Fee Rates</h3>
                 <p className="text-xs text-gray-500 mb-4">These rates are applied dynamically across all platform calculations. Changes take effect immediately.</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -3160,6 +3099,104 @@ export default function AdminDashboard() {
                           </button>
                         )}
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* ── Staff Management ── */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mt-4 space-y-4">
+            <div>
+              <h3 className="font-bold text-sm">👥 Staff Management</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Create and manage auditor and compliance officer accounts.</p>
+            </div>
+
+            {/* Create staff form */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Full Name *</label>
+                <input type="text" value={newStaff.full_name}
+                  onChange={e=>setNewStaff(s=>({...s,full_name:e.target.value}))}
+                  placeholder="e.g. Jane Moyo"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Email *</label>
+                <input type="email" value={newStaff.email}
+                  onChange={e=>setNewStaff(s=>({...s,email:e.target.value}))}
+                  placeholder="staff@tokenequityx.co.zw"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Password *</label>
+                <input type="password" value={newStaff.password}
+                  onChange={e=>setNewStaff(s=>({...s,password:e.target.value}))}
+                  placeholder="Temporary password"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Role *</label>
+                <select value={newStaff.role}
+                  onChange={e=>setNewStaff(s=>({...s,role:e.target.value}))}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500">
+                  <option value="AUDITOR">Auditor</option>
+                  <option value="COMPLIANCE_OFFICER">Compliance Officer</option>
+                </select>
+              </div>
+            </div>
+            {staffMsg && <p className={`text-xs ${staffMsg.startsWith('✅')?'text-green-400':'text-red-400'}`}>{staffMsg}</p>}
+            <button
+              disabled={!newStaff.email||!newStaff.password||!newStaff.full_name}
+              onClick={async()=>{
+                setStaffMsg('');
+                const token=localStorage.getItem('token');
+                const r=await fetch(`${API}/auth/create-staff`,{
+                  method:'POST',
+                  headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+                  body:JSON.stringify(newStaff),
+                });
+                const d=await r.json();
+                if(r.ok){
+                  setStaffMsg('✅ Staff account created successfully.');
+                  setNewStaff({email:'',password:'',full_name:'',role:'AUDITOR'});
+                  const r2=await fetch(`${API}/auth/staff-list`,{headers:{Authorization:`Bearer ${token}`}});
+                  const d2=await r2.json();
+                  if(Array.isArray(d2)) setStaffList(d2);
+                } else {
+                  setStaffMsg(`❌ ${d.error||'Failed to create account.'}`);
+                }
+              }}
+              className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
+              style={{background:GOLD}}>
+              ➕ Create Staff Account
+            </button>
+
+            {/* Existing staff table */}
+            {staffLoading ? (
+              <p className="text-xs text-gray-500 text-center py-3">Loading staff...</p>
+            ) : staffList.length === 0 ? (
+              <p className="text-xs text-gray-500 text-center py-3">No staff accounts found.</p>
+            ) : (
+              <table className="w-full text-xs border border-gray-800 rounded-xl overflow-hidden">
+                <thead className="bg-gray-800 text-gray-400">
+                  <tr>
+                    {['Name','Email','Role','KYC Status','Created'].map(h=><th key={h} className="text-left py-2 px-3 font-medium">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {staffList.map((s,i)=>(
+                    <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                      <td className="py-2 px-3 font-semibold text-white">{s.full_name||'—'}</td>
+                      <td className="py-2 px-3 text-gray-300">{s.email}</td>
+                      <td className="py-2 px-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.role==='AUDITOR'?'bg-blue-900/40 text-blue-300':'bg-purple-900/40 text-purple-300'}`}>{s.role}</span>
+                      </td>
+                      <td className="py-2 px-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.kyc_status==='APPROVED'?'bg-green-900/40 text-green-300':'bg-yellow-900/40 text-yellow-300'}`}>{s.kyc_status||'NONE'}</span>
+                      </td>
+                      <td className="py-2 px-3 text-gray-400">{dt(s.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>

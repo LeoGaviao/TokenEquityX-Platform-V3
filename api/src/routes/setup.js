@@ -936,6 +936,16 @@ router.get('/migrate', async (req, res) => {
     `DELETE FROM application_fees WHERE token_symbol = 'VFHG'`,
     `DELETE FROM entity_kyc WHERE user_id = 'e0e8278a-1906-4fb9-896e-2b295d9ed335'`,
     `DELETE FROM users WHERE role = 'AUDITOR'`,
+    `INSERT INTO users (id, email, password_hash, role, kyc_status, onboarding_complete, full_name)
+     VALUES (
+       '00000000-0000-0000-0000-000000000002',
+       'leomgaviao@tokenequityx.co.zw',
+       '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+       'AUDITOR', 'APPROVED', TRUE, 'Leo Manezhu Gaviao'
+     ) ON CONFLICT (id) DO UPDATE SET
+       email = 'leomgaviao@tokenequityx.co.zw',
+       full_name = 'Leo Manezhu Gaviao',
+       role = 'AUDITOR'`,
   ];
   const results = [];
   for (const sql of migrations) {
