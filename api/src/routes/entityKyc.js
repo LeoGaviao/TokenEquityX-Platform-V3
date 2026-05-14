@@ -171,6 +171,11 @@ router.put('/:id/reject', authenticate, requireRole('ADMIN','COMPLIANCE_OFFICER'
 });
 
 // POST /api/entity-kyc/upload-bo-doc — upload a beneficial owner ID document
+// FormData fields: file (required), owner_index (optional int)
+// If owner_index is supplied and an entity_kyc record already exists for this user,
+// the uploaded URL is written back into beneficial_owners[owner_index].kyc_doc_url.
+// When no record exists yet (first-time flow) the URL is returned and the frontend
+// includes it in the full beneficial_owners array on POST /submit.
 router.post('/upload-bo-doc', authenticate, requireRole('ISSUER','ADMIN'), async (req, res) => {
   try {
     const upload = require('../middleware/upload');
@@ -178,8 +183,39 @@ router.post('/upload-bo-doc', authenticate, requireRole('ISSUER','ADMIN'), async
     uploadMiddleware(req, res, async (err) => {
       if (err) return res.status(400).json({ error: err.message });
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
       const { uploadToSupabase } = require('../middleware/upload');
       const result = await uploadToSupabase(req.file, 'entity-kyc', req.user.userId);
+
+      // Attempt writeback if an existing KYC record is present
+      const ownerIndex = req.body.owner_index !== undefined ? parseInt(req.body.owner_index, 10) : null;
+      try {
+        const [rows] = await db.execute(
+          "SELECT id, beneficial_owners FROM entity_kyc WHERE user_id = ? AND status NOT IN ('REJECTED') ORDER BY created_at DESC LIMIT 1",
+          [req.user.userId]
+        );
+        if (rows.length > 0 && ownerIndex !== null && !isNaN(ownerIndex)) {
+          const kycRow = rows[0];
+          const owners = typeof kycRow.beneficial_owners === 'string'
+            ? JSON.parse(kycRow.beneficial_owners)
+            : (kycRow.beneficial_owners || []);
+          if (Array.isArray(owners) && owners[ownerIndex] !== undefined) {
+            owners[ownerIndex] = {
+              ...owners[ownerIndex],
+              kyc_doc_url:  result.url,
+              kyc_doc_path: result.path,
+              kyc_doc_name: result.name,
+            };
+            await db.execute(
+              'UPDATE entity_kyc SET beneficial_owners = ?, updated_at = NOW() WHERE id = ?',
+              [JSON.stringify(owners), kycRow.id]
+            );
+          }
+        }
+      } catch (_writebackErr) {
+        // Writeback failure must never block the upload response
+      }
+
       res.json({ success: true, url: result.url, path: result.path, name: result.name });
     });
   } catch (err) {

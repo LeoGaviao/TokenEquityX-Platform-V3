@@ -2358,7 +2358,7 @@ export default function AdminDashboard() {
                                   <p className="text-gray-400 font-semibold mb-2">Beneficial Owners ≥25%</p>
                                   <div className="space-y-1">
                                     {owners.map((o,i) => {
-                                      const idDocUrl = o.url || o.file_url || o.id_doc_url || o.id_doc || null;
+                                      const idDocUrl = o.kyc_doc_url || o.url || o.file_url || o.id_doc_url || o.id_doc || null;
                                       return (
                                         <div key={i} className="bg-gray-900/60 rounded-lg p-2">
                                           <p className="text-white font-medium">{o.name} — {o.ownership_pct}%</p>
