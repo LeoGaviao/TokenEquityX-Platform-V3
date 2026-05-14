@@ -427,7 +427,7 @@ router.put('/:id/status',
   requireRole('ADMIN', 'AUDITOR', 'COMPLIANCE_OFFICER'),
   async (req, res) => {
     const { status, notes } = req.body;
-    const valid = ['APPROVED','REJECTED','UNDER_REVIEW','INFO_REQUESTED','AUDITOR_APPROVED','ADMIN_APPROVED'];
+    const valid = ['REJECTED','UNDER_REVIEW','INFO_REQUESTED','APPROVED'];
     if (!valid.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Must be one of: ${valid.join(', ')}` });
     }
@@ -526,7 +526,14 @@ router.put('/:id/admin-approve',
       const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
       if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
 
-      const sub            = rows[0];
+      const sub = rows[0];
+
+      if (sub.status !== 'AUDITOR_APPROVED') {
+        return res.status(422).json({
+          error: `Cannot approve: submission status is '${sub.status}'. Admin final approval requires the submission to be in AUDITOR_APPROVED status.`,
+        });
+      }
+
       const auditReport    = sub.audit_report
         ? (typeof sub.audit_report === 'string' ? JSON.parse(sub.audit_report) : sub.audit_report)
         : {};
