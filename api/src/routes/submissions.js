@@ -544,11 +544,12 @@ router.put('/:id/admin-approve',
 
       await db.execute(`
         UPDATE data_submissions
-        SET status = 'ADMIN_APPROVED', listing_type = ?,
+        SET status = 'TOKENIZATION_PENDING', listing_type = ?,
             admin_approved_by = ?, admin_approved_at = NOW(), admin_notes = ?
         WHERE id = ?
       `, [listingType, req.user.userId, adminNotes || null, req.params.id]);
 
+      // Ensure token record exists in PENDING state (do NOT activate it yet)
       const [existingToken] = await db.execute(
         'SELECT id FROM tokens WHERE token_symbol = ?', [symbol.toUpperCase()]
       );
@@ -557,11 +558,9 @@ router.put('/:id/admin-approve',
         await db.execute(`
           UPDATE tokens
           SET listing_type = ?, current_price_usd = ?,
-              trading_mode = ?, market_state = 'FULL_TRADING',
-              status = 'ACTIVE', market_cap = ?, listed_at = NOW(), updated_at = NOW()
+              trading_mode = ?, updated_at = NOW()
           WHERE token_symbol = ?
-        `, [listingType, certifiedPrice, trading_mode,
-            parseFloat(certifiedPrice) * total_supply, symbol.toUpperCase()]);
+        `, [listingType, certifiedPrice, trading_mode, symbol.toUpperCase()]);
       } else {
         await db.execute(`
           INSERT INTO tokens
@@ -569,8 +568,8 @@ router.put('/:id/admin-approve',
              asset_type, asset_class, issuer_id,
              total_supply, current_price_usd, price_usd,
              market_cap, trading_mode, market_state, status,
-             listing_type, jurisdiction, submission_id, listed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, ?, NOW())
+             listing_type, jurisdiction, submission_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 'PENDING', ?, ?, ?)
         `, [
           symbol.toUpperCase(), sub.entity_name || symbol, sub.entity_name || symbol,
           symbol.toUpperCase(), sub.entity_name || symbol,
@@ -584,7 +583,7 @@ router.put('/:id/admin-approve',
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
         ['ADMIN_FINAL_APPROVAL', req.user.wallet || req.user.userId, symbol,
-         `Listing type: ${listingType}. Certified price: $${certifiedPrice}. Notes: ${adminNotes||'None'}`]
+         `Listing type: ${listingType}. Certified price: $${certifiedPrice}. Notes: ${adminNotes||'None'}. Status: TOKENIZATION_PENDING.`]
       );
 
       // Create compliance fee record
@@ -610,8 +609,8 @@ router.put('/:id/admin-approve',
 
       await sendMessage({
         recipientId: sub.issuer_wallet,
-        subject:     `✅ Application Approved — Fee Invoice: ${sub.token_symbol}`,
-        body:        `Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been approved by the Applications Appraisal Committee.\n\nCompliance Review Fee: $${complianceFee.toFixed(2)} USD\nPayment Reference: ${feeRef}\nBank: ${bankMap.bank_name || 'Stanbic Bank Zimbabwe'}\nAccount Name: ${bankMap.bank_account_name || 'TokenEquityX Ltd'}\nAccount Number: ${bankMap.bank_account_number || 'TBC'}\n\nPlease make payment using the reference above. Your application will proceed to audit review once payment is confirmed.\n\nAn auditor will be assigned shortly.`,
+        subject:     `✅ Committee Approved — Tokenisation Pending: ${sub.token_symbol}`,
+        body:        `Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been approved by the Applications Appraisal Committee.\n\nYour application is now entering the tokenisation preparation stage. It will be submitted to the Securities and Exchange Commission of Zimbabwe (SECZ) for regulatory review before your token goes live.\n\nCompliance Review Fee: $${complianceFee.toFixed(2)} USD\nPayment Reference: ${feeRef}\nBank: ${bankMap.bank_name || 'Stanbic Bank Zimbabwe'}\nAccount Name: ${bankMap.bank_account_name || 'TokenEquityX Ltd'}\nAccount Number: ${bankMap.bank_account_number || 'TBC'}\n\nPlease make payment using the reference above.`,
         type:        'SYSTEM',
         category:    'APPLICATION',
       }).catch(() => {});
@@ -619,13 +618,14 @@ router.put('/:id/admin-approve',
       const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
       const issuer = issuerRows[0];
       if (issuer?.email) {
-        send(issuer.email, `✅ Application Approved — ${sub.token_symbol} — Fee Invoice`,
+        send(issuer.email, `✅ Committee Approved — Tokenisation Pending — ${sub.token_symbol}`,
           `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
             <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
             <div style="padding:24px 32px;background:#fff">
-              <h2 style="color:#16a34a">✅ Application Approved</h2>
+              <h2 style="color:#16a34a">✅ Committee Approved</h2>
               <p>Dear ${issuer.full_name},</p>
-              <p>Your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) has been approved.</p>
+              <p>Your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) has been approved by the Applications Appraisal Committee.</p>
+              <p style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 16px;border-radius:4px;font-size:14px">Your application is now entering the <strong>Tokenisation Pending</strong> stage. It will next be submitted to SECZ for regulatory review before your token goes live on the platform.</p>
               <h3 style="color:#1A3C5E">Compliance Review Fee Invoice</h3>
               <table style="width:100%;border-collapse:collapse;margin:16px 0">
                 <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Amount</td><td style="padding:8px 12px;font-weight:700;color:#1A3C5E">$${complianceFee.toFixed(2)} USD</td></tr>
@@ -646,7 +646,7 @@ router.put('/:id/admin-approve',
 
       res.json({
         success: true, listingType, certifiedPrice, symbol: symbol.toUpperCase(),
-        message: `${symbol.toUpperCase()} approved for ${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse' : 'Peer-to-Peer trading'}. Ready for token minting.`,
+        message: `${symbol.toUpperCase()} approved by committee. Status: TOKENIZATION_PENDING. Next: submit to SECZ for regulatory review.`,
       });
     } catch (err) {
       res.status(500).json({ error: 'Admin approval failed: ' + err.message });
@@ -1245,5 +1245,241 @@ router.put('/:id/reinstate', authenticate, requireRole('ADMIN'), async (req, res
     res.status(500).json({ error: err.message });
   } finally { conn.release(); }
 });
+
+// ── PUT /api/submissions/:id/submit-to-secz ────────────────────
+router.put('/:id/submit-to-secz',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+
+      const sub = rows[0];
+      if (sub.status !== 'TOKENIZATION_PENDING') {
+        return res.status(422).json({
+          error: `Cannot submit to SECZ: submission status is '${sub.status}'. Required: TOKENIZATION_PENDING.`,
+        });
+      }
+
+      await db.execute(
+        "UPDATE data_submissions SET status = 'SECZ_REVIEW', updated_at = NOW() WHERE id = ?",
+        [req.params.id]
+      );
+
+      await db.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        ['SECZ_REVIEW_SUBMITTED', req.user.wallet || req.user.userId, sub.token_symbol,
+         `Submitted to SECZ for regulatory review.`]
+      );
+
+      const { sendMessage } = require('../utils/messenger');
+      const { send } = require('../utils/mailer');
+
+      await sendMessage({
+        recipientId: sub.issuer_wallet,
+        subject:     `🏛️ Submitted to SECZ — ${sub.token_symbol}`,
+        body:        `Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been submitted to the Securities and Exchange Commission of Zimbabwe (SECZ) for regulatory review. You will be notified once a decision is made.`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+      }).catch(() => {});
+
+      const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      const issuer = issuerRows[0];
+      if (issuer?.email) {
+        send(issuer.email, `🏛️ Submitted to SECZ — ${sub.token_symbol}`,
+          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+            <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
+            <div style="padding:24px 32px;background:#fff">
+              <h2 style="color:#d97706">🏛️ SECZ Regulatory Review</h2>
+              <p>Dear ${issuer.full_name},</p>
+              <p>Your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) has been submitted to the <strong>Securities and Exchange Commission of Zimbabwe (SECZ)</strong> for regulatory review.</p>
+              <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px">You will be notified as soon as a regulatory decision is reached. This process typically takes a few business days.</p>
+              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/issuer" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">View Application →</a>
+            </div>
+            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
+          </div>`
+        ).catch(() => {});
+      }
+
+      res.json({ success: true, status: 'SECZ_REVIEW', message: `${sub.token_symbol} submitted to SECZ for regulatory review.` });
+    } catch (err) {
+      res.status(500).json({ error: 'Submit to SECZ failed: ' + err.message });
+    }
+  }
+);
+
+// ── PUT /api/submissions/:id/secz-approve ──────────────────────
+router.put('/:id/secz-approve',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+
+      const sub = rows[0];
+      if (sub.status !== 'SECZ_REVIEW') {
+        return res.status(422).json({
+          error: `Cannot record SECZ approval: submission status is '${sub.status}'. Required: SECZ_REVIEW.`,
+        });
+      }
+
+      await db.execute(
+        "UPDATE data_submissions SET status = 'SECZ_APPROVED', updated_at = NOW() WHERE id = ?",
+        [req.params.id]
+      );
+
+      await db.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        ['SECZ_APPROVED', req.user.wallet || req.user.userId, sub.token_symbol,
+         `SECZ regulatory approval recorded. Ready to go live.`]
+      );
+
+      const { sendMessage } = require('../utils/messenger');
+      const { send } = require('../utils/mailer');
+
+      await sendMessage({
+        recipientId: sub.issuer_wallet,
+        subject:     `✅ SECZ Approved — ${sub.token_symbol}`,
+        body:        `Great news! Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has received regulatory approval from SECZ. Your token is now ready to be set live on the TokenEquityX platform. You will be notified when trading begins.`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+      }).catch(() => {});
+
+      const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      const issuer = issuerRows[0];
+      if (issuer?.email) {
+        send(issuer.email, `✅ SECZ Approved — ${sub.token_symbol} — Ready to Launch`,
+          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+            <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
+            <div style="padding:24px 32px;background:#fff">
+              <h2 style="color:#16a34a">✅ SECZ Approval Granted</h2>
+              <p>Dear ${issuer.full_name},</p>
+              <p>Congratulations! Your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) has received <strong>regulatory approval from SECZ</strong>.</p>
+              <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px">Your token is now cleared for listing. TokenEquityX will activate it on the platform shortly. You will receive a final notification when your token is live and trading begins.</p>
+              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/issuer" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">View Application →</a>
+            </div>
+            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
+          </div>`
+        ).catch(() => {});
+      }
+
+      res.json({ success: true, status: 'SECZ_APPROVED', message: `${sub.token_symbol} SECZ approval recorded. Ready to set live.` });
+    } catch (err) {
+      res.status(500).json({ error: 'SECZ approve failed: ' + err.message });
+    }
+  }
+);
+
+// ── PUT /api/submissions/:id/set-live ─────────────────────────
+router.put('/:id/set-live',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+
+      const sub = rows[0];
+      if (sub.status !== 'SECZ_APPROVED') {
+        return res.status(422).json({
+          error: `Cannot set live: submission status is '${sub.status}'. Required: SECZ_APPROVED.`,
+        });
+      }
+
+      const auditReport    = sub.audit_report
+        ? (typeof sub.audit_report === 'string' ? JSON.parse(sub.audit_report) : sub.audit_report)
+        : {};
+      const certifiedPrice = parseFloat(auditReport.certifiedPrice || 1.0);
+      const symbol         = sub.token_symbol;
+      const listingType    = sub.listing_type || 'GREENFIELD_P2P';
+      const trading_mode   = listingType === 'GREENFIELD_P2P' ? 'P2P_ONLY' : 'FULL_TRADING';
+      const total_supply   = sub.total_supply || 1000000;
+
+      const [existingToken] = await db.execute(
+        'SELECT id FROM tokens WHERE token_symbol = ?', [symbol.toUpperCase()]
+      );
+
+      if (existingToken.length > 0) {
+        await db.execute(`
+          UPDATE tokens
+          SET trading_mode = ?, market_state = 'FULL_TRADING',
+              status = 'ACTIVE', market_cap = ?, listed_at = NOW(), updated_at = NOW()
+          WHERE token_symbol = ?
+        `, [trading_mode, parseFloat(certifiedPrice) * total_supply, symbol.toUpperCase()]);
+      } else {
+        await db.execute(`
+          INSERT INTO tokens
+            (symbol, name, company_name, token_symbol, token_name,
+             asset_type, asset_class, issuer_id,
+             total_supply, current_price_usd, price_usd,
+             market_cap, trading_mode, market_state, status,
+             listing_type, jurisdiction, submission_id, listed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, ?, NOW())
+        `, [
+          symbol.toUpperCase(), sub.entity_name || symbol, sub.entity_name || symbol,
+          symbol.toUpperCase(), sub.entity_name || symbol,
+          sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY', sub.issuer_wallet || null,
+          total_supply, certifiedPrice, certifiedPrice,
+          parseFloat(certifiedPrice) * total_supply, trading_mode,
+          listingType, sub.jurisdiction || 'Zimbabwe', req.params.id
+        ]);
+      }
+
+      await db.execute(
+        "UPDATE data_submissions SET status = 'LIVE', updated_at = NOW() WHERE id = ?",
+        [req.params.id]
+      );
+
+      await db.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        ['TOKEN_SET_LIVE', req.user.wallet || req.user.userId, symbol,
+         `Token activated. Price: $${certifiedPrice}. Mode: ${trading_mode}. Listing: ${listingType}.`]
+      );
+
+      const { sendMessage } = require('../utils/messenger');
+      const { send } = require('../utils/mailer');
+
+      await sendMessage({
+        recipientId: sub.issuer_wallet,
+        subject:     `🚀 ${symbol} is Now Live!`,
+        body:        `Congratulations! Your token ${sub.entity_name} (${symbol}) is now LIVE on the TokenEquityX platform.\n\nListing Type: ${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse' : 'Peer-to-Peer'}\nToken Price: $${certifiedPrice.toFixed(4)} USD\nTrading Mode: ${trading_mode}\n\nYour token is now available for trading. Log in to monitor performance.`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+      }).catch(() => {});
+
+      const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      const issuer = issuerRows[0];
+      if (issuer?.email) {
+        send(issuer.email, `🚀 ${symbol} is Now Live on TokenEquityX!`,
+          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+            <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
+            <div style="padding:24px 32px;background:#fff">
+              <h2 style="color:#16a34a">🚀 Your Token is Live!</h2>
+              <p>Dear ${issuer.full_name},</p>
+              <p>Congratulations! <strong>${sub.entity_name} (${symbol})</strong> is now <strong>LIVE</strong> on the TokenEquityX platform and available for trading.</p>
+              <table style="width:100%;border-collapse:collapse;margin:16px 0">
+                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Token Symbol</td><td style="padding:8px 12px;font-family:monospace;font-weight:700;color:#C8972B">${symbol}</td></tr>
+                <tr><td style="padding:8px 12px;font-weight:600">Token Price</td><td style="padding:8px 12px;font-weight:700;color:#1A3C5E">$${certifiedPrice.toFixed(4)} USD</td></tr>
+                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Listing Type</td><td style="padding:8px 12px">${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse' : 'Peer-to-Peer'}</td></tr>
+                <tr><td style="padding:8px 12px;font-weight:600">Trading Mode</td><td style="padding:8px 12px">${trading_mode}</td></tr>
+              </table>
+              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/issuer" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">View Your Token →</a>
+            </div>
+            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
+          </div>`
+        ).catch(() => {});
+      }
+
+      res.json({
+        success: true, status: 'LIVE', symbol: symbol.toUpperCase(),
+        message: `${symbol} is now LIVE. Token status: ACTIVE. Trading mode: ${trading_mode}.`,
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Set live failed: ' + err.message });
+    }
+  }
+);
 
 module.exports = router;

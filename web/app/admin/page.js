@@ -1593,9 +1593,9 @@ export default function AdminDashboard() {
             kyc:      entityKycMap[s.issuer_wallet] === 'APPROVED' || ['APPROVED','FEE_CONFIRMED','UNDER_REVIEW','AUDITOR_APPROVED'].includes(s.application_status) || s.status === 'ADMIN_APPROVED',
             docs:     (s.document_count||0) > 0,
             auditor:  s.auditor_status === 'ACCEPTED' || s.status === 'AUDITOR_APPROVED' || s.status === 'ADMIN_APPROVED',
-            contract: s.status === 'ADMIN_APPROVED',
-            secz:     s.status === 'ADMIN_APPROVED' && !!s.admin_approved_at,
-            live:     false,
+            contract: ['ADMIN_APPROVED','TOKENIZATION_PENDING','SECZ_REVIEW','SECZ_APPROVED','LIVE'].includes(s.status),
+            secz:     ['SECZ_APPROVED','LIVE'].includes(s.status),
+            live:     s.status === 'LIVE',
           },
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:'Pending assignment',
           reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,
@@ -2076,27 +2076,58 @@ export default function AdminDashboard() {
                                 <p className="text-green-300 font-semibold text-sm">🟢 Live on Platform</p>
                                 <p className="text-green-400 text-xs mt-1">{fmt(item.amount_raised)} raised</p>
                               </div>
-                            ) : item.status === 'ADMIN_APPROVED' ? (
+                            ) : item.status === 'TOKENIZATION_PENDING' ? (
+                              <div className="space-y-2">
+                                <div className="bg-blue-900/20 border border-blue-800/50 rounded-lg p-3">
+                                  <p className="text-blue-300 font-bold text-xs mb-1">⛓️ Tokenisation Pending</p>
+                                  <p className="text-gray-400 text-xs">Committee approval granted. Submit to SECZ for regulatory review.</p>
+                                </div>
+                                <button onClick={async()=>{
+                                  try {
+                                    const r = await api.put(`/submissions/${item.id}/submit-to-secz`);
+                                    setPipeline(p => p.map(i => i.id===item.id ? {...i, status:'SECZ_REVIEW'} : i));
+                                    notify('success', r.data.message);
+                                  } catch(e) { notify('error', e.response?.data?.error || 'Failed'); }
+                                }} className="w-full py-2 rounded-lg text-xs font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                                  ⛓️ Submit to SECZ for Review
+                                </button>
+                              </div>
+                            ) : item.status === 'SECZ_REVIEW' ? (
+                              <div className="space-y-2">
+                                <div className="bg-amber-900/20 border border-amber-800/50 rounded-lg p-3">
+                                  <p className="text-amber-300 font-bold text-xs">🏛️ Under SECZ Review</p>
+                                  <p className="text-gray-400 text-xs mt-1">Awaiting regulatory decision from SECZ.</p>
+                                </div>
+                                <button onClick={async()=>{
+                                  try {
+                                    const r = await api.put(`/submissions/${item.id}/secz-approve`);
+                                    setPipeline(p => p.map(i => i.id===item.id ? {...i, status:'SECZ_APPROVED', stages:{...i.stages,secz:true}} : i));
+                                    notify('success', r.data.message);
+                                  } catch(e) { notify('error', e.response?.data?.error || 'Failed'); }
+                                }} className="w-full py-2 rounded-lg text-xs font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                                  ✅ Record SECZ Approval
+                                </button>
+                              </div>
+                            ) : item.status === 'SECZ_APPROVED' ? (
                               <div className="space-y-2">
                                 <div className="bg-green-900/20 border border-green-800/50 rounded-lg p-3">
-                                  <p className="text-green-300 font-bold text-xs mb-1">✅ Token Approved</p>
-                                  <p className="text-gray-400 text-xs">This token has been approved. You can now create a primary offering or list it directly for trading.</p>
+                                  <p className="text-green-300 font-bold text-xs">✅ SECZ Approved</p>
+                                  <p className="text-gray-400 text-xs mt-1">Regulatory clearance received. Token is ready to go live.</p>
                                 </div>
-                                <button
-                                  onClick={()=>setTab('offerings')}
-                                  className="w-full py-2 rounded-lg text-xs font-semibold text-white bg-blue-700 hover:bg-blue-600">
-                                  🏦 Go to Offerings — Create Primary Round
-                                </button>
-                                <button
-                                  onClick={()=>advanceStage(item)}
-                                  className="w-full py-2 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-600 text-white">
-                                  ✅ Mark as Live (skip offering)
+                                <button onClick={async()=>{
+                                  try {
+                                    const r = await api.put(`/submissions/${item.id}/set-live`);
+                                    setPipeline(p => p.map(i => i.id===item.id ? {...i, status:'LIVE', stages:{...i.stages,live:true}} : i));
+                                    notify('success', r.data.message);
+                                  } catch(e) { notify('error', e.response?.data?.error || 'Failed'); }
+                                }} className="w-full py-3 rounded-lg text-sm font-bold text-white bg-green-700 hover:bg-green-600">
+                                  🚀 Set Token Live
                                 </button>
                               </div>
                             ) : item.status === 'AUDITOR_APPROVED' ? (
                               <AdminFinalApproval item={item} onApprove={(listingType, notes, riskCategory) => {
                                 api.put(`/submissions/${item.id}/admin-approve`, { listingType, adminNotes:notes, tokenSymbol:item.symbol, riskCategory })
-                                  .then(r => { setPipeline(p => p.map(i => i.id===item.id ? { ...i, status:'ADMIN_APPROVED', stages:{...i.stages,secz:true} } : i)); notify('success', r.data.message); })
+                                  .then(r => { setPipeline(p => p.map(i => i.id===item.id ? { ...i, status:'TOKENIZATION_PENDING', stages:{...i.stages,contract:true} } : i)); notify('success', r.data.message); })
                                   .catch(e => notify('error', e.response?.data?.error || 'Approval failed'));
                               }} onReject={() => rejectApplication(item)}/>
                             ) : (

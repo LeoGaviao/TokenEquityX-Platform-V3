@@ -1277,4 +1277,30 @@ router.get('/check-vfhg', async (req, res) => {
   }
 });
 
+// TEMPORARY — reset VFHG back to AUDITOR_APPROVED / PENDING for pipeline testing
+// NOTE: data_submissions.status is VARCHAR — no ENUM constraint, any string value is valid
+router.post('/reset-vfhg', async (req, res) => {
+  try {
+    await pool._pool.query(
+      "UPDATE tokens SET status = 'PENDING', market_state = 'PENDING', trading_mode = 'PENDING', listed_at = NULL WHERE token_symbol = 'VFHG'"
+    );
+    await pool._pool.query(
+      "UPDATE data_submissions SET status = 'AUDITOR_APPROVED', updated_at = NOW() WHERE id = 12"
+    );
+    const tokensResult = await pool._pool.query(
+      "SELECT id, token_symbol, status, market_state, trading_mode, listed_at FROM tokens WHERE token_symbol = 'VFHG'"
+    );
+    const subsResult = await pool._pool.query(
+      "SELECT id, token_symbol, status FROM data_submissions WHERE id = 12"
+    );
+    res.json({
+      message:     'VFHG reset to AUDITOR_APPROVED / PENDING for pipeline testing.',
+      tokens:      tokensResult.rows,
+      submissions: subsResult.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
