@@ -233,12 +233,26 @@ async function notifyIssuerFeeReceivedAuditorAssigned({ issuerEmail, issuerName,
     `));
 }
 
+async function notifyAuditorAssigned({ auditorEmail, auditorName, tokenSymbol, entityName, referenceNumber }) {
+  return send(auditorEmail, `[TokenEquityX] New Audit Assignment — ${tokenSymbol}`,
+    baseTemplate('New Audit Assignment', `
+      <p>Dear ${auditorName || 'Auditor'},</p>
+      <p>You have been assigned to review the following tokenisation application on the TokenEquityX platform:</p>
+      <div class="detail-row"><span>Company</span><span>${entityName || tokenSymbol}</span></div>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber || '—'}</span></div>
+      <p style="margin-top:20px;">Please log into your auditor dashboard to <strong>accept or decline</strong> this assignment within <strong>48 hours</strong>. Once accepted, you will have full access to the submission documents and be able to submit your audit report.</p>
+      <a href="${PLATFORM}/auditor" class="btn btn-gold">Go to Auditor Dashboard &rarr;</a>
+    `));
+}
+
 module.exports = {
   send,
   notifyIssuerApplicationReceived,
   notifyIssuerApplicationApproved,
   notifyIssuerApplicationRejected,
   notifyIssuerFeeReceivedAuditorAssigned,
+  notifyAuditorAssigned,
   notifyAdminDepositSubmitted,
   notifyInvestorDepositConfirmed,
   notifyInvestorDepositRejected,

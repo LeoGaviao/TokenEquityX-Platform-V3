@@ -346,50 +346,41 @@ router.put('/:id/assign',
 
       // Get submission details for notifications
       const { sendMessage } = require('../utils/messenger');
-      const { send } = require('../utils/mailer');
+      const { notifyAuditorAssigned } = require('../utils/mailer');
       const [subRows] = await db.execute(
         'SELECT token_symbol, issuer_wallet, entity_name, reference_number FROM data_submissions WHERE id = ?',
         [req.params.id]
       );
       const sub = subRows[0] || {};
 
-      // Find auditor user by email or UUID
-      const [auditorRows] = await db.execute(
-        'SELECT id, email, full_name FROM users WHERE email = ? OR id = ?',
-        [assignedAuditor, assignedAuditor]
+      // Look up auditor full_name using the resolved UUID (auditorUUID is always a UUID at this point)
+      const [auditorDetailRows] = await db.execute(
+        'SELECT full_name FROM users WHERE id = ?',
+        [auditorUUID]
       );
-      const auditor = auditorRows[0];
+      const auditorFullName = auditorDetailRows[0]?.full_name;
 
-      // Notify auditor
-      if (auditor?.id) {
+      // Notify auditor — use auditorUUID for in-platform message, auditorEmailResolved for email
+      if (auditorUUID) {
         await sendMessage({
-          recipientId: auditor.id,
+          recipientId: auditorUUID,
           subject:     `🔍 New Assignment — ${sub.token_symbol}`,
           body:        `You have been assigned to review a tokenisation application.\n\nCompany: ${sub.entity_name || sub.token_symbol}\nToken Symbol: ${sub.token_symbol}\nReference: ${sub.reference_number}\n\nPlease log into the auditor dashboard to accept or decline this assignment within 48 hours.`,
           type:        'SYSTEM',
           category:    'APPLICATION',
           referenceId: sub.reference_number,
-        }).catch(() => {});
+        }).catch(e => console.error('[MESSENGER] assign sendMessage (auditor) failed:', e.message));
 
-        if (auditor.email) {
-          send(auditor.email, `[TokenEquityX] New Audit Assignment — ${sub.token_symbol}`,
-            `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-              <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
-              <div style="padding:24px 32px;background:#fff">
-                <h2 style="color:#1A3C5E">New Audit Assignment</h2>
-                <p>Dear ${auditor.full_name || 'Auditor'},</p>
-                <p>You have been assigned to review the following tokenisation application:</p>
-                <table style="width:100%;border-collapse:collapse;margin:16px 0">
-                  <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Company</td><td style="padding:8px 12px">${sub.entity_name || sub.token_symbol}</td></tr>
-                  <tr><td style="padding:8px 12px;font-weight:600">Token Symbol</td><td style="padding:8px 12px">${sub.token_symbol}</td></tr>
-                  <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Reference</td><td style="padding:8px 12px;font-family:monospace">${sub.reference_number}</td></tr>
-                </table>
-                <p>Please log into your auditor dashboard to <strong>accept or decline</strong> within 48 hours.</p>
-                <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/auditor" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">Go to Auditor Dashboard →</a>
-              </div>
-              <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
-            </div>`
-          ).catch(() => {});
+        if (auditorEmailResolved && auditorEmailResolved.includes('@')) {
+          notifyAuditorAssigned({
+            auditorEmail:    auditorEmailResolved,
+            auditorName:     auditorFullName,
+            tokenSymbol:     sub.token_symbol,
+            entityName:      sub.entity_name,
+            referenceNumber: sub.reference_number,
+          }).catch(e => console.error('[MAILER] assign notifyAuditorAssigned failed:', e.message));
+        } else {
+          console.warn(`[MAILER] assign: could not send auditor email — resolved value is not an email address (submission ${req.params.id}, auditorUUID ${auditorUUID})`);
         }
       }
 
@@ -402,17 +393,17 @@ router.put('/:id/assign',
           type:        'SYSTEM',
           category:    'APPLICATION',
           referenceId: sub.reference_number,
-        }).catch(() => {});
+        }).catch(e => console.error('[MESSENGER] assign sendMessage (issuer) failed:', e.message));
       }
 
       // Confirm to admin
       await sendMessage({
         recipientId: req.user.userId,
         subject:     `✅ Auditor Assigned — ${sub.token_symbol}`,
-        body:        `Auditor successfully assigned to ${sub.entity_name} (${sub.token_symbol}).\n\nAssigned to: ${assignedAuditor}\nReference: ${sub.reference_number}`,
+        body:        `Auditor successfully assigned to ${sub.entity_name} (${sub.token_symbol}).\n\nAssigned to: ${auditorEmailResolved || auditorUUID}\nReference: ${sub.reference_number}`,
         type:        'SYSTEM',
         category:    'APPLICATION',
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] assign sendMessage (admin confirm) failed:', e.message));
 
       res.json({ success: true, assignedAuditor, message: `Submission assigned to ${assignedAuditor}` });
     } catch (err) {
