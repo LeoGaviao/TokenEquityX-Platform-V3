@@ -1413,9 +1413,6 @@ export default function AdminDashboard() {
   const [now,setNow]=useState(new Date());
   const [health]=useState({api:true,blockchain:true,ws:true,db:true,oracle:true});
   const [actionMsg,setActionMsg]=useState(null);
-  const [staffForm,setStaffForm]=useState({full_name:'',email:'',password:'',role:'AUDITOR'});
-  const [staffMsg,setStaffMsg]=useState(null);
-  const [staffLoading,setStaffLoading]=useState(false);
   const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
   // Track which pipeline item has drill-down open
