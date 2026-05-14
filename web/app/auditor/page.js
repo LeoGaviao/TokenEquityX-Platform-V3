@@ -61,7 +61,17 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
     : (fullData?.data_json || {});
   const financial      = rawDataJson?.financialData || rawDataJson || {};
   const isTokenisation = item.type === 'TOKENISATION' || financial.type === 'TOKENISATION_APPLICATION';
-  const documents      = rawDataJson?.documents || financial.documents || [];
+  // documents stored as object {certificate:{name,url}, prospectus:{name,url}...} or array
+  const rawDocs = rawDataJson?.documents || financial.documents || {};
+  const documents = Array.isArray(rawDocs)
+    ? rawDocs
+    : Object.entries(rawDocs).map(([key, val]) => ({
+        key,
+        name: val?.name || key,
+        url:  val?.url  || val,
+        path: val?.path || null,
+        size: val?.size || null,
+      }));
 
   // Fetch engine reference price when financial data is available
   useEffect(() => {
