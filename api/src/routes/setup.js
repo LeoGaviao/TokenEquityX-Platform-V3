@@ -1259,4 +1259,22 @@ router.get('/cleanup-users', async (req, res) => {
   }
 });
 
+// TEMPORARY DIAGNOSTIC — remove after use
+router.get('/check-vfhg', async (req, res) => {
+  try {
+    const tokensResult = await pool._pool.query(
+      "SELECT id, token_symbol, status, market_state, trading_mode, listed_at, issuer_id, created_at FROM tokens WHERE token_symbol = 'VFHG'"
+    );
+    const subsResult = await pool._pool.query(
+      "SELECT id, token_symbol, status, application_status, fee_status, issuer_wallet, assigned_auditor, created_at FROM data_submissions WHERE token_symbol = 'VFHG'"
+    );
+    res.json({
+      tokens:      tokensResult.rows,
+      submissions: subsResult.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
