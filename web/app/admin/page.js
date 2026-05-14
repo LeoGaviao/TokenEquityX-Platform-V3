@@ -2824,6 +2824,7 @@ export default function AdminDashboard() {
               </a>
             </div>
             {/* Banking Partner Webhook URL */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
                 <h3 className="font-bold text-sm mb-1">💰 Tax & Fee Rates</h3>
                 <p className="text-xs text-gray-500 mb-4">These rates are applied dynamically across all platform calculations. Changes take effect immediately.</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -2898,8 +2899,6 @@ export default function AdminDashboard() {
                   );
                 })}
               </div>
-              </>
-            )}
 
             {/* Applications with fee status */}
             <div>
