@@ -178,22 +178,35 @@ async function notifyIssuerApplicationReceived({ issuerEmail, issuerName, tokenS
     `));
 }
 
-async function notifyIssuerApplicationApproved({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber, complianceFee, auditorName, auditorEmail, paymentRef, bankName, bankAccountName, bankAccountNo, bankBranch, bankSwift }) {
-  return send(issuerEmail, `✅ Application Approved — ${entityName} (${tokenSymbol})`,
-    baseTemplate('Application Approved', `
+async function notifyIssuerApplicationApproved({ issuerEmail, issuerName, tokenSymbol, entityName, complianceFee, paymentRef, bankName, bankAccountName, bankAccountNo, bankBranch, bankSwift }) {
+  const deadline = (() => {
+    const d = new Date();
+    let days = 0;
+    while (days < 7) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0 && d.getDay() !== 6) days++;
+    }
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  })();
+  return send(issuerEmail, `✅ Committee Approved — Compliance Fee Invoice — ${tokenSymbol}`,
+    baseTemplate('Application Approved by Committee', `
       <p>Dear ${issuerName},</p>
-      <p>Your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}) has been approved.</p>
+      <p>Your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}) has been approved at the Applications Appraisal Committee meeting.</p>
+      <p>To proceed to the tokenisation and SECZ regulatory review stage, please settle the Compliance Review Fee by <strong>${deadline}</strong> (7 business days).</p>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Compliance Review Fee</h3>
       <div class="amount">$${parseFloat(complianceFee).toFixed(2)} USD</div>
-      <p style="text-align:center;color:#6b7280;font-size:13px;margin-top:0;">TokenEquityX Compliance Review Fee</p>
       <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Bank Payment Details</h3>
-      <div class="detail-row"><span>Bank</span><span>${bankName}</span></div>
-      <div class="detail-row"><span>Account Name</span><span>${bankAccountName}</span></div>
-      <div class="detail-row"><span>Account Number</span><span style="font-family:monospace">${bankAccountNo}</span></div>
+      <div class="detail-row"><span>Bank</span><span>${bankName || 'Stanbic Bank Zimbabwe'}</span></div>
+      <div class="detail-row"><span>Account Name</span><span>${bankAccountName || 'TokenEquityX Ltd'}</span></div>
+      <div class="detail-row"><span>Account Number</span><span style="font-family:monospace">${bankAccountNo || '—'}</span></div>
+      ${bankBranch ? `<div class="detail-row"><span>Branch</span><span>${bankBranch}</span></div>` : ''}
+      <div class="detail-row"><span>SWIFT Code</span><span style="font-family:monospace">${bankSwift || 'SBICZWHX'}</span></div>
       <div class="detail-row"><span>Payment Reference</span><span style="font-family:monospace;font-weight:bold;color:#C8972B">${paymentRef}</span></div>
-      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Nominated Auditor</h3>
-      <div class="detail-row"><span>Auditor</span><span>${auditorName}</span></div>
-      <div class="detail-row"><span>Email</span><span>${auditorEmail}</span></div>
-      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Application &rarr;</a>
+      <p style="background:#fef3c7;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:13px;margin:20px 0 0;">
+        <strong>Important:</strong> Use the payment reference <strong>${paymentRef}</strong> exactly as shown — payments without the correct reference cannot be matched to your application.<br/><br/>
+        Once payment is made, email proof of payment to <strong>admin@tokenequityx.co.zw</strong>. Payment must be received within 7 business days of this notice (by <strong>${deadline}</strong>).
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold" style="margin-top:24px;">View Your Application &rarr;</a>
     `));
 }
 

@@ -586,13 +586,13 @@ router.put('/:id/admin-approve',
          `Listing type: ${listingType}. Certified price: $${certifiedPrice}. Notes: ${adminNotes||'None'}. Status: TOKENIZATION_PENDING.`]
       );
 
-      // Create compliance fee record
+      // Create compliance fee record and notify issuer
       const { getNumericSetting } = require('../utils/platformSettings');
       const { sendMessage } = require('../utils/messenger');
-      const { send } = require('../utils/mailer');
+      const { notifyIssuerApplicationApproved } = require('../utils/mailer');
 
       const complianceFee = await getNumericSetting('compliance_fee_usd', 1500);
-      const feeRef = `TEXZ-APP-${sub.token_symbol}-${Date.now().toString().slice(-6)}`;
+      const feeRef = `TEXZ-APP-${req.params.id}`;
 
       await db.execute(
         `INSERT INTO application_fees (submission_id, token_symbol, fee_type, amount_usd, reference, status)
@@ -609,39 +609,30 @@ router.put('/:id/admin-approve',
 
       await sendMessage({
         recipientId: sub.issuer_wallet,
-        subject:     `✅ Committee Approved — Tokenisation Pending: ${sub.token_symbol}`,
-        body:        `Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been approved by the Applications Appraisal Committee.\n\nYour application is now entering the tokenisation preparation stage. It will be submitted to the Securities and Exchange Commission of Zimbabwe (SECZ) for regulatory review before your token goes live.\n\nCompliance Review Fee: $${complianceFee.toFixed(2)} USD\nPayment Reference: ${feeRef}\nBank: ${bankMap.bank_name || 'Stanbic Bank Zimbabwe'}\nAccount Name: ${bankMap.bank_account_name || 'TokenEquityX Ltd'}\nAccount Number: ${bankMap.bank_account_number || 'TBC'}\n\nPlease make payment using the reference above.`,
+        subject:     `✅ Committee Approved — Compliance Fee Due: ${sub.token_symbol}`,
+        body:        `Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been approved by the Applications Appraisal Committee.\n\nCompliance Review Fee: $${complianceFee.toFixed(2)} USD\nPayment Reference: ${feeRef}\nBank: ${bankMap.bank_name || 'Stanbic Bank Zimbabwe'}\nAccount Name: ${bankMap.bank_account_name || 'TokenEquityX Ltd'}\nSWIFT: ${bankMap.bank_swift_code || 'SBICZWHX'}\n\nEmail proof of payment to admin@tokenequityx.co.zw. Payment must be received within 7 business days.`,
         type:        'SYSTEM',
         category:    'APPLICATION',
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] admin-approve sendMessage failed:', e.message));
 
       const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
       const issuer = issuerRows[0];
       if (issuer?.email) {
-        send(issuer.email, `✅ Committee Approved — Tokenisation Pending — ${sub.token_symbol}`,
-          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-            <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
-            <div style="padding:24px 32px;background:#fff">
-              <h2 style="color:#16a34a">✅ Committee Approved</h2>
-              <p>Dear ${issuer.full_name},</p>
-              <p>Your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) has been approved by the Applications Appraisal Committee.</p>
-              <p style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 16px;border-radius:4px;font-size:14px">Your application is now entering the <strong>Tokenisation Pending</strong> stage. It will next be submitted to SECZ for regulatory review before your token goes live on the platform.</p>
-              <h3 style="color:#1A3C5E">Compliance Review Fee Invoice</h3>
-              <table style="width:100%;border-collapse:collapse;margin:16px 0">
-                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Amount</td><td style="padding:8px 12px;font-weight:700;color:#1A3C5E">$${complianceFee.toFixed(2)} USD</td></tr>
-                <tr><td style="padding:8px 12px;font-weight:600">Payment Reference</td><td style="padding:8px 12px;font-family:monospace;font-weight:700;color:#C8972B">${feeRef}</td></tr>
-                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Bank</td><td style="padding:8px 12px">${bankMap.bank_name || 'Stanbic Bank Zimbabwe'}</td></tr>
-                <tr><td style="padding:8px 12px;font-weight:600">Account Name</td><td style="padding:8px 12px">${bankMap.bank_account_name || 'TokenEquityX Ltd'}</td></tr>
-                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Account Number</td><td style="padding:8px 12px;font-family:monospace">${bankMap.bank_account_number || 'TBC'}</td></tr>
-                <tr><td style="padding:8px 12px;font-weight:600">Branch</td><td style="padding:8px 12px">${bankMap.bank_branch || 'Harare Main Branch'}</td></tr>
-                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">SWIFT</td><td style="padding:8px 12px;font-family:monospace">${bankMap.bank_swift_code || 'SBICZWHX'}</td></tr>
-              </table>
-              <p style="color:#dc2626;font-size:13px"><strong>Important:</strong> Use the payment reference exactly as shown. Payments without the correct reference cannot be matched to your application.</p>
-              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/issuer" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">View Application →</a>
-            </div>
-            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
-          </div>`
-        ).catch(() => {});
+        notifyIssuerApplicationApproved({
+          issuerEmail:    issuer.email,
+          issuerName:     issuer.full_name,
+          tokenSymbol:    sub.token_symbol,
+          entityName:     sub.entity_name,
+          complianceFee,
+          paymentRef:     feeRef,
+          bankName:       bankMap.bank_name,
+          bankAccountName:bankMap.bank_account_name,
+          bankAccountNo:  bankMap.bank_account_number,
+          bankBranch:     bankMap.bank_branch,
+          bankSwift:      bankMap.bank_swift_code,
+        }).catch(e => console.error('[MAILER] admin-approve email failed:', e.message));
+      } else {
+        console.warn(`[MAILER] admin-approve: no email found for issuer_wallet=${sub.issuer_wallet} (submission ${req.params.id})`);
       }
 
       res.json({
