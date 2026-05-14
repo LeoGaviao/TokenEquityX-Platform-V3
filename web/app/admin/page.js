@@ -2247,21 +2247,39 @@ export default function AdminDashboard() {
                           <p className="text-xs text-gray-400 mt-1">{kyc.email} — {kyc.full_name}</p>
                           {kyc.documents && (() => {
                             try {
-                              const docs = typeof kyc.documents === 'string' ? JSON.parse(kyc.documents) : kyc.documents;
+                              const raw = typeof kyc.documents === 'string' ? JSON.parse(kyc.documents) : kyc.documents;
+                              // Normalise: object keyed by doc type → flat array
+                              const docs = Array.isArray(raw)
+                                ? raw
+                                : Object.entries(raw || {}).map(([key, val]) =>
+                                    typeof val === 'object' && val !== null
+                                      ? { doc_type: key, ...val }
+                                      : { doc_type: key, url: val }
+                                  );
                               if (!docs || docs.length === 0) return (
                                 <p className="text-xs text-gray-500 mt-2">No documents uploaded</p>
                               );
                               return (
                                 <div className="mt-2 space-y-1">
                                   <p className="text-xs text-gray-400 font-semibold">📎 KYC Documents</p>
-                                  {docs.map((doc, i) => (
-                                    <a key={i} href={doc.file_url} target="_blank" rel="noopener noreferrer"
-                                      className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-1.5 hover:bg-gray-700/50 text-xs">
-                                      <span className="text-blue-400">📄</span>
-                                      <span className="text-white flex-1 truncate">{doc.file_name || doc.doc_type}</span>
-                                      <span className="text-blue-400">↗</span>
-                                    </a>
-                                  ))}
+                                  {docs.map((doc, i) => {
+                                    const href  = doc.url || doc.file_url || doc.path || null;
+                                    const label = doc.name || doc.file_name || doc.doc_type || `Document ${i + 1}`;
+                                    return href ? (
+                                      <a key={i} href={href} target="_blank" rel="noopener noreferrer"
+                                        className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-1.5 hover:bg-gray-700/50 text-xs">
+                                        <span className="text-blue-400">📄</span>
+                                        <span className="text-white flex-1 truncate">{label}</span>
+                                        <span className="text-blue-400">↗</span>
+                                      </a>
+                                    ) : (
+                                      <div key={i} className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-1.5 text-xs">
+                                        <span className="text-gray-500">📄</span>
+                                        <span className="text-gray-400 flex-1 truncate">{label}</span>
+                                        <span className="text-gray-600 text-[10px]">no link</span>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               );
                             } catch { return null; }
@@ -2339,12 +2357,21 @@ export default function AdminDashboard() {
                                 <div>
                                   <p className="text-gray-400 font-semibold mb-2">Beneficial Owners ≥25%</p>
                                   <div className="space-y-1">
-                                    {owners.map((o,i) => (
-                                      <div key={i} className="bg-gray-900/60 rounded-lg p-2">
-                                        <p className="text-white font-medium">{o.name} — {o.ownership_pct}%</p>
-                                        <p className="text-gray-500">{o.nationality} · {o.id_number}</p>
-                                      </div>
-                                    ))}
+                                    {owners.map((o,i) => {
+                                      const idDocUrl = o.url || o.file_url || o.id_doc_url || o.id_doc || null;
+                                      return (
+                                        <div key={i} className="bg-gray-900/60 rounded-lg p-2">
+                                          <p className="text-white font-medium">{o.name} — {o.ownership_pct}%</p>
+                                          <p className="text-gray-500">{o.nationality} · {o.id_number}</p>
+                                          {idDocUrl && (
+                                            <a href={idDocUrl} target="_blank" rel="noopener noreferrer"
+                                              className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 text-[10px] mt-1">
+                                              📄 ID Document ↗
+                                            </a>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               );
