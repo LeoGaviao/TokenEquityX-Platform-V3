@@ -24,7 +24,7 @@ const PLATFORM_URL = process.env.PLATFORM_URL || 'https://tokenequityx.co.zw';
 async function sendMessage(opts) {
   const {
     recipientId, subject, body, type = 'SYSTEM', category = 'GENERAL',
-    referenceId = null, senderId = null, sendEmail = false,
+    referenceId = null, senderId = '00000000-0000-0000-0000-000000000001', sendEmail = false,
     recipientEmail, recipientName
   } = opts;
 

@@ -75,7 +75,7 @@ router.post('/submit', authenticate, requireRole('ISSUER','ADMIN'), async (req, 
       type:        'SYSTEM',
       category:    'KYC',
       referenceId: String(kycId),
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] entity-kyc/submit sendMessage (issuer) failed:', e.message));
 
     const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
     if (adminRows.length > 0) {
@@ -86,7 +86,7 @@ router.post('/submit', authenticate, requireRole('ISSUER','ADMIN'), async (req, 
         type:        'SYSTEM',
         category:    'KYC',
         referenceId: kycId,
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] entity-kyc/submit sendMessage (admin) failed:', e.message));
     }
 
     res.json({
@@ -133,7 +133,7 @@ router.put('/:id/approve', authenticate, requireRole('ADMIN','COMPLIANCE_OFFICER
       type:        'SYSTEM',
       category:    'KYC',
       referenceId: kyc.id,
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] entity-kyc/approve sendMessage (issuer) failed:', e.message));
 
     res.json({ success: true, message: `Entity KYC approved for ${kyc.entity_name}` });
   } catch (err) {
@@ -162,7 +162,7 @@ router.put('/:id/reject', authenticate, requireRole('ADMIN','COMPLIANCE_OFFICER'
       type:        'SYSTEM',
       category:    'KYC',
       referenceId: kyc.id,
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] entity-kyc/reject sendMessage (issuer) failed:', e.message));
 
     res.json({ success: true, message: 'KYC rejected. Issuer has been notified.' });
   } catch (err) {

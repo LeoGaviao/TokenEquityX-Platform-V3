@@ -255,9 +255,27 @@ export default function Inbox({ token }) {
                   {selected.category || 'MESSAGE'}
                 </div>
                 <h3 className="font-bold text-white text-sm mb-1">{selected.subject}</h3>
-                <p className="text-xs text-gray-500 mb-4">
-                  {selected.sender_name ? `From: ${selected.sender_name}` : 'From: TokenEquityX'} · {timeAgo(selected.created_at)}
-                </p>
+                <div className="text-xs text-gray-500 mb-4 space-y-0.5">
+                  <p>
+                    <span className="text-gray-600">From:</span>{' '}
+                    {selected.sender_name
+                      ? `${selected.sender_name}${selected.sender_email ? ` <${selected.sender_email}>` : ''}`
+                      : 'TokenEquityX Platform'}
+                  </p>
+                  {tab === 'sent' && (selected.recipient_name || selected.recipient_email) && (
+                    <p>
+                      <span className="text-gray-600">To:</span>{' '}
+                      {selected.recipient_name
+                        ? `${selected.recipient_name}${selected.recipient_email ? ` <${selected.recipient_email}>` : ''}`
+                        : selected.recipient_email}
+                    </p>
+                  )}
+                  <p>
+                    <span className="text-gray-600">Date:</span>{' '}
+                    {new Date(selected.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {' '}· {timeAgo(selected.created_at)}
+                  </p>
+                </div>
                 <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{selected.body}</p>
               </div>
             ) : loading ? (
@@ -280,7 +298,12 @@ export default function Inbox({ token }) {
                         <p className={`text-sm truncate ${!msg.is_read ? 'font-semibold text-white' : 'text-gray-300'}`}>{msg.subject}</p>
                         <span className="text-xs text-gray-600 flex-shrink-0">{timeAgo(msg.created_at)}</span>
                       </div>
-                      <p className="text-xs text-gray-500 truncate mt-0.5">{msg.body?.substring(0, 80)}</p>
+                      <p className="text-xs text-gray-600 truncate mt-0.5">
+                        {tab === 'sent'
+                          ? `To: ${msg.recipient_name || msg.recipient_email || 'Unknown'}`
+                          : `From: ${msg.sender_name || 'TokenEquityX Platform'}`}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate mt-0.5">{msg.body?.substring(0, 100)}</p>
                       <div className="flex items-center justify-between mt-1">
                         <span className={`text-xs px-1.5 py-0.5 rounded border ${CATEGORY_COLORS[msg.category] || CATEGORY_COLORS.GENERAL}`}>
                           {msg.category || 'MESSAGE'}
