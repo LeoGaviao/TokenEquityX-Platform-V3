@@ -1303,4 +1303,40 @@ router.post('/reset-vfhg', async (req, res) => {
   }
 });
 
+// GET /api/setup/delete-user?email=... — permanently delete a user and all related records
+router.get('/delete-user', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'email query parameter is required' });
+
+  try {
+    const [rows] = await pool.execute('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (rows.length === 0) {
+      return res.json({ success: true, email, users_deleted: 0, message: 'No user found with that email.' });
+    }
+    const userId = rows[0].id;
+
+    // Delete in dependency order to avoid FK violations
+    await pool.execute('DELETE FROM kyc_documents          WHERE kyc_id IN (SELECT id FROM kyc_records WHERE user_id = $1)', [userId]);
+    await pool.execute('DELETE FROM token_holdings         WHERE user_id = $1', [userId]);
+    await pool.execute('DELETE FROM investor_wallets       WHERE user_id = $1', [userId]);
+    await pool.execute('DELETE FROM kyc_records            WHERE user_id = $1', [userId]);
+    await pool.execute('DELETE FROM risk_acknowledgements  WHERE investor_id = $1', [userId]);
+    await pool.execute('DELETE FROM entity_kyc             WHERE user_id = $1', [userId]);
+    await pool.execute('DELETE FROM messages               WHERE recipient_id = $1 OR sender_id = $1', [userId]);
+    await pool.execute('DELETE FROM offering_subscriptions WHERE investor_id = $1', [userId]);
+    await pool.execute('DELETE FROM p2p_offers             WHERE seller_id = $1 OR buyer_id = $1', [userId]);
+    await pool.execute('DELETE FROM otps                   WHERE user_id = $1', [userId]);
+    const [del] = await pool.execute('DELETE FROM users   WHERE email = $1 RETURNING id', [email.toLowerCase()]);
+
+    res.json({
+      success:       true,
+      email,
+      users_deleted: del.length,
+      message:       `User ${email} and all associated records have been permanently deleted.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
