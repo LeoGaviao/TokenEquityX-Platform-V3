@@ -646,6 +646,7 @@ export default function AuditorDashboard() {
   const [accepting,     setAccepting]     = useState(null);
   const [declining,     setDeclining]     = useState(null);
   const [declineReason, setDeclineReason] = useState('');
+  const [cardMessages,  setCardMessages]  = useState({});
   const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
   useEffect(() => {
@@ -837,7 +838,7 @@ api.get('/auditor/completed').then(r => {
                 <div key={item.id} onClick={()=>setSelItem(selItem?.id===item.id?null:item)}
                   className={`rounded-xl p-4 border cursor-pointer transition-all ${
                     selItem?.id===item.id?'border-blue-500 bg-blue-900/20':PRIORITY_BG[item.priority]
-                  }`}>
+                  }${item.auditor_status==='DECLINED'?' opacity-60':''}`}>
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
@@ -855,6 +856,8 @@ api.get('/auditor/completed').then(r => {
                           )}
                         {item.type==='TOKENISATION'&&<span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded-full">TOKENISATION</span>}
                         {item.assigned_auditor&&<span className="text-xs bg-green-900/50 text-green-300 px-2 py-0.5 rounded-full">✓ Assigned</span>}
+                        {item.auditor_status==='ACCEPTED'&&<span className="text-xs font-bold bg-green-800/60 text-green-300 px-2 py-0.5 rounded-full border border-green-700/50">✅ ACCEPTED</span>}
+                        {item.auditor_status==='DECLINED'&&<span className="text-xs font-bold bg-red-900/60 text-red-300 px-2 py-0.5 rounded-full border border-red-700/50">❌ DECLINED</span>}
                       </div>
                       <p className="text-gray-500 text-xs">{item.asset_class} · {item.period}</p>
                       <p className="text-gray-600 text-xs">Submitted {dt(item.submitted)} · {item.days_pending} days pending</p>
@@ -894,11 +897,22 @@ api.get('/auditor/completed').then(r => {
                           <div className="flex gap-2">
                             <button onClick={()=>setDeclining(null)} className="flex-1 py-1.5 rounded-lg text-xs bg-gray-700 text-white">Cancel</button>
                             <button onClick={async()=>{
-                              const token = localStorage.getItem('token');
-                              const res = await fetch(`${API}/submissions/${item.id}/auditor-decline`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason:declineReason})});
-                              const data = await res.json();
-                              if(res.ok){alert('✅ '+data.message);loadData();}else{alert('Error: '+data.error);}
-                              setDeclining(null);setDeclineReason('');
+                              try {
+                                const token = localStorage.getItem('token');
+                                const res = await fetch(`${API}/submissions/${item.id}/auditor-decline`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({reason:declineReason})});
+                                const data = await res.json();
+                                if (res.ok) {
+                                  setQueue(q => q.map(q2 => q2.id === item.id ? {...q2, auditor_status: 'DECLINED'} : q2));
+                                  if (selItem?.id === item.id) setSelItem(prev => ({...prev, auditor_status: 'DECLINED'}));
+                                  setCardMessages(m => ({...m, [item.id]: { type: 'decline', text: '❌ Assignment declined. This submission has been returned to the admin queue.' }}));
+                                  loadData();
+                                } else {
+                                  setCardMessages(m => ({...m, [item.id]: { type: 'error', text: '❌ ' + (data.error || 'Failed to decline assignment.') }}));
+                                }
+                              } catch {
+                                setCardMessages(m => ({...m, [item.id]: { type: 'error', text: '❌ Network error. Please try again.' }}));
+                              }
+                              setDeclining(null); setDeclineReason('');
                             }} className="flex-1 py-1.5 rounded-lg text-xs bg-red-700 hover:bg-red-600 text-white font-semibold">
                               Confirm Decline
                             </button>
@@ -908,10 +922,21 @@ api.get('/auditor/completed').then(r => {
                         <div className="flex gap-2">
                           <button onClick={async()=>{
                             setAccepting(item.id);
-                            const token = localStorage.getItem('token');
-                            const res = await fetch(`${API}/submissions/${item.id}/auditor-accept`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}});
-                            const data = await res.json();
-                            if(res.ok){alert('✅ '+data.message);loadData();}else{alert('Error: '+data.error);}
+                            try {
+                              const token = localStorage.getItem('token');
+                              const res = await fetch(`${API}/submissions/${item.id}/auditor-accept`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}});
+                              const data = await res.json();
+                              if (res.ok) {
+                                setQueue(q => q.map(q2 => q2.id === item.id ? {...q2, auditor_status: 'ACCEPTED'} : q2));
+                                if (selItem?.id === item.id) setSelItem(prev => ({...prev, auditor_status: 'ACCEPTED'}));
+                                setCardMessages(m => ({...m, [item.id]: { type: 'success', text: '✅ Assignment accepted. You can now begin your review.' }}));
+                                loadData();
+                              } else {
+                                setCardMessages(m => ({...m, [item.id]: { type: 'error', text: '❌ ' + (data.error || 'Failed to accept assignment.') }}));
+                              }
+                            } catch {
+                              setCardMessages(m => ({...m, [item.id]: { type: 'error', text: '❌ Network error. Please try again.' }}));
+                            }
                             setAccepting(null);
                           }} disabled={accepting===item.id}
                             className="flex-1 py-2 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50">
@@ -925,11 +950,16 @@ api.get('/auditor/completed').then(r => {
                       )}
                     </div>
                   )}
-                  {item.auditor_status === 'ACCEPTED' && (
-                    <p className="text-xs text-green-400 mt-2">✅ You have accepted this assignment</p>
-                  )}
-                  {item.auditor_status === 'DECLINED' && (
-                    <p className="text-xs text-red-400 mt-2">❌ You declined this assignment</p>
+                  {cardMessages[item.id] && (
+                    <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium border ${
+                      cardMessages[item.id].type === 'success'
+                        ? 'bg-green-900/40 border-green-700/50 text-green-300'
+                        : cardMessages[item.id].type === 'decline'
+                          ? 'bg-red-900/40 border-red-700/50 text-red-300'
+                          : 'bg-red-900/40 border-red-700/50 text-red-300'
+                    }`}>
+                      {cardMessages[item.id].text}
+                    </div>
                   )}
 
                   <div className="flex items-center justify-between mt-3">
@@ -948,6 +978,18 @@ api.get('/auditor/completed').then(r => {
                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center h-64 flex flex-col items-center justify-center">
                   <p className="text-3xl mb-3">👈</p>
                   <p className="text-gray-400">Select a submission from the queue to review</p>
+                </div>
+              ) : selItem.auditor_status === 'DECLINED' ? (
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center h-64 flex flex-col items-center justify-center">
+                  <p className="text-3xl mb-3">❌</p>
+                  <p className="text-white font-semibold mb-1">Assignment Declined</p>
+                  <p className="text-gray-500 text-sm">You declined this assignment. It has been returned to the admin queue.</p>
+                </div>
+              ) : (!selItem.auditor_status || selItem.auditor_status === 'PENDING') ? (
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center h-64 flex flex-col items-center justify-center">
+                  <p className="text-3xl mb-3">🔒</p>
+                  <p className="text-white font-semibold mb-1">Accept Assignment to Begin Review</p>
+                  <p className="text-gray-500 text-sm">Please accept or decline this assignment using the buttons on the submission card.</p>
                 </div>
               ) : (
                 <AuditReviewPanel
