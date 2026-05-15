@@ -132,22 +132,6 @@ export default function OnboardingPage() {
     }
 
     setUser(cleanUser);
-
-    // Issuers and Partners skip personal KYC — their verification happens in-portal.
-    if (cleanUser.role === 'ISSUER' || cleanUser.role === 'PARTNER') {
-      const token = localStorage.getItem('token');
-      fetch('/api/auth/complete-onboarding', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      })
-        .then(() => {
-          localStorage.setItem('user', JSON.stringify({ ...cleanUser, onboarding_complete: 1 }));
-        })
-        .catch(() => {})
-        .finally(() => {
-          router.push(`/${cleanUser.role.toLowerCase()}`);
-        });
-    }
   }, []);
 
   const uploadFile = (field, file) => setFiles(prev => ({ ...prev, [field]: file }));
