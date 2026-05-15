@@ -109,21 +109,44 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
-    if (!stored) return router.push('/signup');
+    if (!stored) { router.push('/signup'); return; }
     const u = JSON.parse(stored);
-    setUser(u);
-    // Issuers and Partners skip full KYC onboarding — they do it in their dashboard
-    if (u.role === 'ISSUER' || u.role === 'PARTNER') {
-      // Mark onboarding complete immediately and redirect
+
+    // Strip kyc_status — it could be stale from a previous session and must
+    // not drive any redirect logic on this page before KYC is even reviewed.
+    const cleanUser = { ...u };
+    delete cleanUser.kyc_status;
+    localStorage.setItem('user', JSON.stringify(cleanUser));
+
+    // Only redirect away if onboarding is explicitly marked complete.
+    // null, undefined, false, 0, or absent all keep the user on this page.
+    // This prevents a brand-new user (onboarding_complete: null) from being
+    // incorrectly bounced to the dashboard.
+    if (
+      cleanUser.onboarding_complete === true ||
+      cleanUser.onboarding_complete === 'true' ||
+      cleanUser.onboarding_complete === 1
+    ) {
+      router.push(`/${(cleanUser.role || 'investor').toLowerCase()}`);
+      return;
+    }
+
+    setUser(cleanUser);
+
+    // Issuers and Partners skip personal KYC — their verification happens in-portal.
+    if (cleanUser.role === 'ISSUER' || cleanUser.role === 'PARTNER') {
       const token = localStorage.getItem('token');
       fetch('/api/auth/complete-onboarding', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      }).then(() => {
-        const updatedUser = { ...u, onboarding_complete: 1 };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-        router.push(`/${u.role.toLowerCase()}`);
-      });
+      })
+        .then(() => {
+          localStorage.setItem('user', JSON.stringify({ ...cleanUser, onboarding_complete: 1 }));
+        })
+        .catch(() => {})
+        .finally(() => {
+          router.push(`/${cleanUser.role.toLowerCase()}`);
+        });
     }
   }, []);
 
