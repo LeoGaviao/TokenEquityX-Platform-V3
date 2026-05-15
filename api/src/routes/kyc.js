@@ -286,7 +286,14 @@ router.put('/reject/:kycId',
 
 
 // GET /api/kyc/holdings/:walletAddress — returns investor token holdings
-router.get('/holdings/:walletAddress', async (req, res) => {
+router.get('/holdings/:walletAddress', authenticate, async (req, res) => {
+  // Admins may view any user's holdings; all others may only view their own
+  const isAdmin = req.user.role === 'ADMIN';
+  const isOwnRequest = req.params.walletAddress === req.user.userId ||
+                       req.params.walletAddress === req.user.wallet;
+  if (!isAdmin && !isOwnRequest) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
   try {
     const [userRows] = await db.execute(
       'SELECT id FROM users WHERE wallet_address = ? OR id = ?',

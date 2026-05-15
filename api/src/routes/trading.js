@@ -233,7 +233,11 @@ router.get('/recent', async (req, res) => {
 });
 
 // GET /api/trading/history/:walletAddress — user trade history
-router.get('/history/:walletAddress', async (req, res) => {
+router.get('/history/:walletAddress', authenticate, async (req, res) => {
+  const isAdmin = req.user.role === 'ADMIN';
+  const isOwnRequest = req.params.walletAddress === req.user.userId ||
+                       req.params.walletAddress === req.user.wallet;
+  if (!isAdmin && !isOwnRequest) return res.status(403).json({ error: 'Access denied' });
   const limit = parseInt(req.query.limit) || 20;
   try {
     // Support both wallet address and user ID lookups

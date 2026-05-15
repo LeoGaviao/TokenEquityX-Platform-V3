@@ -414,11 +414,15 @@ router.get('/rounds', async (req, res) => {
 });
 
 // ── GET /api/dividends/claimable/:walletAddress — dashboard alias
-router.get('/claimable/:walletAddress', async (req, res) => {
+router.get('/claimable/:walletAddress', authenticate, async (req, res) => {
+  const isAdmin = req.user.role === 'ADMIN';
+  const isOwnRequest = req.params.walletAddress === req.user.userId ||
+                       req.params.walletAddress === req.user.wallet;
+  if (!isAdmin && !isOwnRequest) return res.status(403).json({ error: 'Access denied' });
   try {
     const [userRows] = await db.execute(
-      'SELECT id FROM users WHERE wallet_address = ?',
-      [req.params.walletAddress.toLowerCase()]
+      'SELECT id FROM users WHERE wallet_address = ? OR id = ?',
+      [req.params.walletAddress.toLowerCase(), req.params.walletAddress]
     );
     if (userRows.length === 0) return res.json([]);
     const userId = userRows[0].id;

@@ -197,7 +197,7 @@ router.post('/role-select', authenticate, async (req, res) => {
       console.error('[ROLE-SELECT] Notification failed:', notifyErr.message);
     }
 
-    res.json({ token, user: { id: user.id, role: user.role, email: user.email, full_name: user.full_name } });
+    res.json({ token, user: { id: user.id, role: user.role, email: user.email, full_name: user.full_name, onboarding_complete: user.onboarding_complete } });
   } catch (err) {
     console.error('Role select error:', err);
     res.status(500).json({ error: 'Failed to set role' });

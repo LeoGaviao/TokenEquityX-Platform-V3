@@ -398,18 +398,7 @@ export default function OnboardingPage() {
           )}
         </div>
 
-        {/* Skip option */}
-        <div className="text-center mt-4">
-          <button
-            onClick={() => {
-              const role = user?.role?.toLowerCase() || 'investor';
-              router.push(`/${role}`);
-            }}
-            className="text-gray-600 text-xs hover:text-gray-400 transition"
-          >
-            Skip for now — I'll complete KYC later
-          </button>
-        </div>
+        {/* KYC is mandatory — no skip allowed */}
       </div>
     </div>
   );

@@ -280,6 +280,10 @@ export default function InvestorDashboard() {
     const _u = JSON.parse(localStorage.getItem('user') || '{}');
     if (!_u?.role) return;
     if (!['INVESTOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; return; }
+    // Redirect to onboarding if KYC not yet completed — only when we have an explicit false/0
+    if (_u?.onboarding_complete === false || _u?.onboarding_complete === 0) {
+      router.push('/onboarding'); return;
+    }
     loadAll();
     connectWS();
     return () => wsRef.current?.close();
@@ -422,9 +426,9 @@ export default function InvestorDashboard() {
   const totalPnLPct  = totalCost > 0 ? (totalPnL/totalCost)*100 : 0;
   const annualIncome = portfolio.filter(p=>p.yield_pa>0).reduce((a,p)=>a+(p.value*p.yield_pa/100),0);
 
-  // Build combined token list — merge DB tokens into MARKET_DATA, preserving status
+  // Build token list from live DB data only — no mock fallbacks
   const allTokens = (() => {
-    const result = { ...MARKET_DATA };
+    const result = {};
     (tokens || []).forEach(t => {
       const sym = t.symbol || t.token_symbol;
       if (!sym) return;
@@ -1512,7 +1516,12 @@ export default function InvestorDashboard() {
           <div className="space-y-4 max-w-3xl">
             <h2 className="text-xl font-bold">Market Intelligence Feed</h2>
             <p className="text-gray-500 text-sm">News and analysis relevant to your holdings and the Zimbabwean capital market.</p>
-            {NEWS_FEED.map(n=>(
+            <div className="bg-gray-900 border border-gray-700 rounded-xl p-8 text-center">
+              <p className="text-3xl mb-3">📰</p>
+              <p className="text-white font-semibold text-sm">Live market intelligence feed coming soon</p>
+              <p className="text-gray-500 text-xs mt-1">Real-time news and analysis relevant to your holdings will appear here.</p>
+            </div>
+            {[].map(n=>(
               <div key={n.id} className="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-5 transition-all">
                 <div className="flex items-start gap-3">
                   <div className="flex-1">
