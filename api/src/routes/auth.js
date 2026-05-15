@@ -56,11 +56,12 @@ router.post('/signup', async (req, res) => {
     const token  = makeToken(user);
 
     // Send welcome message to new user
+    // Note: role is not yet known here — user selects it in the role-select step.
+    // notifyUserWelcome (external email with dashboard link) is deferred to role-select.
     try {
       const { sendMessage } = require('../utils/messenger');
-      const { notifyUserWelcome } = require('../utils/mailer');
 
-      // In-platform welcome message
+      // In-platform welcome message — generic, no role-specific content
       await sendMessage({
         recipientId: id,
         subject:     '👋 Welcome to TokenEquityX',
@@ -69,20 +70,13 @@ router.post('/signup', async (req, res) => {
         category:    'GENERAL',
       });
 
-      // External welcome email
-      await notifyUserWelcome({
-        userEmail: email.toLowerCase(),
-        userName:  full_name,
-        role:      user.role,
-      });
-
-      // Notify admin of new registration
+      // Notify admin of new registration (role not yet confirmed)
       const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' AND is_active = TRUE LIMIT 1");
       if (adminRows.length > 0) {
         await sendMessage({
           recipientId: adminRows[0].id,
           subject:     `🆕 New User Registration — ${full_name}`,
-          body:        `A new user has registered on the platform.\n\nName: ${full_name}\nEmail: ${email}\nRole: Set during onboarding (role-select step)\nTime: ${new Date().toLocaleString('en-GB')}\n\nPlease review in the Users tab.`,
+          body:        `A new user has registered on the platform.\n\nName: ${full_name}\nEmail: ${email}\nRole: Pending — awaiting role selection\nTime: ${new Date().toLocaleString('en-GB')}\n\nPlease review in the Users tab.`,
           type:        'SYSTEM',
           category:    'GENERAL',
         });
@@ -161,14 +155,18 @@ router.post('/role-select', authenticate, async (req, res) => {
     const user   = rows[0];
     const token  = makeToken(user); // re-issue token with new role
 
-    // Send role-specific welcome message now that we know the role
+    // Send role-specific notifications now that the role is confirmed
     try {
       const { sendMessage } = require('../utils/messenger');
+      const { notifyUserWelcome } = require('../utils/mailer');
+
       const roleMessages = {
         INVESTOR: '1. Complete your KYC verification\n2. Fund your wallet\n3. Browse available securities in the Market tab',
         ISSUER:   '1. Submit your Entity KYC & AML verification in your dashboard\n2. Prepare your tokenisation application documents\n3. Submit your application for committee review',
         PARTNER:  '1. Complete your partner profile\n2. Add your first client lead\n3. Share your referral link with potential investors and issuers',
       };
+
+      // In-platform role-specific welcome message
       await sendMessage({
         recipientId: req.user.userId,
         subject:     `👋 Welcome to TokenEquityX — ${role} Account`,
@@ -177,13 +175,20 @@ router.post('/role-select', authenticate, async (req, res) => {
         category:    'GENERAL',
       });
 
-      // Update admin notification with correct role
+      // External welcome email — sent here (not at signup) so the role and dashboard link are correct
+      await notifyUserWelcome({
+        userEmail: user.email,
+        userName:  user.full_name,
+        role,
+      }).catch(e => console.error('[ROLE-SELECT] Welcome email failed:', e.message));
+
+      // Notify admin with the confirmed role
       const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' AND is_active = TRUE LIMIT 1");
       if (adminRows.length > 0) {
         await sendMessage({
           recipientId: adminRows[0].id,
-          subject:     `🔄 User Role Confirmed — ${user.full_name} is now ${role}`,
-          body:        `A user has confirmed their role.\n\nName: ${user.full_name}\nEmail: ${user.email}\nRole: ${role}\nTime: ${new Date().toLocaleString('en-GB')}`,
+          subject:     `🔄 Role Confirmed — ${user.full_name} registered as ${role}`,
+          body:        `A new ${role} has registered on the platform.\n\nName: ${user.full_name}\nEmail: ${user.email}\nRole: ${role}\nTime: ${new Date().toLocaleString('en-GB')}\n\nPlease review in the Users tab.`,
           type:        'SYSTEM',
           category:    'GENERAL',
         });
