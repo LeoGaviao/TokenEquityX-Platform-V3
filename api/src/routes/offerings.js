@@ -132,6 +132,26 @@ router.post('/',
         }
       }
 
+      // Guard: submission must have cleared the approval pipeline before an offering can be created
+      const [submissionRows] = await conn.execute(
+        `SELECT status FROM data_submissions
+         WHERE token_symbol = ? AND submission_type = 'TOKENISATION_APPLICATION'
+         ORDER BY created_at DESC LIMIT 1`,
+        [token.token_symbol || token.symbol]
+      );
+      if (submissionRows.length === 0) {
+        await conn.rollback();
+        return res.status(403).json({ error: 'No tokenisation application found for this token.' });
+      }
+      const submissionStatus = submissionRows[0].status;
+      const OFFERING_ALLOWED_STATUSES = ['TOKENIZATION_PENDING', 'SECZ_APPROVED', 'LIVE'];
+      if (!OFFERING_ALLOWED_STATUSES.includes(submissionStatus)) {
+        await conn.rollback();
+        return res.status(403).json({
+          error: `Token has not completed the approval pipeline. Current status: ${submissionStatus}. Offering creation requires admin committee approval (TOKENIZATION_PENDING).`
+        });
+      }
+
       // No duplicate open/pending offering
       const [existing] = await conn.execute(
         "SELECT id FROM primary_offerings WHERE token_id = ? AND status IN ('PENDING_APPROVAL','AUDITOR_REVIEWED','OPEN')",

@@ -1689,7 +1689,7 @@ const PRIORITY_COLORS = {
 };
 const HOLDER_COLORS = [NAVY, GOLD, '#0891b2', '#7c3aed'];
 
-function IssuerOfferingTab({ notify }) {
+function IssuerOfferingTab({ notify, submissionStatus = null }) {
   const [offerings,  setOfferings]  = useState([]);
   const [tokens,     setTokens]     = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -1748,6 +1748,53 @@ function IssuerOfferingTab({ notify }) {
   };
 
   if (loading) return <div className="text-center py-8 text-gray-500 text-sm">Loading…</div>;
+
+  const OFFERING_UNLOCKED_STATUSES = ['TOKENIZATION_PENDING', 'SECZ_APPROVED', 'LIVE'];
+  if (!OFFERING_UNLOCKED_STATUSES.includes(submissionStatus)) {
+    const fmt = s => s ? s.replace(/_/g, ' ') : 'Not started';
+    const reached = (statuses) => statuses.includes(submissionStatus);
+    const stages = [
+      { label: 'Application Submitted',
+        done: !!submissionStatus },
+      { label: 'Committee Approved',
+        done: reached(['TOKENIZATION_PENDING','SECZ_REVIEW','SECZ_APPROVED','LIVE']) },
+      { label: 'Tokenisation',
+        done: reached(['SECZ_REVIEW','SECZ_APPROVED','LIVE']) },
+      { label: 'SECZ Review',
+        done: reached(['SECZ_REVIEW','SECZ_APPROVED','LIVE']) },
+      { label: 'SECZ Approved',
+        done: reached(['SECZ_APPROVED','LIVE']) },
+    ];
+    return (
+      <div className="py-10 flex flex-col items-center text-center space-y-5">
+        <div className="text-5xl">🔒</div>
+        <div>
+          <p className="font-bold text-lg text-white">Primary Offering Unavailable</p>
+          <p className="text-gray-500 text-sm mt-1 max-w-sm">
+            Your token must complete the full approval pipeline before you can create a primary offering.
+          </p>
+          {submissionStatus && (
+            <p className="text-sm mt-2">
+              Current status:{' '}
+              <span className="text-amber-400 font-semibold">{fmt(submissionStatus)}</span>
+            </p>
+          )}
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl px-6 py-4 text-sm text-left space-y-2.5 w-full max-w-xs">
+          {stages.map((s, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <span className="text-base flex-shrink-0">{s.done ? '✅' : '⬜'}</span>
+              <span className={s.done ? 'text-gray-200' : 'text-gray-600'}>{s.label}</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-3 pt-1 border-t border-gray-800 mt-1">
+            <span className="text-base flex-shrink-0">🔒</span>
+            <span className="text-gray-600">Primary Offering <span className="text-xs">(locked until SECZ Approved)</span></span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -2212,33 +2259,24 @@ export default function IssuerDashboard() {
             </div>
 
             {/* ── STEP 3: Primary Offering ── */}
-            {myTokens && myTokens.some(t => t.status === 'ACTIVE') ? (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">3</div>
-                  <div>
-                    <h2 className="font-bold text-lg">Primary Offering</h2>
-                    <p className="text-gray-500 text-xs mt-0.5">Propose a fundraising round once your token is approved</p>
+            {(() => {
+              const tokenApp = myApplications.find(a => a.submission_type === 'TOKENISATION_APPLICATION');
+              const subStatus = tokenApp?.status || null;
+              return (
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">3</div>
+                    <div>
+                      <h2 className="font-bold text-lg">Primary Offering</h2>
+                      <p className="text-gray-500 text-xs mt-0.5">Propose a fundraising round once your token is approved</p>
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <IssuerOfferingTab notify={notify} submissionStatus={subStatus} />
                   </div>
                 </div>
-                <div className="p-6">
-                  <IssuerOfferingTab notify={notify} />
-                </div>
-              </div>
-            ) : (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 opacity-60">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl font-black text-yellow-400 opacity-30">3</span>
-                  <div>
-                    <h3 className="font-bold text-lg text-gray-400">Primary Offering</h3>
-                    <p className="text-gray-600 text-sm">Available after your token is approved through the compliance pipeline.</p>
-                  </div>
-                </div>
-                <div className="border border-gray-800 rounded-xl p-4 text-center">
-                  <p className="text-gray-600 text-sm">🔒 Complete steps 1 and 2 first — submit your tokenisation application and financial data. Once your token is approved by admin, you can propose a primary offering here.</p>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
           </div>
         )}
