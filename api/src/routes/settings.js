@@ -143,7 +143,7 @@ router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), asy
       type:        'SYSTEM',
       category:    'APPLICATION',
       referenceId: String(req.params.id),
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] settings/approve sendMessage (issuer) failed:', e.message));
 
     // Notify auditor of assignment
     const [auditorRows] = await db.execute(
@@ -157,7 +157,7 @@ router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), asy
         type:        'SYSTEM',
         category:    'APPLICATION',
         referenceId: String(req.params.id),
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] settings/approve sendMessage (auditor) failed:', e.message));
     }
 
     res.json({
@@ -219,7 +219,7 @@ router.post('/applications/:id/reject', authenticate, requireRole('ADMIN'), asyn
       type:        'SYSTEM',
       category:    'APPLICATION',
       referenceId: String(req.params.id),
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] settings/reject sendMessage (issuer) failed:', e.message));
 
     res.json({ success: true, message: 'Application rejected. Issuer notified by email.' });
   } catch (err) {
@@ -285,7 +285,7 @@ router.post('/applications/:id/confirm-fee', authenticate, requireRole('ADMIN'),
       type:        'SYSTEM',
       category:    'APPLICATION',
       referenceId: String(req.params.id),
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] settings/confirm-fee sendMessage (issuer) failed:', e.message));
 
     res.json({ success: true, message: 'Fee confirmed. Auditor assigned. Issuer notified.' });
   } catch (err) {

@@ -246,12 +246,62 @@ async function notifyAuditorAssigned({ auditorEmail, auditorName, tokenSymbol, e
     `));
 }
 
+async function notifyUserWelcome({ userEmail, userName, role }) {
+  const dashboardPath = role === 'ISSUER' ? '/issuer' : role === 'AUDITOR' ? '/auditor' : '/investor';
+  return send(userEmail, `Welcome to TokenEquityX — Africa's Digital Capital Market`,
+    baseTemplate('Welcome to TokenEquityX', `
+      <p>Dear ${userName},</p>
+      <p>Your account has been created successfully on Africa's first regulated tokenised securities marketplace.</p>
+      <div class="detail-row"><span>Email</span><span>${userEmail}</span></div>
+      <div class="detail-row"><span>Role</span><span>${role || 'INVESTOR'}</span></div>
+      <p style="margin-top:16px;">Please log in and complete your profile to get started.</p>
+      <a href="${PLATFORM}${dashboardPath}" class="btn btn-gold">Go to Your Dashboard &rarr;</a>
+    `));
+}
+
+async function notifyIssuerSeczSubmitted({ issuerEmail, issuerName, tokenSymbol, entityName }) {
+  return send(issuerEmail, `🏛️ Submitted to SECZ — ${tokenSymbol}`,
+    baseTemplate('Application Submitted to SECZ', `
+      <p>Dear ${issuerName},</p>
+      <p>Your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}) has been submitted to the <strong>Securities and Exchange Commission of Zimbabwe (SECZ)</strong> for regulatory review.</p>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;">You will be notified as soon as a regulatory decision is reached. This process typically takes a few business days.</p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Application &rarr;</a>
+    `));
+}
+
+async function notifyIssuerSeczApproved({ issuerEmail, issuerName, tokenSymbol, entityName }) {
+  return send(issuerEmail, `✅ SECZ Approved — ${tokenSymbol} — Ready to Launch`,
+    baseTemplate('SECZ Approval Granted', `
+      <p>Dear ${issuerName},</p>
+      <p>Congratulations! Your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}) has received <strong>regulatory approval from SECZ</strong>.</p>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;">Your token is now cleared for listing. TokenEquityX will activate it on the platform shortly. You will receive a final notification when your token is live and trading begins.</p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Application &rarr;</a>
+    `));
+}
+
+async function notifyIssuerTokenLive({ issuerEmail, issuerName, tokenSymbol, entityName, certifiedPrice, listingType, tradingMode }) {
+  return send(issuerEmail, `🚀 ${tokenSymbol} is Now Live on TokenEquityX!`,
+    baseTemplate('Your Token is Live!', `
+      <p>Dear ${issuerName},</p>
+      <p>Congratulations! <strong>${entityName} (${tokenSymbol})</strong> is now <strong class="success">LIVE</strong> on the TokenEquityX platform and available for trading.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold;color:#C8972B">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Token Price</span><span style="font-weight:bold;color:#1A3C5E">$${parseFloat(certifiedPrice).toFixed(4)} USD</span></div>
+      <div class="detail-row"><span>Listing Type</span><span>${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse' : 'Peer-to-Peer'}</span></div>
+      <div class="detail-row"><span>Trading Mode</span><span>${tradingMode}</span></div>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold" style="margin-top:24px;">View Your Token &rarr;</a>
+    `));
+}
+
 module.exports = {
   send,
+  notifyUserWelcome,
   notifyIssuerApplicationReceived,
   notifyIssuerApplicationApproved,
   notifyIssuerApplicationRejected,
   notifyIssuerFeeReceivedAuditorAssigned,
+  notifyIssuerSeczSubmitted,
+  notifyIssuerSeczApproved,
+  notifyIssuerTokenLive,
   notifyAuditorAssigned,
   notifyAdminDepositSubmitted,
   notifyInvestorDepositConfirmed,

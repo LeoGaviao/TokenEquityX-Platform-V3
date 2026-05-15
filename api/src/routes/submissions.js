@@ -957,7 +957,7 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
       type:        'SYSTEM',
       category:    'APPLICATION',
       referenceId: refNum,
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] unified/submit sendMessage (issuer) failed:', e.message));
 
     // Notify admin — new application
     const [adminRows] = await db.execute(
@@ -971,7 +971,7 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
         type:        'SYSTEM',
         category:    'APPLICATION',
         referenceId: refNum,
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] unified/submit sendMessage (admin) failed:', e.message));
     }
 
     res.json({
@@ -1013,7 +1013,7 @@ router.put('/:id/auditor-accept', authenticate, requireRole('AUDITOR'), async (r
         subject:     `✅ Auditor Accepted — ${sub.token_symbol}`,
         body:        `The auditor assigned to ${sub.token_symbol} (${sub.entity_name}) has accepted the assignment and will commence review.\n\nReference: ${sub.reference_number}`,
         type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] auditor-accept sendMessage (admin) failed:', e.message));
     }
 
     await sendMessage({
@@ -1021,7 +1021,7 @@ router.put('/:id/auditor-accept', authenticate, requireRole('AUDITOR'), async (r
       subject:     `✅ Auditor Accepted — ${sub.token_symbol}`,
       body:        `Your nominated auditor has accepted the assignment for ${sub.entity_name} (${sub.token_symbol}).\n\nThe auditor will contact you directly to agree the scope and fee. Please have your documents ready.\n\nReference: ${sub.reference_number}`,
       type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] auditor-accept sendMessage (issuer) failed:', e.message));
 
     res.json({ success: true, message: 'Assignment accepted. Issuer and admin have been notified.' });
   } catch (err) {
@@ -1055,7 +1055,7 @@ router.put('/:id/auditor-decline', authenticate, requireRole('AUDITOR'), async (
         subject:     `❌ Auditor Declined — ${sub.token_symbol}`,
         body:        `The auditor assigned to ${sub.token_symbol} (${sub.entity_name}) has declined the assignment.\n\nReason: ${reason || 'Not provided'}\n\nPlease nominate a new auditor via the Pipeline tab.\n\nReference: ${sub.reference_number}`,
         type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] auditor-decline sendMessage (admin) failed:', e.message));
     }
 
     await sendMessage({
@@ -1063,7 +1063,7 @@ router.put('/:id/auditor-decline', authenticate, requireRole('AUDITOR'), async (
       subject:     `⚠️ Auditor Update — ${sub.token_symbol}`,
       body:        `The nominated auditor was unable to accept the assignment for ${sub.entity_name} (${sub.token_symbol}).\n\nTokenEquityX will nominate a replacement auditor shortly. You will be notified once a new auditor is assigned.\n\nReference: ${sub.reference_number}`,
       type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] auditor-decline sendMessage (issuer) failed:', e.message));
 
     res.json({ success: true, message: 'Declination recorded. Admin and issuer have been notified.' });
   } catch (err) {
@@ -1180,7 +1180,7 @@ router.put('/:id/soft-delete', authenticate, requireRole('ADMIN'), async (req, r
       subject:     `⚠️ Listing Suspended — ${sub.token_symbol}`,
       body:        `Your listing for ${sub.entity_name} (${sub.token_symbol}) has been suspended by the platform administrator.\n\nReason: ${reason}\n\nYour data will be retained for 90 days from this date. You may appeal this decision by contacting compliance@tokenequityx.co.zw within 90 days.\n\nIf no appeal is received within 90 days, all data will be permanently deleted.\n\nReference: ${sub.reference_number}`,
       type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] suspend sendMessage (issuer) failed:', e.message));
 
     await conn.commit();
     res.json({ success: true, message: `${sub.token_symbol} suspended. Data retained for 90-day appeal window.` });
@@ -1218,7 +1218,7 @@ router.put('/:id/reinstate', authenticate, requireRole('ADMIN'), async (req, res
       subject:     `✅ Listing Reinstated — ${sub.token_symbol}`,
       body:        `Your listing for ${sub.entity_name} (${sub.token_symbol}) has been reinstated by the platform administrator. Your application is now back in PENDING status.\n\nReference: ${sub.reference_number}`,
       type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-    }).catch(() => {});
+    }).catch(e => console.error('[MESSENGER] reinstate sendMessage (issuer) failed:', e.message));
 
     await conn.commit();
     res.json({ success: true, message: `${sub.token_symbol} reinstated successfully.` });
@@ -1256,7 +1256,7 @@ router.put('/:id/submit-to-secz',
       );
 
       const { sendMessage } = require('../utils/messenger');
-      const { send } = require('../utils/mailer');
+      const { notifyIssuerSeczSubmitted } = require('../utils/mailer');
 
       await sendMessage({
         recipientId: sub.issuer_wallet,
@@ -1264,24 +1264,19 @@ router.put('/:id/submit-to-secz',
         body:        `Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been submitted to the Securities and Exchange Commission of Zimbabwe (SECZ) for regulatory review. You will be notified once a decision is made.`,
         type:        'SYSTEM',
         category:    'APPLICATION',
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] submit-to-secz sendMessage failed:', e.message));
 
       const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
       const issuer = issuerRows[0];
       if (issuer?.email) {
-        send(issuer.email, `🏛️ Submitted to SECZ — ${sub.token_symbol}`,
-          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-            <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
-            <div style="padding:24px 32px;background:#fff">
-              <h2 style="color:#d97706">🏛️ SECZ Regulatory Review</h2>
-              <p>Dear ${issuer.full_name},</p>
-              <p>Your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) has been submitted to the <strong>Securities and Exchange Commission of Zimbabwe (SECZ)</strong> for regulatory review.</p>
-              <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px">You will be notified as soon as a regulatory decision is reached. This process typically takes a few business days.</p>
-              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/issuer" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">View Application →</a>
-            </div>
-            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
-          </div>`
-        ).catch(() => {});
+        notifyIssuerSeczSubmitted({
+          issuerEmail: issuer.email,
+          issuerName:  issuer.full_name,
+          tokenSymbol: sub.token_symbol,
+          entityName:  sub.entity_name,
+        }).catch(e => console.error('[MAILER] submit-to-secz notifyIssuerSeczSubmitted failed:', e.message));
+      } else {
+        console.warn(`[MAILER] submit-to-secz: no email found for issuer_wallet=${sub.issuer_wallet}`);
       }
 
       res.json({ success: true, status: 'SECZ_REVIEW', message: `${sub.token_symbol} submitted to SECZ for regulatory review.` });
@@ -1319,7 +1314,7 @@ router.put('/:id/secz-approve',
       );
 
       const { sendMessage } = require('../utils/messenger');
-      const { send } = require('../utils/mailer');
+      const { notifyIssuerSeczApproved } = require('../utils/mailer');
 
       await sendMessage({
         recipientId: sub.issuer_wallet,
@@ -1327,24 +1322,19 @@ router.put('/:id/secz-approve',
         body:        `Great news! Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has received regulatory approval from SECZ. Your token is now ready to be set live on the TokenEquityX platform. You will be notified when trading begins.`,
         type:        'SYSTEM',
         category:    'APPLICATION',
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] secz-approve sendMessage failed:', e.message));
 
       const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
       const issuer = issuerRows[0];
       if (issuer?.email) {
-        send(issuer.email, `✅ SECZ Approved — ${sub.token_symbol} — Ready to Launch`,
-          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-            <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
-            <div style="padding:24px 32px;background:#fff">
-              <h2 style="color:#16a34a">✅ SECZ Approval Granted</h2>
-              <p>Dear ${issuer.full_name},</p>
-              <p>Congratulations! Your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) has received <strong>regulatory approval from SECZ</strong>.</p>
-              <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px">Your token is now cleared for listing. TokenEquityX will activate it on the platform shortly. You will receive a final notification when your token is live and trading begins.</p>
-              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/issuer" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">View Application →</a>
-            </div>
-            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
-          </div>`
-        ).catch(() => {});
+        notifyIssuerSeczApproved({
+          issuerEmail: issuer.email,
+          issuerName:  issuer.full_name,
+          tokenSymbol: sub.token_symbol,
+          entityName:  sub.entity_name,
+        }).catch(e => console.error('[MAILER] secz-approve notifyIssuerSeczApproved failed:', e.message));
+      } else {
+        console.warn(`[MAILER] secz-approve: no email found for issuer_wallet=${sub.issuer_wallet}`);
       }
 
       res.json({ success: true, status: 'SECZ_APPROVED', message: `${sub.token_symbol} SECZ approval recorded. Ready to set live.` });
@@ -1421,7 +1411,7 @@ router.put('/:id/set-live',
       );
 
       const { sendMessage } = require('../utils/messenger');
-      const { send } = require('../utils/mailer');
+      const { notifyIssuerTokenLive } = require('../utils/mailer');
 
       await sendMessage({
         recipientId: sub.issuer_wallet,
@@ -1429,29 +1419,22 @@ router.put('/:id/set-live',
         body:        `Congratulations! Your token ${sub.entity_name} (${symbol}) is now LIVE on the TokenEquityX platform.\n\nListing Type: ${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse' : 'Peer-to-Peer'}\nToken Price: $${certifiedPrice.toFixed(4)} USD\nTrading Mode: ${trading_mode}\n\nYour token is now available for trading. Log in to monitor performance.`,
         type:        'SYSTEM',
         category:    'APPLICATION',
-      }).catch(() => {});
+      }).catch(e => console.error('[MESSENGER] set-live sendMessage failed:', e.message));
 
       const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
       const issuer = issuerRows[0];
       if (issuer?.email) {
-        send(issuer.email, `🚀 ${symbol} is Now Live on TokenEquityX!`,
-          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-            <div style="background:#1A3C5E;padding:24px 32px"><h1 style="color:#C8972B;margin:0;font-size:20px">⬡ TokenEquityX</h1></div>
-            <div style="padding:24px 32px;background:#fff">
-              <h2 style="color:#16a34a">🚀 Your Token is Live!</h2>
-              <p>Dear ${issuer.full_name},</p>
-              <p>Congratulations! <strong>${sub.entity_name} (${symbol})</strong> is now <strong>LIVE</strong> on the TokenEquityX platform and available for trading.</p>
-              <table style="width:100%;border-collapse:collapse;margin:16px 0">
-                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Token Symbol</td><td style="padding:8px 12px;font-family:monospace;font-weight:700;color:#C8972B">${symbol}</td></tr>
-                <tr><td style="padding:8px 12px;font-weight:600">Token Price</td><td style="padding:8px 12px;font-weight:700;color:#1A3C5E">$${certifiedPrice.toFixed(4)} USD</td></tr>
-                <tr style="background:#f5f5f5"><td style="padding:8px 12px;font-weight:600">Listing Type</td><td style="padding:8px 12px">${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse' : 'Peer-to-Peer'}</td></tr>
-                <tr><td style="padding:8px 12px;font-weight:600">Trading Mode</td><td style="padding:8px 12px">${trading_mode}</td></tr>
-              </table>
-              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/issuer" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;margin-top:8px">View Your Token →</a>
-            </div>
-            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
-          </div>`
-        ).catch(() => {});
+        notifyIssuerTokenLive({
+          issuerEmail:    issuer.email,
+          issuerName:     issuer.full_name,
+          tokenSymbol:    symbol,
+          entityName:     sub.entity_name,
+          certifiedPrice,
+          listingType,
+          tradingMode:    trading_mode,
+        }).catch(e => console.error('[MAILER] set-live notifyIssuerTokenLive failed:', e.message));
+      } else {
+        console.warn(`[MAILER] set-live: no email found for issuer_wallet=${sub.issuer_wallet}`);
       }
 
       res.json({
