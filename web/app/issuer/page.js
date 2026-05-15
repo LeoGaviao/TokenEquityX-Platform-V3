@@ -1668,26 +1668,16 @@ const COMPLIANCE_STEPS = [
   { key:'contract', label:'Smart Contract Deployed',  desc:'Token contract deployed and tested on Polygon' },
   { key:'secz',     label:'SECZ Sandbox Approved',    desc:'Regulatory sandbox designation received' },
 ];
-const mockPriceHistory = Array.from({length:30},(_,i)=>({
-  day:`Mar ${i+1}`, price:1.00+Math.sin(i/5)*0.02+i*0.001, volume:Math.floor(30000+Math.random()*100000)
-}));
-const mockHolderBreakdown = [
-  {type:'Institutional',pct:42,count:12},{type:'Accredited Retail',pct:35,count:52},
-  {type:'Family Office',pct:15,count:5},{type:'Corporate Treasury',pct:8,count:3},
-];
-const mockObligations = [
-  {id:1,task:'Q1 2026 Financial Data Submission',due:'2026-04-15',status:'UPCOMING',priority:'HIGH'},
-  {id:2,task:'Annual Compliance Report',due:'2026-06-30',status:'UPCOMING',priority:'MEDIUM'},
-  {id:3,task:'AGM Notice — 21 days prior',due:'2026-06-09',status:'UPCOMING',priority:'HIGH'},
-  {id:4,task:'Annual General Meeting',due:'2026-06-30',status:'UPCOMING',priority:'HIGH'},
-  {id:5,task:'KYC Re-verification (annual)',due:'2026-12-31',status:'UPCOMING',priority:'LOW'},
-];
-const PRIORITY_COLORS = {
-  HIGH:'bg-red-900/40 text-red-300 border-red-800',
-  MEDIUM:'bg-amber-900/40 text-amber-300 border-amber-800',
-  LOW:'bg-gray-800 text-gray-400 border-gray-700',
-};
-const HOLDER_COLORS = [NAVY, GOLD, '#0891b2', '#7c3aed'];
+function deriveCompliance(status) {
+  const order = ['spv','kyc','docs','auditor','contract','secz'];
+  const thresholds = {
+    PENDING:0, UNDER_REVIEW:1, INFO_REQUESTED:1,
+    AUDITOR_APPROVED:4, TOKENIZATION_PENDING:4,
+    SECZ_REVIEW:5, SECZ_APPROVED:6, LIVE:6,
+  };
+  const done = thresholds[status] ?? 0;
+  return Object.fromEntries(order.map((k,i) => [k, i < done]));
+}
 
 function IssuerOfferingTab({ notify, submissionStatus = null }) {
   const [offerings,  setOfferings]  = useState([]);
@@ -1932,6 +1922,9 @@ export default function IssuerDashboard() {
       window.location.href = `/${(_u.role || 'investor').toLowerCase()}`;
       return;
     }
+    if (_u?.onboarding_complete === false || _u?.onboarding_complete === 0) {
+      router.push('/onboarding'); return;
+    }
     loadAll();
   }, [ready]);
 
@@ -1979,15 +1972,11 @@ export default function IssuerDashboard() {
   };
 
   const t       = selToken;
-  const price   = parseFloat(t?.oracle_price || t?.current_price_usd || 1.00);
-  const supply  = parseFloat(t?.total_supply || t?.issued_shares || 1000000);
-  const mktCap  = price * supply;
-  const amtRaised   = mktCap * 0.25;
-  const raisedTarget = 5000000;
-  const raisedPct   = Math.min(100, Math.round((amtRaised/raisedTarget)*100));
-  const holders = 0;
-  const vol24h  = 0;
-  const compliance = {spv:true,kyc:true,docs:true,auditor:false,contract:false,secz:false};
+  const price   = t ? parseFloat(t.oracle_price || t.current_price_usd || 0) : null;
+  const supply  = t ? parseFloat(t.total_supply || t.issued_shares || 0) : null;
+  const mktCap  = (price && supply) ? price * supply : null;
+  const latestApp = myApplications[0] ?? null;
+  const compliance = deriveCompliance(latestApp?.status);
   const compDone = Object.values(compliance).filter(Boolean).length;
   const compPct  = Math.round((compDone/COMPLIANCE_STEPS.length)*100);
   const notify = (type, text) => { setActionMsg({ type, text }); setTimeout(() => setActionMsg(null), 3500); };
@@ -2039,14 +2028,13 @@ export default function IssuerDashboard() {
         {/* ══ OVERVIEW ══ */}
         {tab==='overview' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
               {[
-                {label:'Token Price',   value:`$${price.toFixed(4)}`,          sub:'oracle price',          color:'text-white'},
-                {label:'Market Cap',    value:fmt(mktCap),                     sub:'total supply × price',  color:'text-yellow-400'},
-                {label:'Capital Raised',value:fmt(amtRaised),                  sub:`${raisedPct}% of target`,color:'text-green-400'},
-                {label:'24h Volume',    value:fmt(vol24h),                     sub:'secondary trading',     color:'text-white'},
-                {label:'Token Holders', value:holders,                         sub:'verified investors',    color:'text-white'},
-                {label:'Market State',  value:t?.market_state?.replace('_',' ')||'FULL TRADING',sub:'SECZ approved',color:'text-green-400'},
+                {label:'Token Price',   value: price  ? `$${price.toFixed(4)}`                    : '—', sub:'oracle price',         color:'text-white'},
+                {label:'Market Cap',    value: mktCap ? fmt(mktCap)                                : '—', sub:'total supply × price', color:'text-yellow-400'},
+                {label:'Total Supply',  value: supply ? `${(supply/1e6).toFixed(2)}M`             : '—', sub:'tokens issued',        color:'text-white'},
+                {label:'Market State',  value: t?.market_state?.replace(/_/g,' ') || '—',               sub:'current status',       color:'text-green-400'},
+                {label:'Asset Type',    value: t?.asset_type?.replace(/_/g,' ') || '—',                 sub:'token class',          color:'text-white'},
               ].map((k,i)=>(
                 <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">{k.label}</p>
@@ -2056,26 +2044,46 @@ export default function IssuerDashboard() {
               ))}
             </div>
 
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h3 className="font-semibold mb-4">Price & Trading Volume — 30 Days</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={mockPriceHistory}>
-                  <defs>
-                    <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={GOLD} stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor={GOLD} stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937"/>
-                  <XAxis dataKey="day" tick={{fill:'#6b7280',fontSize:10}} tickLine={false} interval={4}/>
-                  <YAxis yAxisId="price" tick={{fill:'#6b7280',fontSize:10}} tickLine={false} tickFormatter={v=>`$${v.toFixed(3)}`}/>
-                  <YAxis yAxisId="vol" orientation="right" tick={{fill:'#6b7280',fontSize:10}} tickLine={false} tickFormatter={v=>`$${(v/1000).toFixed(0)}K`}/>
-                  <Tooltip contentStyle={{background:'#111827',border:'1px solid #374151',borderRadius:8}}/>
-                  <Bar yAxisId="vol" dataKey="volume" fill="#1A3C5E" opacity={0.5} radius={[2,2,0,0]}/>
-                  <Area yAxisId="price" type="monotone" dataKey="price" stroke={GOLD} fill="url(#priceGrad)" strokeWidth={2} dot={false}/>
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            {(() => {
+              const sym = t?.token_symbol || t?.symbol;
+              const tokenTrades = sym
+                ? trades.filter(tr => tr.token_symbol === sym).slice(-30).map(tr => ({
+                    day:    new Date(tr.matched_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}),
+                    price:  parseFloat(tr.price),
+                    volume: parseFloat(tr.total_usdc),
+                  }))
+                : [];
+              return (
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-semibold mb-4">Price & Trading Volume — 30 Days</h3>
+                  {tokenTrades.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={tokenTrades}>
+                        <defs>
+                          <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#C8972B" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#C8972B" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937"/>
+                        <XAxis dataKey="day" tick={{fill:'#6b7280',fontSize:10}} tickLine={false} interval={4}/>
+                        <YAxis yAxisId="price" tick={{fill:'#6b7280',fontSize:10}} tickLine={false} tickFormatter={v=>`$${v.toFixed(3)}`}/>
+                        <YAxis yAxisId="vol" orientation="right" tick={{fill:'#6b7280',fontSize:10}} tickLine={false} tickFormatter={v=>`$${(v/1000).toFixed(0)}K`}/>
+                        <Tooltip contentStyle={{background:'#111827',border:'1px solid #374151',borderRadius:8}}/>
+                        <Bar yAxisId="vol" dataKey="volume" fill="#1A3C5E" opacity={0.5} radius={[2,2,0,0]}/>
+                        <Area yAxisId="price" type="monotone" dataKey="price" stroke="#C8972B" fill="url(#priceGrad)" strokeWidth={2} dot={false}/>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-[200px] text-center">
+                      <p className="text-4xl mb-3">📈</p>
+                      <p className="text-gray-500 text-sm font-medium">No trading history yet</p>
+                      <p className="text-gray-700 text-xs mt-1">Chart will appear once secondary trading begins for this token</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               {myApplications.length > 0 && (
@@ -2102,22 +2110,6 @@ export default function IssuerDashboard() {
                   </div>
                 </div>
               )}
-
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <h3 className="font-semibold mb-4">Capital Raised vs Target</h3>
-                <div className="flex items-end justify-between mb-2">
-                  <div><p className="text-3xl font-bold text-green-400">{fmt(amtRaised)}</p><p className="text-gray-500 text-sm">of {fmt(raisedTarget)} target</p></div>
-                  <p className="text-2xl font-bold text-white">{raisedPct}%</p>
-                </div>
-                <div className="w-full bg-gray-800 rounded-full h-4 mb-4">
-                  <div className="h-4 rounded-full transition-all duration-700" style={{width:`${raisedPct}%`,background:GREEN}}/>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  {[['Total Supply',`${(supply/1e6).toFixed(1)}M tokens`],['Price per Token',`$${price.toFixed(4)}`],['Tokens Sold',`${((amtRaised/price)/1e6).toFixed(2)}M`],['Remaining',`${(((raisedTarget-amtRaised)/price)/1e6).toFixed(2)}M`]].map(([k,v],i)=>(
-                    <div key={i} className="bg-gray-800/50 rounded-lg p-3"><p className="text-gray-500 text-xs">{k}</p><p className="font-semibold mt-0.5">{v}</p></div>
-                  ))}
-                </div>
-              </div>
 
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <div className="flex items-center justify-between mb-4">
@@ -2149,16 +2141,10 @@ export default function IssuerDashboard() {
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="font-semibold mb-4">Upcoming Obligations</h3>
-              <div className="space-y-2">
-                {mockObligations.map(o=>(
-                  <div key={o.id} className={`flex items-center justify-between rounded-lg p-3 border ${PRIORITY_COLORS[o.priority]}`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full">{o.priority}</span>
-                      <p className="text-sm font-medium text-white">{o.task}</p>
-                    </div>
-                    <p className="text-sm font-mono">{dt(o.due)}</p>
-                  </div>
-                ))}
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <p className="text-3xl mb-3">📅</p>
+                <p className="text-gray-500 text-sm font-medium">No obligations scheduled</p>
+                <p className="text-gray-700 text-xs mt-1">Regulatory deadlines and compliance tasks will appear here once your token is live</p>
               </div>
             </div>
           </div>
