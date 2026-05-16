@@ -652,9 +652,11 @@ export default function AuditorDashboard() {
   useEffect(() => {
     if (typeof window === 'undefined') return null;
     const _u = JSON.parse(localStorage.getItem('user') || '{}');
-if (!_u?.role) return;
-   
-if (!['AUDITOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; return; }
+    if (!_u?.role) return;
+    if (!['AUDITOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; return; }
+    if (!(_u?.onboarding_complete === true || _u?.onboarding_complete === 1 || _u?.onboarding_complete === 'true')) {
+      router.push('/onboarding'); return;
+    }
     loadData();
     loadOfferings();
   }, [ready]);

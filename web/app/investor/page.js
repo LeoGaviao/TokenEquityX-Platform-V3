@@ -22,69 +22,6 @@ const pct  = (n) => `${n >= 0 ? '+' : ''}${parseFloat(n||0).toFixed(2)}%`;
 const ts   = (d) => new Date(d).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
 const dt   = (d) => new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
 
-const MARKET_DATA = {
-  ZWIB: {
-    price: 1.0240, change24h: 0.82, volume24h: 285000, mktCap: 1280000,
-    holders: 142, yield_pa: 8.5, asset_class: 'Bond',
-    company: 'ZimInfra Bond 2027', sector: 'Infrastructure',
-    chart: Array.from({length:30},(_,i)=>({ t:`Day ${i+1}`, p: 0.98 + Math.sin(i/5)*0.03 + i*0.002 })),
-    mgmt_statement: {
-      date: '2026-03-15', author: 'CEO, ZimInfra Holdings',
-      text: 'We are pleased to report that the first tranche of infrastructure works on the Beitbridge-Harare corridor has commenced ahead of schedule. Revenue from toll collections in Q1 2026 is tracking 12% above our projections. The bond coupon payment scheduled for April 2026 of USD 0.085 per token is confirmed and fully funded.',
-    },
-    outlook: { sector: 'Zimbabwe infrastructure investment is accelerating, with USD 3.2 billion committed by government and DFIs for road and energy projects through 2027.', risk: 'MEDIUM', analyst_rating: 'HOLD' },
-    fundamentals: { revenue_usd: 2800000, ebitda_margin: '62%', leverage: '2.1x', next_coupon: 'Apr 2026' },
-  },
-  HCPR: {
-    price: 1.0050, change24h: -0.12, volume24h: 128000, mktCap: 5025000,
-    holders: 89, yield_pa: 9.2, asset_class: 'Real Estate',
-    company: 'Harare CBD REIT', sector: 'Commercial Real Estate',
-    chart: Array.from({length:30},(_,i)=>({ t:`Day ${i+1}`, p: 1.01 - Math.cos(i/6)*0.015 })),
-    mgmt_statement: {
-      date: '2026-03-10', author: 'Portfolio Manager, Harare CBD REIT',
-      text: 'The REIT portfolio maintains 94% occupancy across 8 commercial properties in the Harare CBD. Rental income for Q1 2026 was USD 118,000, up 7% year-on-year. The quarterly distribution of USD 0.023 per token will be paid on 1 April 2026.',
-    },
-    outlook: { sector: 'Harare commercial property is experiencing a structural recovery with USD-denominated leases becoming the norm. Grade-A office vacancy rates have fallen to 8% from 14% two years ago.', risk: 'LOW-MEDIUM', analyst_rating: 'BUY' },
-    fundamentals: { revenue_usd: 472000, ebitda_margin: '71%', leverage: '0.8x', next_coupon: '1 Apr 2026' },
-  },
-  ACME: {
-    price: 0.9820, change24h: 1.45, volume24h: 485000, mktCap: 980000,
-    holders: 67, yield_pa: 0, asset_class: 'Mining',
-    company: 'Acme Mining Ltd', sector: 'Platinum Group Metals',
-    chart: Array.from({length:30},(_,i)=>({ t:`Day ${i+1}`, p: 0.93 + Math.random()*0.08 + (i>15?0.02:0) })),
-    mgmt_statement: {
-      date: '2026-03-01', author: 'CEO, Acme Mining Ltd',
-      text: 'Acme Mining Q1 2026 production from Block 12 has reached 850 platinum-equivalent ounces, 8% above plan. EIA approval for Phase 2 expansion received. Formal dividend policy will be established following SECZ listing.',
-    },
-    outlook: { sector: 'Platinum Group Metal prices remain structurally supported by the global energy transition. Zimbabwe holds the world second largest PGM reserves.', risk: 'MEDIUM-HIGH', analyst_rating: 'SPECULATIVE BUY' },
-    fundamentals: { revenue_usd: 3400000, ebitda_margin: '38%', leverage: '1.4x', next_coupon: 'N/A' },
-  },
-  GDMR: {
-    price: 1.0150, change24h: 0.32, volume24h: 67000, mktCap: 3045000,
-    holders: 44, yield_pa: 0, asset_class: 'Mining',
-    company: 'Great Dyke Minerals', sector: 'Platinum Group Metals',
-    chart: Array.from({length:30},(_,i)=>({ t:`Day ${i+1}`, p: 1.00 + Math.sin(i/7)*0.025 })),
-    mgmt_statement: {
-      date: '2026-02-20', author: 'Technical Director, Great Dyke Minerals',
-      text: 'The updated JORC resource estimate confirms 2.8 million PGM-equivalent ounces, up 22% from 2024. Feasibility study advancing with pilot plant commissioning expected Q3 2026.',
-    },
-    outlook: { sector: 'Same PGM sector dynamics as Acme Mining. Great Dyke Minerals is at an earlier stage with higher exploration upside and correspondingly higher risk.', risk: 'HIGH', analyst_rating: 'HOLD' },
-    fundamentals: { revenue_usd: 0, ebitda_margin: 'Pre-revenue', leverage: 'N/A', next_coupon: 'N/A' },
-  },
-};
-
-const NEWS_FEED = [
-  { id:1, category:'Zimbabwe Economy', headline:'Zimbabwe records 4.1% GDP growth in 2025, highest since 2018', source:'Zimbabwe Herald', time:'2 hours ago', url:'#', sentiment:'positive' },
-  { id:2, category:'PGM Markets', headline:'Platinum hits 18-month high as auto sector demand rebounds', source:'Reuters', time:'4 hours ago', url:'#', sentiment:'positive' },
-  { id:3, category:'Real Estate', headline:'Harare CBD Grade-A vacancy falls below 8% — Jones Lang LaSalle', source:'Property Wire', time:'Yesterday', url:'#', sentiment:'positive' },
-  { id:4, category:'Regulation', headline:'SECZ launches digital assets framework consultation — comment period open', source:'SECZ', time:'2 days ago', url:'#', sentiment:'neutral' },
-  { id:5, category:'Infrastructure', headline:'AfDB approves USD 400M for Zimbabwe road rehabilitation programme', source:'AfDB', time:'3 days ago', url:'#', sentiment:'positive' },
-  { id:6, category:'Currency', headline:'Zimbabwe Gold coin reserves increase 12% in Q1 2026 — RBZ', source:'RBZ Press', time:'3 days ago', url:'#', sentiment:'neutral' },
-];
-
-const SENTIMENT_COLORS = { positive:'text-green-400 bg-green-900/30', negative:'text-red-400 bg-red-900/30', neutral:'text-blue-400 bg-blue-900/30' };
-const RISK_COLORS = { 'LOW':'text-green-400','LOW-MEDIUM':'text-teal-400','MEDIUM':'text-yellow-400','MEDIUM-HIGH':'text-orange-400','HIGH':'text-red-400' };
-const RATING_COLORS = { 'BUY':'bg-green-700 text-white','HOLD':'bg-yellow-700 text-white','SPECULATIVE BUY':'bg-orange-700 text-white','SELL':'bg-red-700 text-white' };
 
 export default function InvestorDashboard() {
   const { account, user, ready } = useWallet();
@@ -280,8 +217,7 @@ export default function InvestorDashboard() {
     const _u = JSON.parse(localStorage.getItem('user') || '{}');
     if (!_u?.role) return;
     if (!['INVESTOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; return; }
-    // Redirect to onboarding if KYC not yet completed — only when we have an explicit false/0
-    if (_u?.onboarding_complete === false || _u?.onboarding_complete === 0) {
+    if (!(_u?.onboarding_complete === true || _u?.onboarding_complete === 1 || _u?.onboarding_complete === 'true')) {
       router.push('/onboarding'); return;
     }
     loadAll();
@@ -415,7 +351,7 @@ export default function InvestorDashboard() {
       change24h:   parseFloat(h.change24h || 0),
       volume24h:   parseFloat(h.volume24h || 0),
       yield_pa:    parseFloat(h.yield_pa || 0),
-      chart:       Array.from({length:30},(_,i)=>({ t:`Day ${i+1}`, p: price })),
+      chart:       [],
       market_state: h.market_state || 'FULL_TRADING',
     };
   });
@@ -994,49 +930,22 @@ export default function InvestorDashboard() {
                     <h2 className="font-bold text-xl">{activeAsset} — Deep Dive</h2>
                     <button onClick={()=>setActiveAsset(null)} className="text-gray-500 hover:text-white text-sm">✕ Close</button>
                   </div>
-                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                    <div className="xl:col-span-2">
-                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">30-Day Price History</h3>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <LineChart data={md.chart}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937"/>
-                          <XAxis dataKey="t" tick={{fill:'#6b7280',fontSize:10}} tickLine={false} interval={4}/>
-                          <YAxis tick={{fill:'#6b7280',fontSize:10}} tickLine={false} domain={['auto','auto']} tickFormatter={v=>`$${v.toFixed(3)}`}/>
-                          <Tooltip contentStyle={{background:'#111827',border:'1px solid #374151',borderRadius:8}} formatter={(v)=>[`$${v.toFixed(4)}`,'Price']}/>
-                          <Line type="monotone" dataKey="p" stroke={GOLD} strokeWidth={2} dot={false}/>
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Fundamentals</h3>
-                      <div className="space-y-3">
-                        {[['Market Cap',fmt(md.mktCap)],['Holders',md.holders.toLocaleString()],['Revenue (Annual)',fmt(md.fundamentals.revenue_usd)],['EBITDA Margin',md.fundamentals.ebitda_margin],['Leverage',md.fundamentals.leverage],['Next Distribution',md.fundamentals.next_coupon],['Annual Yield',md.yield_pa>0?`${md.yield_pa}%`:'—']].map(([k,v],i)=>(
-                          <div key={i} className="flex items-center justify-between bg-gray-800/50 px-3 py-2 rounded-lg">
-                            <span className="text-gray-400 text-xs">{k}</span>
-                            <span className="text-white text-sm font-medium">{v}</span>
-                          </div>
-                        ))}
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-gray-500 text-xs">Risk Rating</span>
-                          <span className={`text-sm font-bold ${RISK_COLORS[md.outlook.risk]}`}>{md.outlook.risk}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-500 text-xs">Analyst Rating</span>
-                          <span className={`text-xs font-bold px-2 py-1 rounded-full ${RATING_COLORS[md.outlook.analyst_rating]}`}>{md.outlook.analyst_rating}</span>
-                        </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {[
+                      ['Asset Class',      md.asset_class || '—'],
+                      ['Market State',     md.market_state || '—'],
+                      ['Holdings',         md.qty > 0 ? md.qty.toLocaleString(undefined,{maximumFractionDigits:4}) : '—'],
+                      ['Annual Yield',     md.yield_pa > 0 ? `${md.yield_pa}%` : '—'],
+                      ['Avg Cost / Token', md.qty > 0 && md.cost > 0 ? fmt(md.cost / md.qty) : '—'],
+                      ['Current Price',    md.price ? fmt(md.price) : '—'],
+                      ['Position Value',   md.value > 0 ? fmt(md.value) : '—'],
+                      ['Unrealised P&L',   md.pnl !== undefined ? fmt(md.pnl) : '—'],
+                    ].map(([k,v],i)=>(
+                      <div key={i} className="bg-gray-800/50 px-4 py-3 rounded-xl">
+                        <p className="text-gray-400 text-xs mb-1">{k}</p>
+                        <p className="text-white text-sm font-semibold">{v}</p>
                       </div>
-                    </div>
-                  </div>
-                  <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold">Management Statement</h3>
-                      <span className="text-xs text-gray-500">{md.mgmt_statement.date} · {md.mgmt_statement.author}</span>
-                    </div>
-                    <p className="text-gray-300 text-sm leading-relaxed italic">"{md.mgmt_statement.text}"</p>
-                  </div>
-                  <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-5">
-                    <h3 className="font-semibold mb-2 text-blue-300">Sector Outlook — {md.sector}</h3>
-                    <p className="text-gray-300 text-sm leading-relaxed">{md.outlook.sector}</p>
+                    ))}
                   </div>
                   <div className="flex gap-3">
                     <button onClick={()=>{ setTradeSymbol(activeAsset); setTab('trade'); fetchOrderBook(activeAsset); }}
