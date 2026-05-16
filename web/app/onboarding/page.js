@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import api from '../../lib/api';
 
 // ── Step definitions per role ──────────────────────────────────────────────
 const INVESTOR_STEPS = [
@@ -268,7 +269,6 @@ export default function OnboardingPage() {
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('token');
       const fd = new FormData();
 
       fd.append('fullName',     personal.fullName.trim());
@@ -297,20 +297,8 @@ export default function OnboardingPage() {
         fd.append('jobTitle',        partnerDecl.jobTitle.trim());
       }
 
-      const kycRes = await fetch('/api/kyc/submit', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      if (!kycRes.ok) {
-        const body = await kycRes.json().catch(() => ({}));
-        throw new Error(body.error || 'KYC submission failed');
-      }
-
-      await fetch('/api/auth/complete-onboarding', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      });
+      await api.post('/kyc/submit', fd);
+      await api.post('/auth/complete-onboarding');
 
       setSubmitted(true);
       localStorage.setItem('user', JSON.stringify({ ...user, onboarding_complete: 1, kyc_status: 'PENDING' }));
@@ -318,7 +306,7 @@ export default function OnboardingPage() {
       const dest = role === 'ISSUER' ? '/issuer' : role === 'PARTNER' ? '/banking-partner' : '/investor';
       setTimeout(() => router.push(dest), 3000);
     } catch (e) {
-      setError(e.message || 'Submission failed. Please try again.');
+      setError(e.response?.data?.error || e.message || 'Submission failed. Please try again.');
     } finally {
       setLoading(false);
     }
