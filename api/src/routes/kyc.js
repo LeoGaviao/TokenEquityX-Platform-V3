@@ -8,7 +8,7 @@ const { v4: uuidv4 }   = require('uuid');
 const { sendMessage }  = require('../utils/messenger');
 
 // POST /api/kyc/submit — investor submits KYC
-router.post('/submit', authenticate, upload.array('documents', 5), async (req, res) => {
+router.post('/submit', authenticate, upload.any(), async (req, res) => {
   const {
     fullName, dateOfBirth, nationality, idType, idNumber,
     addressLine1, addressLine2, city, country,
