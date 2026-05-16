@@ -21,29 +21,60 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
   }
 
   try {
-    const kycId = uuidv4();
+    // SELECT then INSERT-or-UPDATE — works even before the unique constraint
+    // migration runs (ON CONFLICT requires the constraint to already exist).
+    const [existing] = await db.execute(
+      'SELECT id FROM kyc_records WHERE user_id = ?',
+      [req.user.userId]
+    );
 
-    await db.execute(`
-      INSERT INTO kyc_records
-        (id, user_id, full_name, date_of_birth, nationality,
-         id_type, id_number, address_line1, address_line2,
-         city, country, investor_tier, accredited_investor, status,
-         risk_profile, risk_score, risk_answers)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
-      ON CONFLICT (user_id) DO UPDATE SET
-        full_name     = EXCLUDED.full_name,
-        status        = 'PENDING',
-        risk_profile  = EXCLUDED.risk_profile,
-        risk_score    = EXCLUDED.risk_score,
-        risk_answers  = EXCLUDED.risk_answers,
-        updated_at    = NOW()
-    `, [
-      kycId, req.user.userId, fullName, dateOfBirth, nationality,
-      idType, idNumber, addressLine1, addressLine2, city, country,
-      investorTier || 'RETAIL', accreditedInvestor ? true : false,
-      riskProfile || 'BALANCED', parseInt(riskScore) || 0,
-      riskAnswers ? JSON.stringify(riskAnswers) : null
-    ]);
+    let kycId;
+    if (existing.length > 0) {
+      kycId = existing[0].id;
+      await db.execute(`
+        UPDATE kyc_records
+        SET full_name           = ?,
+            date_of_birth       = ?,
+            nationality         = ?,
+            id_type             = ?,
+            id_number           = ?,
+            address_line1       = ?,
+            address_line2       = ?,
+            city                = ?,
+            country             = ?,
+            investor_tier       = ?,
+            accredited_investor = ?,
+            status              = 'PENDING',
+            risk_profile        = ?,
+            risk_score          = ?,
+            risk_answers        = ?,
+            updated_at          = NOW()
+        WHERE user_id = ?
+      `, [
+        fullName, dateOfBirth, nationality, idType, idNumber,
+        addressLine1, addressLine2, city, country,
+        investorTier || 'RETAIL', accreditedInvestor ? true : false,
+        riskProfile || 'BALANCED', parseInt(riskScore) || 0,
+        riskAnswers ? JSON.stringify(riskAnswers) : null,
+        req.user.userId,
+      ]);
+    } else {
+      kycId = uuidv4();
+      await db.execute(`
+        INSERT INTO kyc_records
+          (id, user_id, full_name, date_of_birth, nationality,
+           id_type, id_number, address_line1, address_line2,
+           city, country, investor_tier, accredited_investor, status,
+           risk_profile, risk_score, risk_answers)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
+      `, [
+        kycId, req.user.userId, fullName, dateOfBirth, nationality,
+        idType, idNumber, addressLine1, addressLine2, city, country,
+        investorTier || 'RETAIL', accreditedInvestor ? true : false,
+        riskProfile || 'BALANCED', parseInt(riskScore) || 0,
+        riskAnswers ? JSON.stringify(riskAnswers) : null,
+      ]);
+    }
 
     // Save uploaded documents to Supabase
     if (req.files && req.files.length > 0) {

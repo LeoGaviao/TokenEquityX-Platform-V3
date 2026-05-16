@@ -946,6 +946,12 @@ router.get('/migrate', async (req, res) => {
        email = 'leomgaviao@tokenequityx.co.zw',
        full_name = 'Leo Manezhu Gaviao',
        role = 'AUDITOR'`,
+
+    // ── KYC unique constraint — required for ON CONFLICT (user_id) ────────
+    `DO $$ BEGIN
+       ALTER TABLE kyc_records ADD CONSTRAINT kyc_records_user_id_unique UNIQUE (user_id);
+     EXCEPTION WHEN duplicate_object THEN NULL;
+     END $$`,
   ];
   const results = [];
   for (const sql of migrations) {
