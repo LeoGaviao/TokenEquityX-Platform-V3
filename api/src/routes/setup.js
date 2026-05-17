@@ -1345,4 +1345,42 @@ router.get('/delete-user', async (req, res) => {
   }
 });
 
+// GET /api/setup/reset-mgmc — delete all MGMC token data, preserving the issuer user account
+// Pass ?issuer_email=... to also delete the issuer's entity_kyc record
+router.get('/reset-mgmc', async (req, res) => {
+  const { secret, issuer_email } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const r1 = await pool._pool.query("DELETE FROM data_submissions WHERE token_symbol = 'MGMC'");
+    const r2 = await pool._pool.query("DELETE FROM tokens WHERE token_symbol = 'MGMC'");
+    const r3 = await pool._pool.query("DELETE FROM application_fees WHERE token_symbol = 'MGMC'");
+
+    let r4 = { rowCount: 0 };
+    if (issuer_email) {
+      r4 = await pool._pool.query(
+        'DELETE FROM entity_kyc WHERE user_id = (SELECT id FROM users WHERE email = $1)',
+        [issuer_email]
+      );
+    }
+
+    res.json({
+      success: true,
+      deleted: {
+        data_submissions: r1.rowCount,
+        tokens:           r2.rowCount,
+        application_fees: r3.rowCount,
+        entity_kyc:       r4.rowCount,
+      },
+      message: issuer_email
+        ? `MGMC reset complete. entity_kyc deleted for ${issuer_email}. Issuer user account preserved.`
+        : 'MGMC reset complete (entity_kyc skipped — pass ?issuer_email= to include it). Issuer user account preserved.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
