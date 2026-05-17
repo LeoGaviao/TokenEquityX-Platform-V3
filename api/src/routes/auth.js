@@ -299,6 +299,30 @@ router.post('/create-staff', authenticate, requireRole('ADMIN'), async (req, res
       [id, `staff_${id.slice(0,8)}`, role, email.toLowerCase(), full_name, password_hash]
     );
 
+    // FIX 3.8 — platform message and external email to new staff member
+    try {
+      const { sendMessage } = require('../utils/messenger');
+      const { notifyStaffAccountCreated } = require('../utils/mailer');
+      const PLATFORM_URL = process.env.PLATFORM_URL || 'https://tokenequityx.co.zw';
+
+      sendMessage({
+        recipientId: id,
+        subject:     `👋 Welcome to TokenEquityX — ${role} Account Created`,
+        body:        `Welcome to TokenEquityX, ${full_name}!\n\nYour ${role} account has been created by the platform administrator.\n\nLog in at ${PLATFORM_URL}/login with your email and the password provided to you.\n\nFor support, contact admin@tokenequityx.co.zw`,
+        type:        'SYSTEM',
+        category:    'GENERAL',
+      }).catch(e => console.error('[MESSENGER] create-staff sendMessage (staff) failed:', e.message));
+
+      notifyStaffAccountCreated({
+        userEmail: email.toLowerCase(),
+        userName:  full_name,
+        role,
+        loginUrl:  `${PLATFORM_URL}/login`,
+      }).catch(e => console.error('[MAILER] create-staff notifyStaffAccountCreated failed:', e.message));
+    } catch (notifyErr) {
+      console.error('[CREATE-STAFF] Notification error (non-fatal):', notifyErr.message);
+    }
+
     res.status(201).json({
       success: true,
       user: { id, role, email: email.toLowerCase(), full_name }

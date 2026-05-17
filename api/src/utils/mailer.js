@@ -469,6 +469,132 @@ async function notifyInvestorSubscriptionConfirmed({ investorEmail, investorName
     `));
 }
 
+async function notifyIssuerTokenTradingLive({ issuerEmail, issuerName, tokenSymbol, marketState, listingDate, oraclePrice }) {
+  const modeLabel = marketState === 'FULL_TRADING' ? 'Full Secondary Market Trading' : 'P2P-Only Trading';
+  const dateFmt = listingDate ? new Date(listingDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Today';
+  const priceFmt = oraclePrice ? `$${parseFloat(oraclePrice).toFixed(4)} USD` : '—';
+  return send(issuerEmail, `🚀 ${tokenSymbol} Is Now Live for Trading`,
+    baseTemplate('Your Token Is Now Live for Trading', `
+      <p>Dear ${issuerName},</p>
+      <p><strong>${tokenSymbol}</strong> is now live on the TokenEquityX secondary market.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Market Mode</span><span style="font-weight:700;color:#16a34a">${modeLabel}</span></div>
+      <div class="detail-row"><span>Oracle Price</span><span>${priceFmt}</span></div>
+      <div class="detail-row"><span>Listing Date</span><span>${dateFmt}</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        Investors who subscribed during the primary offering have received their tokens. Secondary market trading is now available.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Token &rarr;</a>
+    `));
+}
+
+async function notifyInvestorTradeFilled({ investorEmail, investorName, tokenSymbol, side, quantity, pricePerToken, total, settlementRail }) {
+  const isBuy = side === 'BUY';
+  const fmt = n => n ? `$${parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+  const fmtPrice = n => n ? `$${parseFloat(n).toFixed(4)}` : '—';
+  return send(investorEmail,
+    isBuy ? `✅ Trade Confirmed — ${tokenSymbol} Purchase` : `✅ Trade Confirmed — ${tokenSymbol} Sale`,
+    baseTemplate(
+      isBuy ? `Trade Confirmed — ${tokenSymbol} Purchase` : `Trade Confirmed — ${tokenSymbol} Sale`,
+      `
+      <p>Dear ${investorName},</p>
+      <p>Your ${isBuy ? 'buy' : 'sell'} order for <strong>${tokenSymbol}</strong> has been matched and settled.</p>
+      <div class="detail-row"><span>Token</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Side</span><span style="font-weight:700;color:${isBuy ? '#16a34a' : '#dc2626'}">${isBuy ? '▲ BUY' : '▼ SELL'}</span></div>
+      <div class="detail-row"><span>${isBuy ? 'Quantity Bought' : 'Quantity Sold'}</span><span style="font-weight:700">${parseInt(quantity).toLocaleString()} tokens</span></div>
+      <div class="detail-row"><span>Price Per Token</span><span>${fmtPrice(pricePerToken)}</span></div>
+      <div class="detail-row"><span>${isBuy ? 'Total Cost' : 'Gross Proceeds'}</span><span style="font-weight:700">${fmt(total)}</span></div>
+      ${settlementRail ? `<div class="detail-row"><span>Settlement Rail</span><span>${settlementRail}</span></div>` : ''}
+      <div class="detail-row"><span>Status</span><span class="success">✔ Settled</span></div>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Portfolio &rarr;</a>
+    `));
+}
+
+async function notifyAdminAuditorDeclined({ tokenSymbol, entityName, auditorEmail, declineReason, referenceNumber }) {
+  return send(ADMIN, `🚨 URGENT — Auditor Declined Assignment — ${tokenSymbol}`,
+    baseTemplate('URGENT: Auditor Declined — Reassignment Required', `
+      <p>An auditor has declined their assignment. A replacement must be nominated immediately to avoid delays in the tokenisation pipeline.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Entity</span><span>${entityName || '—'}</span></div>
+      <div class="detail-row"><span>Auditor Email</span><span style="font-family:monospace">${auditorEmail || '—'}</span></div>
+      <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber || '—'}</span></div>
+      ${declineReason ? `<div class="detail-row"><span>Decline Reason</span><span class="danger">${declineReason}</span></div>` : ''}
+      <p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;margin:20px 0;">
+        <strong>Action Required:</strong> Reassign a new auditor immediately via the <strong>Pipeline</strong> tab in the admin dashboard.
+      </p>
+      <a href="${PLATFORM}/admin" class="btn btn-gold">Go to Pipeline &rarr;</a>
+    `));
+}
+
+async function notifyIssuerApplicationSuspended({ issuerEmail, issuerName, tokenSymbol, entityName, reason, referenceNumber }) {
+  return send(issuerEmail, `⚠️ IMPORTANT — Token Listing Suspended — ${tokenSymbol}`,
+    baseTemplate('Token Listing Suspended', `
+      <p>Dear ${issuerName},</p>
+      <p>Your listing for <strong>${entityName}</strong> (${tokenSymbol}) has been suspended by the TokenEquityX platform administrator.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      ${reason ? `<div class="detail-row"><span>Suspension Reason</span><span class="danger">${reason}</span></div>` : ''}
+      <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber || '—'}</span></div>
+      <div class="detail-row"><span>Appeal Window</span><span style="font-weight:700">90 days from suspension date</span></div>
+      <p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Your 90-Day Appeal Window is Now Open.</strong> Your application data will be retained for 90 days. To appeal this decision, contact <a href="mailto:admin@tokenequityx.co.zw" style="color:#1A3C5E;">admin@tokenequityx.co.zw</a> within 90 days. If no appeal is received, all data will be permanently deleted.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn">Contact Admin to Appeal &rarr;</a>
+    `));
+}
+
+async function notifyIssuerApplicationReinstated({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber }) {
+  return send(issuerEmail, `✅ Token Listing Reinstated — ${tokenSymbol}`,
+    baseTemplate('Token Listing Reinstated', `
+      <p>Dear ${issuerName},</p>
+      <p>Your listing for <strong>${entityName}</strong> (${tokenSymbol}) has been reinstated by the platform administrator. Your application is now back in <strong>PENDING</strong> status.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Status Restored</span><span class="success">✔ PENDING</span></div>
+      <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber || '—'}</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Next steps:</strong> Log in to your issuer dashboard to review your application. Please address any outstanding requirements and contact <a href="mailto:admin@tokenequityx.co.zw" style="color:#1A3C5E;">admin@tokenequityx.co.zw</a> if you need guidance.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Application &rarr;</a>
+    `));
+}
+
+async function notifyStaffAccountCreated({ userEmail, userName, role, loginUrl }) {
+  const url = loginUrl || `${PLATFORM}/login`;
+  return send(userEmail, `Your TokenEquityX Staff Account is Ready`,
+    baseTemplate('Your Staff Account Has Been Created', `
+      <p>Dear ${userName},</p>
+      <p>An account has been created for you on the TokenEquityX platform. You can now log in and access your dashboard.</p>
+      <div class="detail-row"><span>Full Name</span><span style="font-weight:700">${userName}</span></div>
+      <div class="detail-row"><span>Email</span><span style="font-family:monospace">${userEmail}</span></div>
+      <div class="detail-row"><span>Role</span><span style="font-weight:700">${role}</span></div>
+      <div class="detail-row"><span>Login URL</span><span><a href="${url}" style="color:#1A3C5E;">${url}</a></span></div>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Security Notice:</strong> Please change your password on first login. If you did not expect this email, contact <a href="mailto:admin@tokenequityx.co.zw" style="color:#1A3C5E;">admin@tokenequityx.co.zw</a> immediately.
+      </p>
+      <a href="${url}" class="btn btn-gold">Log In Now &rarr;</a>
+    `));
+}
+
+async function notifyIssuerMarketStateChanged({ issuerEmail, issuerName, tokenSymbol, previousState, newState, effectiveDate, reason }) {
+  const dateFmt = effectiveDate ? new Date(effectiveDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Today';
+  const stateLabel = s => ({ PRE_LAUNCH: 'Pre-Launch', P2P_ONLY: 'P2P-Only Trading', LIMITED_TRADING: 'Limited Trading', FULL_TRADING: 'Full Trading', HALTED: 'HALTED' }[s] || s);
+  const isHalted = newState === 'HALTED';
+  return send(issuerEmail, `📢 Token Market State Updated — ${tokenSymbol}`,
+    baseTemplate('Token Market State Changed', `
+      <p>Dear ${issuerName},</p>
+      <p>The market state for your token <strong>${tokenSymbol}</strong> has been updated by the platform administrator.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Previous State</span><span style="color:#6b7280">${stateLabel(previousState)}</span></div>
+      <div class="detail-row"><span>New State</span><span style="font-weight:700;color:${isHalted ? '#dc2626' : '#16a34a'}">${stateLabel(newState)}</span></div>
+      <div class="detail-row"><span>Effective Date</span><span>${dateFmt}</span></div>
+      ${reason ? `<div class="detail-row"><span>Reason</span><span>${reason}</span></div>` : ''}
+      ${isHalted
+        ? '<p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;"><strong>Trading has been suspended.</strong> Contact <a href="mailto:admin@tokenequityx.co.zw" style="color:#1A3C5E;">admin@tokenequityx.co.zw</a> for details.</p>'
+        : '<p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">Your token is now live in the new market state. Log in to your issuer dashboard to monitor performance.</p>'
+      }
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Token &rarr;</a>
+    `));
+}
+
 async function notifyIssuerOfferingProposed({ issuerEmail, issuerName, tokenSymbol, offeringPrice, targetRaise, tokensOffered, submittedAt }) {
   const fmt = n => n ? `$${parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
   const dateFmt = submittedAt ? new Date(submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Today';
@@ -603,4 +729,11 @@ module.exports = {
   notifyIssuerEntityKycApproved,
   notifyIssuerEntityKycRejected,
   notifyIssuerAuditorAccepted,
+  notifyIssuerTokenTradingLive,
+  notifyInvestorTradeFilled,
+  notifyAdminAuditorDeclined,
+  notifyIssuerApplicationSuspended,
+  notifyIssuerApplicationReinstated,
+  notifyStaffAccountCreated,
+  notifyIssuerMarketStateChanged,
 };

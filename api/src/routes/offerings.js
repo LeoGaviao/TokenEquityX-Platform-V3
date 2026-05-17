@@ -751,6 +751,34 @@ router.post('/:id/close',
         console.error('[OFFERING-CLOSE] Investor notification error (non-fatal):', notifyErr.message);
       }
 
+      // FIX 3.1 — notify issuer that their token is now live for secondary trading
+      try {
+        const { notifyIssuerTokenTradingLive } = require('../utils/mailer');
+        const tradingSym = token.token_symbol || token.symbol;
+        const modeLabel  = newTradingMode === 'FULL_TRADING' ? 'Full Trading' : 'P2P Trading';
+
+        sendMessage({
+          recipientId: offering.issuer_id,
+          subject:     `🚀 ${tradingSym} Is Now Live for ${modeLabel}`,
+          body:        `Your token ${tradingSym} has successfully completed its primary offering and is now live for ${modeLabel} on the TokenEquityX secondary market. Investors can now buy and sell on the secondary market.`,
+          type:        'SYSTEM', category: 'TRADING', referenceId: String(offering.id),
+        }).catch(e => console.error('[MESSENGER] offering-close trading-live sendMessage (issuer) failed:', e.message));
+
+        const [tradingIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [offering.issuer_id]);
+        if (tradingIssuerRows[0]?.email) {
+          notifyIssuerTokenTradingLive({
+            issuerEmail:  tradingIssuerRows[0].email,
+            issuerName:   tradingIssuerRows[0].full_name,
+            tokenSymbol:  tradingSym,
+            marketState:  newTradingMode,
+            listingDate:  new Date(),
+            oraclePrice:  token.oracle_price || token.current_price_usd,
+          }).catch(e => console.error('[MAILER] offering-close notifyIssuerTokenTradingLive failed:', e.message));
+        }
+      } catch (notifyErr) {
+        console.error('[OFFERING-CLOSE] Trading-live notification error (non-fatal):', notifyErr.message);
+      }
+
       res.json({
         success: true,
         summary: {

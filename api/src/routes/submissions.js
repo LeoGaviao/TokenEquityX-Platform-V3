@@ -1204,6 +1204,34 @@ router.put('/:id/auditor-decline', authenticate, requireRole('AUDITOR'), async (
       type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
     }).catch(e => console.error('[MESSENGER] auditor-decline sendMessage (issuer) failed:', e.message));
 
+    // FIX 3.5 — external emails to admin and issuer
+    try {
+      const mailer = require('../utils/mailer');
+
+      // Fetch auditor email for admin notification
+      const [adAuditorRows] = await db.execute('SELECT email FROM users WHERE id = ?', [req.user.userId]);
+      mailer.notifyAdminAuditorDeclined({
+        tokenSymbol:     sub.token_symbol,
+        entityName:      sub.entity_name,
+        auditorEmail:    adAuditorRows[0]?.email,
+        declineReason:   reason,
+        referenceNumber: sub.reference_number,
+      }).catch(e => console.error('[MAILER] auditor-decline notifyAdminAuditorDeclined failed:', e.message));
+
+      // External email to issuer — simple send() since the message is short and situational
+      const [adIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      if (adIssuerRows[0]?.email) {
+        const PLATFORM_URL = process.env.PLATFORM_URL || 'https://tokenequityx.co.zw';
+        mailer.send(
+          adIssuerRows[0].email,
+          `⚠️ Auditor Update — ${sub.token_symbol}`,
+          `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="font-family:-apple-system,sans-serif;background:#f4f4f5;padding:20px;"><div style="background:#fff;border-radius:12px;max-width:600px;margin:0 auto;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);"><div style="background:#1A3C5E;padding:28px 32px;"><h1 style="color:#C8972B;font-size:22px;margin:0;font-weight:800;">TokenEquityX</h1></div><div style="padding:28px 32px;"><h2 style="color:#111827;font-size:18px;margin:0 0 16px;">Auditor Update — ${sub.token_symbol}</h2><p style="color:#374151;font-size:15px;line-height:1.6;">Dear ${adIssuerRows[0].full_name},</p><p style="color:#374151;font-size:15px;line-height:1.6;">The auditor assigned to your tokenisation application for <strong>${sub.entity_name}</strong> (${sub.token_symbol}) was unavailable and could not accept the assignment.</p><p style="color:#374151;font-size:15px;line-height:1.6;">TokenEquityX is arranging a replacement auditor. <strong>No action is required from you</strong> at this time. You will be notified as soon as a new auditor is assigned.</p><p style="color:#6b7280;font-size:13px;">Reference: ${sub.reference_number}</p><a href="${PLATFORM_URL}/issuer" style="display:inline-block;background:#1A3C5E;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;font-size:14px;margin-top:16px;">View Your Application &rarr;</a></div><div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;">TokenEquityX (Private) Limited &middot; This is an automated notification.</div></div></body></html>`
+        ).catch(e => console.error('[MAILER] auditor-decline issuer email failed:', e.message));
+      }
+    } catch (notifyErr) {
+      console.error('[AUDITOR-DECLINE] External email error (non-fatal):', notifyErr.message);
+    }
+
     res.json({ success: true, message: 'Declination recorded. Admin and issuer have been notified.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1321,6 +1349,24 @@ router.put('/:id/soft-delete', authenticate, requireRole('ADMIN'), async (req, r
       type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
     }).catch(e => console.error('[MESSENGER] suspend sendMessage (issuer) failed:', e.message));
 
+    // FIX 3.6 — external email to issuer on suspension
+    try {
+      const { notifyIssuerApplicationSuspended } = require('../utils/mailer');
+      const [sdIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      if (sdIssuerRows[0]?.email) {
+        notifyIssuerApplicationSuspended({
+          issuerEmail:     sdIssuerRows[0].email,
+          issuerName:      sdIssuerRows[0].full_name,
+          tokenSymbol:     sub.token_symbol,
+          entityName:      sub.entity_name,
+          reason,
+          referenceNumber: sub.reference_number,
+        }).catch(e => console.error('[MAILER] soft-delete notifyIssuerApplicationSuspended failed:', e.message));
+      }
+    } catch (notifyErr) {
+      console.error('[SOFT-DELETE] External email error (non-fatal):', notifyErr.message);
+    }
+
     await conn.commit();
     res.json({ success: true, message: `${sub.token_symbol} suspended. Data retained for 90-day appeal window.` });
   } catch (err) {
@@ -1358,6 +1404,23 @@ router.put('/:id/reinstate', authenticate, requireRole('ADMIN'), async (req, res
       body:        `Your listing for ${sub.entity_name} (${sub.token_symbol}) has been reinstated by the platform administrator. Your application is now back in PENDING status.\n\nReference: ${sub.reference_number}`,
       type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
     }).catch(e => console.error('[MESSENGER] reinstate sendMessage (issuer) failed:', e.message));
+
+    // FIX 3.7 — external email to issuer on reinstatement
+    try {
+      const { notifyIssuerApplicationReinstated } = require('../utils/mailer');
+      const [riIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      if (riIssuerRows[0]?.email) {
+        notifyIssuerApplicationReinstated({
+          issuerEmail:     riIssuerRows[0].email,
+          issuerName:      riIssuerRows[0].full_name,
+          tokenSymbol:     sub.token_symbol,
+          entityName:      sub.entity_name,
+          referenceNumber: sub.reference_number,
+        }).catch(e => console.error('[MAILER] reinstate notifyIssuerApplicationReinstated failed:', e.message));
+      }
+    } catch (notifyErr) {
+      console.error('[REINSTATE] External email error (non-fatal):', notifyErr.message);
+    }
 
     await conn.commit();
     res.json({ success: true, message: `${sub.token_symbol} reinstated successfully.` });

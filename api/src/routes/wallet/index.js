@@ -89,6 +89,16 @@ router.post('/deposit', authenticate, async (req, res) => {
       depositId,
     }).catch(e => console.error('[MAILER] notifyAdminDepositSubmitted failed:', e.message));
 
+    // FIX 3.3 — platform message to investor confirming submission received
+    sendMessage({
+      recipientId: req.user.userId,
+      subject:     `💰 Deposit Request Received — $${parseFloat(amount_usd).toFixed(2)} USD`,
+      body:        `Your deposit request of $${parseFloat(amount_usd).toFixed(2)} USD has been received.\n\nReference: ${reference.trim().toUpperCase()}\nDeposit ID: ${depositId}\n\nAdmin will verify and confirm once the bank transfer is cleared. This typically takes 1-2 business days. You will receive a notification once your deposit is confirmed.`,
+      type:        'SYSTEM',
+      category:    'WALLET',
+      referenceId: depositId,
+    }).catch(e => console.error('[MESSENGER] deposit POST sendMessage (investor) failed:', e.message));
+
     res.json({
       success:   true,
       depositId,
@@ -189,6 +199,26 @@ router.post('/withdraw', authenticate, async (req, res) => {
       bankName:      bank_name,
       accountNumber: account_number,
     }).catch(e => console.error('[MAILER] notifyInvestorWithdrawalProcessing failed:', e.message));
+
+    // FIX 3.4 — platform message to investor
+    sendMessage({
+      recipientId: req.user.userId,
+      subject:     `💸 Withdrawal Request Submitted — $${parseFloat(amount_usd).toFixed(2)} USD`,
+      body:        `Your withdrawal request of $${parseFloat(amount_usd).toFixed(2)} USD has been submitted.\n\nBank: ${bank_name}\nAccount: ${account_number}\n\nWe will process your EFT/RTGS transfer within 2-3 business days. You will be notified when the transfer is complete.\n\nWithdrawal ID: ${withdrawalId}`,
+      type:        'SYSTEM',
+      category:    'WALLET',
+      referenceId: withdrawalId,
+    }).catch(e => console.error('[MESSENGER] withdraw POST sendMessage (investor) failed:', e.message));
+
+    // FIX 3.4 — platform message to admin (system UUID)
+    sendMessage({
+      recipientId: '00000000-0000-0000-0000-000000000001',
+      subject:     `💸 New Withdrawal Request — $${parseFloat(amount_usd).toFixed(2)} from ${investor.full_name || 'Investor'}`,
+      body:        `New withdrawal request received.\n\nAmount: $${parseFloat(amount_usd).toFixed(2)} USD\nInvestor: ${investor.full_name || 'Unknown'} (${investor.email || ''})\nBank: ${bank_name}\nAccount Name: ${account_name}\nAccount Number: ${account_number}\n\nRequires processing. Withdrawal ID: ${withdrawalId}`,
+      type:        'SYSTEM',
+      category:    'WALLET',
+      referenceId: withdrawalId,
+    }).catch(e => console.error('[MESSENGER] withdraw POST sendMessage (admin) failed:', e.message));
 
     res.json({
       success:      true,
@@ -375,6 +405,16 @@ router.put('/deposit/:id/reject',
         reference:     dep.reference,
         reason:        reason || 'Reference could not be verified on the Stanbic account',
       }).catch(e => console.error('[MAILER] notifyInvestorDepositRejected failed:', e.message));
+
+      // FIX 3.9 — platform message to investor on deposit rejection
+      sendMessage({
+        recipientId: dep.user_id,
+        subject:     `❌ Deposit Not Verified — $${parseFloat(dep.amount_usd).toFixed(2)} USD`,
+        body:        `Your deposit request of $${parseFloat(dep.amount_usd).toFixed(2)} USD (Ref: ${dep.reference}) has been rejected.\n\nReason: ${reason || 'Reference could not be verified on the Stanbic account'}\n\nPlease contact admin@tokenequityx.co.zw if you believe this is an error.`,
+        type:        'SYSTEM',
+        category:    'WALLET',
+        referenceId: String(req.params.id),
+      }).catch(e => console.error('[MESSENGER] deposit reject sendMessage (investor) failed:', e.message));
 
       res.json({ success: true, message: `Deposit rejected. ${dep.full_name} has been notified by email.` });
     } catch (err) {

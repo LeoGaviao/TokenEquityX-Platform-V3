@@ -57,6 +57,7 @@ router.post('/order', authenticate, requireKYC, async (req, res) => {
       if (tradeRows.length > 0) {
         const trade = tradeRows[0];
         const sym = tokenSymbol.toUpperCase();
+
         if (trade.buyer_id) {
           await sendMessage({
             recipientId: trade.buyer_id,
@@ -64,7 +65,23 @@ router.post('/order', authenticate, requireKYC, async (req, res) => {
             body:        `Your buy order for ${trade.quantity} ${sym} tokens at $${parseFloat(trade.price).toFixed(4)} per token has been executed. Total: $${parseFloat(trade.total_usdc).toFixed(2)} USD.`,
             type:        'SYSTEM', category: 'TRADING',
           }).catch(() => {});
+          // FIX 3.2 — external email to buyer
+          const { notifyInvestorTradeFilled } = require('../utils/mailer');
+          const [buyerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [trade.buyer_id]);
+          if (buyerRows[0]?.email) {
+            notifyInvestorTradeFilled({
+              investorEmail: buyerRows[0].email,
+              investorName:  buyerRows[0].full_name,
+              tokenSymbol:   sym,
+              side:          'BUY',
+              quantity:      trade.quantity,
+              pricePerToken: trade.price,
+              total:         trade.total_usdc,
+              settlementRail: 'USDC',
+            }).catch(e => console.error('[MAILER] trade buyer notifyInvestorTradeFilled failed:', e.message));
+          }
         }
+
         if (trade.seller_id) {
           await sendMessage({
             recipientId: trade.seller_id,
@@ -72,6 +89,21 @@ router.post('/order', authenticate, requireKYC, async (req, res) => {
             body:        `Your sell order for ${trade.quantity} ${sym} tokens at $${parseFloat(trade.price).toFixed(4)} per token has been executed. Total: $${parseFloat(trade.total_usdc).toFixed(2)} USD.`,
             type:        'SYSTEM', category: 'TRADING',
           }).catch(() => {});
+          // FIX 3.2 — external email to seller
+          const { notifyInvestorTradeFilled: notifyTradeFilled } = require('../utils/mailer');
+          const [sellerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [trade.seller_id]);
+          if (sellerRows[0]?.email) {
+            notifyTradeFilled({
+              investorEmail: sellerRows[0].email,
+              investorName:  sellerRows[0].full_name,
+              tokenSymbol:   sym,
+              side:          'SELL',
+              quantity:      trade.quantity,
+              pricePerToken: trade.price,
+              total:         trade.total_usdc,
+              settlementRail: 'USDC',
+            }).catch(e => console.error('[MAILER] trade seller notifyInvestorTradeFilled failed:', e.message));
+          }
         }
       }
     } catch {}

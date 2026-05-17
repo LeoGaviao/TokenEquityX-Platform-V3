@@ -204,16 +204,63 @@ router.put('/:tokenId/market-state',
   authenticate,
   requireRole('ADMIN', 'COMPLIANCE_OFFICER'),
   async (req, res) => {
-    const { marketState } = req.body;
+    const { marketState, reason } = req.body;
     const valid = ['PRE_LAUNCH','P2P_ONLY','LIMITED_TRADING','FULL_TRADING','HALTED'];
     if (!valid.includes(marketState)) {
       return res.status(400).json({ error: 'Invalid market state' });
     }
     try {
+      // Fetch token before update so we can compare old state and find the issuer
+      const [tokenRows] = await db.execute(
+        `SELECT t.token_symbol, t.market_state AS old_state, t.issuer_id,
+                s.owner_user_id
+         FROM tokens t
+         LEFT JOIN spvs s ON s.id = t.spv_id
+         WHERE t.id = ?`,
+        [req.params.tokenId]
+      );
+      const tokenMeta = tokenRows[0] || null;
+
       await db.execute(
         'UPDATE tokens SET market_state = ? WHERE id = ?',
         [marketState, req.params.tokenId]
       );
+
+      // FIX 3.10 — notify issuer of market state change
+      if (tokenMeta) {
+        try {
+          const { sendMessage }               = require('../utils/messenger');
+          const { notifyIssuerMarketStateChanged } = require('../utils/mailer');
+          const issuerId = tokenMeta.issuer_id || tokenMeta.owner_user_id;
+
+          if (issuerId) {
+            sendMessage({
+              recipientId: issuerId,
+              subject:     `📢 Market State Updated — ${tokenMeta.token_symbol}`,
+              body:        `Your token ${tokenMeta.token_symbol} market state has been changed from ${tokenMeta.old_state} to ${marketState} by the platform administrator.${reason ? '\n\nReason: ' + reason : ''}`,
+              type:        'SYSTEM',
+              category:    'TRADING',
+              referenceId: String(req.params.tokenId),
+            }).catch(e => console.error('[MESSENGER] market-state sendMessage (issuer) failed:', e.message));
+
+            const [msIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [issuerId]);
+            if (msIssuerRows[0]?.email) {
+              notifyIssuerMarketStateChanged({
+                issuerEmail:   msIssuerRows[0].email,
+                issuerName:    msIssuerRows[0].full_name,
+                tokenSymbol:   tokenMeta.token_symbol,
+                previousState: tokenMeta.old_state,
+                newState:      marketState,
+                effectiveDate: new Date(),
+                reason:        reason || null,
+              }).catch(e => console.error('[MAILER] market-state notifyIssuerMarketStateChanged failed:', e.message));
+            }
+          }
+        } catch (notifyErr) {
+          console.error('[MARKET-STATE] Notification error (non-fatal):', notifyErr.message);
+        }
+      }
+
       res.json({ success: true, marketState });
     } catch (err) {
       res.status(500).json({ error: 'Could not update market state' });
