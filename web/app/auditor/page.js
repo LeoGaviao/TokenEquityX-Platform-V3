@@ -73,8 +73,8 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
         size: val?.size || null,
       }));
 
-  // Fetch engine reference price when financial data is available
-  useEffect(() => {
+  // Fetch engine reference price — extracted so the refresh button can also call it
+  const fetchEnginePrice = () => {
     if (!fullData || !item.token) return;
     const rawData = fullData.data_json || {};
     const financialData = rawData?.financialData || rawData || {};
@@ -88,7 +88,9 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
       .then(r => { if (r.data?.pricePerToken) setEnginePrice(r.data); })
       .catch(() => {})
       .finally(() => setEngineLoading(false));
-  }, [fullData, item.token]);
+  };
+
+  useEffect(() => { fetchEnginePrice(); }, [fullData, item.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Calculate variance between certified price and engine price
   const enginePriceNum   = enginePrice ? parseFloat(enginePrice.pricePerToken || 0) : null;
@@ -482,7 +484,14 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
                   <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 mb-4">
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-xs font-semibold text-gray-300 uppercase tracking-wider">🔢 Valuation Engine Reference</p>
-                      {engineLoading && <span className="text-xs text-gray-500">Calculating…</span>}
+                      <div className="flex items-center gap-2">
+                        {engineLoading && <span className="text-xs text-gray-500">Calculating…</span>}
+                        <button
+                          onClick={fetchEnginePrice}
+                          disabled={engineLoading}
+                          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >↻ Refresh</button>
+                      </div>
                     </div>
                     {!enginePrice && !engineLoading && (
                       <p className="text-xs text-gray-500">No engine output available — insufficient financial data submitted by issuer.</p>

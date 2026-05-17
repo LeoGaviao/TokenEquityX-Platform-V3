@@ -477,6 +477,21 @@ router.put('/:id/audit-report',
     };
 
     try {
+      const [subRows] = await db.execute(
+        'SELECT id, status, audit_report FROM data_submissions WHERE id = ?',
+        [req.params.id]
+      );
+      if (subRows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+      const currentSub = subRows[0];
+
+      // Allow re-submission only at stages where it still makes sense
+      const ALLOW_RESUBMIT = ['UNDER_REVIEW', 'INFO_REQUESTED', 'AUDITOR_APPROVED', 'TOKENIZATION_PENDING'];
+      if (currentSub.audit_report && !ALLOW_RESUBMIT.includes(currentSub.status)) {
+        return res.status(409).json({
+          error: `Cannot re-submit audit report: application has already progressed to '${currentSub.status}'. Contact an admin if a correction is needed.`,
+        });
+      }
+
       const newStatus = recommendation === 'APPROVE'
         ? 'AUDITOR_APPROVED'
         : recommendation === 'REJECT'
