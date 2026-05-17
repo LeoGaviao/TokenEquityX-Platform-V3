@@ -2121,8 +2121,9 @@ export default function AdminDashboard() {
                                     notify('success', r.data.message);
                                   } catch(e) { notify('error', e.response?.data?.error || 'Failed'); }
                                 }} className="w-full py-3 rounded-lg text-sm font-bold text-white bg-green-700 hover:bg-green-600">
-                                  🚀 Set Token Live
+                                  🚀 Set Token Live — Primary Offering Mode
                                 </button>
+                                <p className="text-xs text-gray-500 text-center px-1">Token will enter PRIMARY_ONLY market state. Issuer must create a primary offering before full trading begins.</p>
                               </div>
                             ) : item.status === 'AUDITOR_APPROVED' ? (
                               <AdminFinalApproval item={item} onApprove={(listingType, notes, riskCategory) => {

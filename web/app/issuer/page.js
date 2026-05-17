@@ -2028,6 +2028,18 @@ export default function IssuerDashboard() {
         {/* ══ OVERVIEW ══ */}
         {tab==='overview' && (
           <div className="space-y-6">
+            {t?.status === 'ACTIVE' && t?.market_state === 'PRIMARY_ONLY' && (
+              <div className="bg-green-900/30 border border-green-600/50 rounded-xl p-4 flex gap-3 items-start">
+                <span className="text-2xl">🎉</span>
+                <div>
+                  <p className="text-green-300 font-bold text-sm">Your token is live!</p>
+                  <p className="text-gray-300 text-sm mt-1">
+                    Next step: scroll down to the <button onClick={()=>document.getElementById('primary-offering-section')?.scrollIntoView({behavior:'smooth'})} className="text-yellow-400 underline font-semibold">Primary Offering</button> section and create your fundraising round.
+                    Trading will open after your offering closes.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
               {[
                 {label:'Token Price',   value: price  ? `$${price.toFixed(4)}`                    : '—', sub:'oracle price',         color:'text-white'},
@@ -2257,7 +2269,7 @@ export default function IssuerDashboard() {
                       <p className="text-gray-500 text-xs mt-0.5">Propose a fundraising round once your token is approved</p>
                     </div>
                   </div>
-                  <div className="p-6">
+                  <div className="p-6" id="primary-offering-section">
                     <IssuerOfferingTab notify={notify} submissionStatus={subStatus} />
                   </div>
                 </div>

@@ -572,7 +572,9 @@ router.post('/:id/close',
         [issuanceFee]
       );
 
-      const newTradingMode = trading_mode || 'FULL_TRADING';
+      // Determine post-offering trading mode from the token's listing_type
+      const newTradingMode = token.listing_type === 'BROWNFIELD_BOURSE' ? 'FULL_TRADING' : 'P2P_ONLY';
+
       await conn.execute(`
         UPDATE primary_offerings SET
           status = 'DISBURSED', issuance_fee_usd = ?, net_proceeds_usd = ?,
@@ -582,8 +584,8 @@ router.post('/:id/close',
       `, [issuanceFee, netProceeds, req.user.userId, bank_reference || null, admin_notes || null, req.params.id]);
 
       await conn.execute(
-        'UPDATE tokens SET market_state = ?, trading_mode = ?, listed_at = NOW(), updated_at = NOW() WHERE id = ?',
-        ['FULL_TRADING', newTradingMode, offering.token_id]
+        'UPDATE tokens SET market_state = ?, trading_mode = ?, updated_at = NOW() WHERE id = ?',
+        [newTradingMode, newTradingMode, offering.token_id]
       );
 
       await conn.execute(

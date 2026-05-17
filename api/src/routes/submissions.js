@@ -1461,7 +1461,8 @@ router.put('/:id/set-live',
       const certifiedPrice = parseFloat(auditReport.certifiedPrice || 1.0);
       const symbol         = sub.token_symbol;
       const listingType    = sub.listing_type || 'GREENFIELD_P2P';
-      const trading_mode   = listingType === 'GREENFIELD_P2P' ? 'P2P_ONLY' : 'FULL_TRADING';
+      // Always enter PRIMARY_ONLY on set-live; trading mode upgrades after the primary offering closes
+      const trading_mode   = 'PRIMARY_ONLY';
       const total_supply   = sub.total_supply || 1000000;
 
       const [existingToken] = await db.execute(
@@ -1471,10 +1472,10 @@ router.put('/:id/set-live',
       if (existingToken.length > 0) {
         await db.execute(`
           UPDATE tokens
-          SET trading_mode = ?, market_state = 'FULL_TRADING',
+          SET trading_mode = 'PRIMARY_ONLY', market_state = 'PRIMARY_ONLY',
               status = 'ACTIVE', market_cap = ?, listed_at = NOW(), updated_at = NOW()
           WHERE token_symbol = ?
-        `, [trading_mode, parseFloat(certifiedPrice) * total_supply, symbol.toUpperCase()]);
+        `, [parseFloat(certifiedPrice) * total_supply, symbol.toUpperCase()]);
       } else {
         await db.execute(`
           INSERT INTO tokens
@@ -1483,14 +1484,14 @@ router.put('/:id/set-live',
              total_supply, current_price_usd, price_usd,
              market_cap, trading_mode, market_state, status,
              listing_type, jurisdiction, submission_id, listed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FULL_TRADING', 'ACTIVE', ?, ?, ?, NOW())
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRIMARY_ONLY', 'ACTIVE', ?, ?, ?, NOW())
         `, [
           symbol.toUpperCase(), sub.entity_name || symbol, sub.entity_name || symbol,
           symbol.toUpperCase(), sub.entity_name || symbol,
           sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY',
           UUID_RE.test(sub.issuer_wallet) ? sub.issuer_wallet : null,
           total_supply, certifiedPrice, certifiedPrice,
-          parseFloat(certifiedPrice) * total_supply, trading_mode,
+          parseFloat(certifiedPrice) * total_supply, 'PRIMARY_ONLY',
           listingType, sub.jurisdiction || 'Zimbabwe', req.params.id
         ]);
       }
@@ -1503,7 +1504,7 @@ router.put('/:id/set-live',
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
         ['TOKEN_SET_LIVE', req.user.userId, symbol,
-         `Token activated. Price: $${certifiedPrice}. Mode: ${trading_mode}. Listing: ${listingType}.`]
+         `Token activated in PRIMARY_ONLY mode. Price: $${certifiedPrice}. Listing: ${listingType}. Full trading unlocks after primary offering closes.`]
       );
 
       const { sendMessage } = require('../utils/messenger');
@@ -1511,8 +1512,8 @@ router.put('/:id/set-live',
 
       await sendMessage({
         recipientId: sub.issuer_wallet,
-        subject:     `🚀 ${symbol} is Now Live!`,
-        body:        `Congratulations! Your token ${sub.entity_name} (${symbol}) is now LIVE on the TokenEquityX platform.\n\nListing Type: ${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse' : 'Peer-to-Peer'}\nToken Price: $${certifiedPrice.toFixed(4)} USD\nTrading Mode: ${trading_mode}\n\nYour token is now available for trading. Log in to monitor performance.`,
+        subject:     `🚀 ${symbol} is Live — Create Your Primary Offering`,
+        body:        `Congratulations! Your token ${sub.entity_name} (${symbol}) is now LIVE on the TokenEquityX platform in PRIMARY_ONLY mode.\n\nToken Price: $${certifiedPrice.toFixed(4)} USD\nListing Type: ${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse (Brownfield)' : 'Peer-to-Peer (Greenfield)'}\nMarket State: PRIMARY ONLY\n\n📋 NEXT STEP — Create a Primary Offering:\nLog in to your issuer portal and go to the Primary Offering tab. Create your fundraising round to open subscriptions for investors.\n\nOnce your primary offering closes and proceeds are disbursed, your token will automatically move to ${listingType === 'BROWNFIELD_BOURSE' ? 'FULL TRADING on the main bourse' : 'P2P trading mode'}.\n\nFull secondary market trading does NOT begin until the primary offering closes.`,
         type:        'SYSTEM',
         category:    'APPLICATION',
       }).catch(e => console.error('[MESSENGER] set-live sendMessage failed:', e.message));
