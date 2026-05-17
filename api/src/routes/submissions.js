@@ -939,8 +939,11 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
     ceo_name, ceo_email, ceo_id,
     cfo_name, cfo_email, cfo_id,
     legal_name, legal_email, legal_id,
-    assetDescription, assetClass,
+    assetDescription, assetClass, financialEngineData,
   } = req.body;
+
+  let parsedFinancialEngine = {};
+  try { if (financialEngineData) parsedFinancialEngine = JSON.parse(financialEngineData); } catch { /* ignore */ }
 
   if (!legalName || !registrationNumber || !tokenSymbol || !tokenName) {
     return res.status(400).json({ error: 'legalName, registrationNumber, tokenSymbol and tokenName are required' });
@@ -1016,7 +1019,7 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
     }
 
     const dataJson = JSON.stringify({
-      financialData: { targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency },
+      financialData: { targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency, ...parsedFinancialEngine },
       keyPersonnel: [
         { role: 'CEO',           name: ceo_name,   email: ceo_email,   idNumber: ceo_id },
         { role: 'CFO',           name: cfo_name,   email: cfo_email,   idNumber: cfo_id },
@@ -1041,6 +1044,20 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
     );
 
     await conn.commit();
+
+    // External email to issuer
+    const [issuerEmailRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [req.user.userId]);
+    if (issuerEmailRows.length > 0) {
+      const { notifyIssuerApplicationReceived } = require('../utils/mailer');
+      notifyIssuerApplicationReceived({
+        issuerEmail: issuerEmailRows[0].email,
+        issuerName:  issuerEmailRows[0].full_name || legalName,
+        tokenSymbol: sym,
+        entityName:  legalName,
+        referenceNumber: refNum,
+        meetingDay: 'Tuesday',
+      }).catch(e => console.error('[MAILER] notifyIssuerApplicationReceived failed:', e.message));
+    }
 
     // Notify issuer — application received
     const { sendMessage } = require('../utils/messenger');

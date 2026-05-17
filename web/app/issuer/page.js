@@ -1125,6 +1125,9 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
   const [symbolStatus, setSymbolStatus] = useState(null);
   const [symbolTimer,  setSymbolTimer]  = useState(null);
   const [postMsg,      setPostMsg]      = useState(null);
+  const [finData,      setFinData]      = useState({ assetType:'', revenueTTM:'', ebitda:'', freeCashFlow:'', totalDebt:'', cash:'', growthRate:'', discountRate:'', faceValue:'', couponRate:'', marketYield:'', periodsRemaining:'', periodsPerYear:'', propertyValuation:'', netOperatingIncome:'', capRate:'', totalResourceTonnes:'', grade:'', commodityPrice:'', miningCost:'', recoveryRate:'', mineLife:'', annualRevenue:'', operatingMargin:'', contractYears:'' });
+  const [engineResult, setEngineResult] = useState(null);
+  const [engineLoading,setEngineLoading]= useState(false);
   const [applications, setApplications] = useState([]);
   const [loadingApps,  setLoadingApps]  = useState(true);
   const [form, setForm] = useState(savedDraft?.form || {
@@ -1148,6 +1151,25 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       localStorage.setItem(FORM_KEY, JSON.stringify({ step, form: updated }));
       return updated;
     });
+  };
+
+  const setFin = (field, val) => setFinData(f => ({ ...f, [field]: val }));
+
+  const runEnginePreview = async () => {
+    setEngineLoading(true);
+    setEngineResult(null);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API}/pipeline/preview`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tokenSymbol: form.tokenSymbol, financialData: { ...finData, assetType: finData.assetType || form.assetType } }),
+      });
+      const data = await res.json();
+      if (res.ok && data.pricePerToken) setEngineResult(data);
+      else setEngineResult({ error: data.error || 'Preview failed' });
+    } catch { setEngineResult({ error: 'Request failed. Please try again.' }); }
+    setEngineLoading(false);
   };
 
   const goToStep = (n) => {
@@ -1262,6 +1284,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       Object.entries(files).forEach(([docKey, file]) => {
         if (file) fd.append(docKey, file, file.name);
       });
+      fd.append('financialEngineData', JSON.stringify({ ...finData, assetType: finData.assetType || form.assetType }));
       if (editingId) fd.append('editingId', editingId);
       const res = await fetch(`${API}/submissions/unified`, {
         method:  editingId ? 'PUT' : 'POST',
@@ -1280,7 +1303,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
     setSubmitting(false);
   };
 
-  const STEPS = ['Company', 'Token', 'Economics', 'Personnel', 'Documents', 'Review'];
+  const STEPS = ['Company', 'Token', 'Economics', 'Personnel', 'Documents', 'Financial Data', 'Review'];
 
   if (submitted) return (
     <div className="bg-gray-900 border border-green-700/40 rounded-2xl p-8 text-center max-w-lg mx-auto">
@@ -1603,16 +1626,128 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
               <button onClick={()=>goToStep(4)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
               <button onClick={()=>{ setPostMsg(null); goToStep(6); }}
                 className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>
-                Next: Review & Submit →
+                Next: Financial Data →
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 6: Review & Submit */}
-        {step === 6 && (
+        {/* STEP 6: Financial Data */}
+        {step === 6 && (() => {
+          const finAsset = finData.assetType || form.assetType;
+          return (
+          <div className="space-y-4">
+            <p className="text-gray-400 text-sm">Provide financial data for the valuation engine. This generates a reference price that your assigned auditor will review and certify.</p>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Asset Type for Valuation</label>
+              <select value={finAsset} onChange={e=>setFin('assetType',e.target.value)} className={inputCls}>
+                {['EQUITY','BOND','REAL_ESTATE','MINING','INFRASTRUCTURE'].map(s=><option key={s}>{s}</option>)}
+              </select>
+            </div>
+
+            {finAsset === 'EQUITY' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label><input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 5000000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">EBITDA (USD)</label><input type="number" value={finData.ebitda} onChange={e=>setFin('ebitda',e.target.value)} className={inputCls} placeholder="e.g. 1500000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Free Cash Flow (USD)</label><input type="number" value={finData.freeCashFlow} onChange={e=>setFin('freeCashFlow',e.target.value)} className={inputCls} placeholder="e.g. 800000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 2000000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Cash & Equivalents (USD)</label><input type="number" value={finData.cash} onChange={e=>setFin('cash',e.target.value)} className={inputCls} placeholder="e.g. 500000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label><input type="number" value={finData.growthRate} onChange={e=>setFin('growthRate',e.target.value)} className={inputCls} placeholder="e.g. 12"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Discount Rate (%)</label><input type="number" value={finData.discountRate} onChange={e=>setFin('discountRate',e.target.value)} className={inputCls} placeholder="e.g. 15"/></div>
+              </div>
+            )}
+
+            {finAsset === 'BOND' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-400 block mb-1">Face Value (USD)</label><input type="number" value={finData.faceValue} onChange={e=>setFin('faceValue',e.target.value)} className={inputCls} placeholder="e.g. 1000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Coupon Rate (%)</label><input type="number" value={finData.couponRate} onChange={e=>setFin('couponRate',e.target.value)} className={inputCls} placeholder="e.g. 8.5"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Market Yield (%)</label><input type="number" value={finData.marketYield} onChange={e=>setFin('marketYield',e.target.value)} className={inputCls} placeholder="e.g. 7"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Periods Remaining</label><input type="number" value={finData.periodsRemaining} onChange={e=>setFin('periodsRemaining',e.target.value)} className={inputCls} placeholder="e.g. 20"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Periods per Year</label><input type="number" value={finData.periodsPerYear} onChange={e=>setFin('periodsPerYear',e.target.value)} className={inputCls} placeholder="e.g. 2"/></div>
+              </div>
+            )}
+
+            {finAsset === 'REAL_ESTATE' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-400 block mb-1">Property Valuation (USD)</label><input type="number" value={finData.propertyValuation} onChange={e=>setFin('propertyValuation',e.target.value)} className={inputCls} placeholder="e.g. 10000000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Net Operating Income (USD)</label><input type="number" value={finData.netOperatingIncome} onChange={e=>setFin('netOperatingIncome',e.target.value)} className={inputCls} placeholder="e.g. 600000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Cap Rate (%)</label><input type="number" value={finData.capRate} onChange={e=>setFin('capRate',e.target.value)} className={inputCls} placeholder="e.g. 6"/></div>
+              </div>
+            )}
+
+            {finAsset === 'MINING' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-400 block mb-1">Total Resource Tonnes</label><input type="number" value={finData.totalResourceTonnes} onChange={e=>setFin('totalResourceTonnes',e.target.value)} className={inputCls} placeholder="e.g. 500000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Grade (g/t or %)</label><input type="number" value={finData.grade} onChange={e=>setFin('grade',e.target.value)} className={inputCls} placeholder="e.g. 3.5"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Commodity Price (USD/unit)</label><input type="number" value={finData.commodityPrice} onChange={e=>setFin('commodityPrice',e.target.value)} className={inputCls} placeholder="e.g. 1900"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Mining Cost (USD/tonne)</label><input type="number" value={finData.miningCost} onChange={e=>setFin('miningCost',e.target.value)} className={inputCls} placeholder="e.g. 800"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Recovery Rate (%)</label><input type="number" value={finData.recoveryRate} onChange={e=>setFin('recoveryRate',e.target.value)} className={inputCls} placeholder="e.g. 85"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Mine Life (years)</label><input type="number" value={finData.mineLife} onChange={e=>setFin('mineLife',e.target.value)} className={inputCls} placeholder="e.g. 15"/></div>
+              </div>
+            )}
+
+            {finAsset === 'INFRASTRUCTURE' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-400 block mb-1">Annual Revenue (USD)</label><input type="number" value={finData.annualRevenue} onChange={e=>setFin('annualRevenue',e.target.value)} className={inputCls} placeholder="e.g. 8000000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label><input type="number" value={finData.operatingMargin} onChange={e=>setFin('operatingMargin',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Contract Years Remaining</label><input type="number" value={finData.contractYears} onChange={e=>setFin('contractYears',e.target.value)} className={inputCls} placeholder="e.g. 20"/></div>
+              </div>
+            )}
+
+            <button onClick={runEnginePreview} disabled={engineLoading}
+              className="w-full py-2.5 rounded-xl font-semibold text-sm bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-40 transition-colors">
+              {engineLoading ? '⏳ Running Preview...' : '⚡ Run Valuation Preview'}
+            </button>
+
+            {engineResult && !engineResult.error && (
+              <div className="bg-blue-900/20 border border-blue-700/40 rounded-xl p-4 space-y-2">
+                <p className="text-xs text-blue-300 font-semibold">Valuation Engine Result</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><p className="text-gray-500 text-xs">Asset Type</p><p className="text-white">{engineResult.assetType}</p></div>
+                  <div><p className="text-gray-500 text-xs">Price Per Token</p><p className="text-yellow-400 font-bold">${engineResult.pricePerToken?.toFixed(4)}</p></div>
+                  <div className="col-span-2"><p className="text-gray-500 text-xs">Blended Enterprise Value</p><p className="text-white">${Number(engineResult.blended)?.toLocaleString()}</p></div>
+                </div>
+                {engineResult.models && Object.keys(engineResult.models).length > 0 && (
+                  <div className="border-t border-blue-700/30 pt-2 mt-2">
+                    <p className="text-xs text-gray-500 mb-1">Model Breakdown</p>
+                    {Object.entries(engineResult.models).map(([model, val]) => (
+                      <div key={model} className="flex justify-between text-xs py-0.5">
+                        <span className="text-gray-400">{model}</span>
+                        <span className="text-white">${Number(val)?.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-600 mt-2">This is a system-generated reference price. The assigned auditor will review and certify the final oracle price.</p>
+              </div>
+            )}
+
+            {engineResult?.error && (
+              <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-3 text-xs text-red-300">
+                Preview failed: {engineResult.error}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={()=>goToStep(5)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+              <button onClick={()=>{ setPostMsg(null); goToStep(7); }}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>
+                Next: Review & Submit →
+              </button>
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* STEP 7: Review & Submit */}
+        {step === 7 && (
           <div className="space-y-4">
             <p className="text-gray-400 text-sm">Review your application before submitting.</p>
+            {!finData.revenueTTM && !finData.faceValue && !finData.propertyValuation && !finData.totalResourceTonnes && !finData.annualRevenue && (
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-3 text-xs text-amber-300">
+                ⚠ No financial data provided. Your application will be reviewed without a valuation engine reference. Go back to Step 6 to add financial data.
+              </div>
+            )}
             <div className="bg-gray-800/50 rounded-xl p-4 space-y-2 text-sm">
               {[
                 ['Legal Entity',     form.legalName],
@@ -1642,7 +1777,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
               <span className="text-xs text-gray-300">I confirm that all information provided is accurate and complete. I understand that submitting false or misleading information may result in rejection and potential regulatory referral under the Securities and Exchange Act (Chapter 24:25).</span>
             </label>
             <div className="flex gap-3">
-              <button onClick={()=>goToStep(5)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+              <button onClick={()=>goToStep(6)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
               <button onClick={submit} disabled={submitting || !form.termsAccepted}
                 className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-40"
                 style={{background:NAVY}}>
