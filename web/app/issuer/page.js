@@ -933,7 +933,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
   const [symbolStatus, setSymbolStatus] = useState(null);
   const [symbolTimer,  setSymbolTimer]  = useState(null);
   const [postMsg,      setPostMsg]      = useState(null);
-  const [finData,      setFinData]      = useState({ assetType:'', revenueTTM:'', ebitda:'', freeCashFlow:'', totalDebt:'', cash:'', growthRate:'', discountRate:'', faceValue:'', couponRate:'', marketYield:'', periodsRemaining:'', periodsPerYear:'', propertyValuation:'', netOperatingIncome:'', capRate:'', totalResourceTonnes:'', grade:'', commodityPrice:'', miningCost:'', recoveryRate:'', mineLife:'', annualRevenue:'', operatingMargin:'', contractYears:'' });
+  const [finData,      setFinData]      = useState({ assetType:'', revenueTTM:'', ebitdaTTM:'', freeCashFlow:'', totalDebt:'', cash:'', growthRatePct:'', discountRatePct:'', faceValue:'', couponRatePct:'', marketYieldPct:'', periodsRemaining:'', periodsPerYear:'', propertyValuation:'', netOperatingIncome:'', capRate:'', totalResourceTonnes:'', gradePercent:'', commodityPricePerTonne:'', miningCostPerTonne:'', recoveryRate:'', mineLifeYears:'', annualRevenue:'', operatingMarginPct:'', contractYears:'', occupancyPct:'', unitCount:'' });
   const [engineResult, setEngineResult] = useState(null);
   const [engineLoading,setEngineLoading]= useState(false);
   const [applications, setApplications] = useState([]);
@@ -1449,27 +1449,27 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
             <div>
               <label className="text-xs text-gray-400 block mb-1">Asset Type for Valuation</label>
               <select value={finAsset} onChange={e=>setFin('assetType',e.target.value)} className={inputCls}>
-                {['EQUITY','BOND','REAL_ESTATE','MINING','INFRASTRUCTURE'].map(s=><option key={s}>{s}</option>)}
+                {['EQUITY','BOND','REAL_ESTATE','REIT','MINING','INFRASTRUCTURE','AGRICULTURE'].map(s=><option key={s}>{s}</option>)}
               </select>
             </div>
 
             {finAsset === 'EQUITY' && (
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label><input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 5000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">EBITDA (USD)</label><input type="number" value={finData.ebitda} onChange={e=>setFin('ebitda',e.target.value)} className={inputCls} placeholder="e.g. 1500000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">EBITDA TTM (USD)</label><input type="number" value={finData.ebitdaTTM} onChange={e=>setFin('ebitdaTTM',e.target.value)} className={inputCls} placeholder="e.g. 1500000"/></div>
                 <div><label className="text-xs text-gray-400 block mb-1">Free Cash Flow (USD)</label><input type="number" value={finData.freeCashFlow} onChange={e=>setFin('freeCashFlow',e.target.value)} className={inputCls} placeholder="e.g. 800000"/></div>
                 <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 2000000"/></div>
                 <div><label className="text-xs text-gray-400 block mb-1">Cash & Equivalents (USD)</label><input type="number" value={finData.cash} onChange={e=>setFin('cash',e.target.value)} className={inputCls} placeholder="e.g. 500000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label><input type="number" value={finData.growthRate} onChange={e=>setFin('growthRate',e.target.value)} className={inputCls} placeholder="e.g. 12"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Discount Rate (%)</label><input type="number" value={finData.discountRate} onChange={e=>setFin('discountRate',e.target.value)} className={inputCls} placeholder="e.g. 15"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label><input type="number" value={finData.growthRatePct} onChange={e=>setFin('growthRatePct',e.target.value)} className={inputCls} placeholder="e.g. 12"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Discount Rate / WACC (%)</label><input type="number" value={finData.discountRatePct} onChange={e=>setFin('discountRatePct',e.target.value)} className={inputCls} placeholder="e.g. 15"/></div>
               </div>
             )}
 
             {finAsset === 'BOND' && (
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Face Value (USD)</label><input type="number" value={finData.faceValue} onChange={e=>setFin('faceValue',e.target.value)} className={inputCls} placeholder="e.g. 1000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Coupon Rate (%)</label><input type="number" value={finData.couponRate} onChange={e=>setFin('couponRate',e.target.value)} className={inputCls} placeholder="e.g. 8.5"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Market Yield (%)</label><input type="number" value={finData.marketYield} onChange={e=>setFin('marketYield',e.target.value)} className={inputCls} placeholder="e.g. 7"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Face / Par Value (USD)</label><input type="number" value={finData.faceValue} onChange={e=>setFin('faceValue',e.target.value)} className={inputCls} placeholder="e.g. 1000000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Coupon Rate (%)</label><input type="number" value={finData.couponRatePct} onChange={e=>setFin('couponRatePct',e.target.value)} className={inputCls} placeholder="e.g. 8.5"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Market Yield (%)</label><input type="number" value={finData.marketYieldPct} onChange={e=>setFin('marketYieldPct',e.target.value)} className={inputCls} placeholder="e.g. 7"/></div>
                 <div><label className="text-xs text-gray-400 block mb-1">Periods Remaining</label><input type="number" value={finData.periodsRemaining} onChange={e=>setFin('periodsRemaining',e.target.value)} className={inputCls} placeholder="e.g. 20"/></div>
                 <div><label className="text-xs text-gray-400 block mb-1">Periods per Year</label><input type="number" value={finData.periodsPerYear} onChange={e=>setFin('periodsPerYear',e.target.value)} className={inputCls} placeholder="e.g. 2"/></div>
               </div>
@@ -1478,27 +1478,54 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
             {finAsset === 'REAL_ESTATE' && (
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-xs text-gray-400 block mb-1">Property Valuation (USD)</label><input type="number" value={finData.propertyValuation} onChange={e=>setFin('propertyValuation',e.target.value)} className={inputCls} placeholder="e.g. 10000000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 2000000"/></div>
                 <div><label className="text-xs text-gray-400 block mb-1">Net Operating Income (USD)</label><input type="number" value={finData.netOperatingIncome} onChange={e=>setFin('netOperatingIncome',e.target.value)} className={inputCls} placeholder="e.g. 600000"/></div>
                 <div><label className="text-xs text-gray-400 block mb-1">Cap Rate (%)</label><input type="number" value={finData.capRate} onChange={e=>setFin('capRate',e.target.value)} className={inputCls} placeholder="e.g. 6"/></div>
               </div>
             )}
 
+            {finAsset === 'REIT' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-400 block mb-1">Portfolio Valuation (USD)</label><input type="number" value={finData.propertyValuation} onChange={e=>setFin('propertyValuation',e.target.value)} className={inputCls} placeholder="e.g. 50000000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 15000000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Net Operating Income (USD)</label><input type="number" value={finData.netOperatingIncome} onChange={e=>setFin('netOperatingIncome',e.target.value)} className={inputCls} placeholder="e.g. 3500000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Cap Rate (%)</label><input type="number" value={finData.capRate} onChange={e=>setFin('capRate',e.target.value)} className={inputCls} placeholder="e.g. 7"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Occupancy Rate (%)</label><input type="number" value={finData.occupancyPct} onChange={e=>setFin('occupancyPct',e.target.value)} className={inputCls} placeholder="e.g. 94"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Number of Units</label><input type="number" value={finData.unitCount} onChange={e=>setFin('unitCount',e.target.value)} className={inputCls} placeholder="e.g. 120"/></div>
+              </div>
+            )}
+
             {finAsset === 'MINING' && (
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Total Resource Tonnes</label><input type="number" value={finData.totalResourceTonnes} onChange={e=>setFin('totalResourceTonnes',e.target.value)} className={inputCls} placeholder="e.g. 500000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Grade (g/t or %)</label><input type="number" value={finData.grade} onChange={e=>setFin('grade',e.target.value)} className={inputCls} placeholder="e.g. 3.5"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Commodity Price (USD/unit)</label><input type="number" value={finData.commodityPrice} onChange={e=>setFin('commodityPrice',e.target.value)} className={inputCls} placeholder="e.g. 1900"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Mining Cost (USD/tonne)</label><input type="number" value={finData.miningCost} onChange={e=>setFin('miningCost',e.target.value)} className={inputCls} placeholder="e.g. 800"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Recovery Rate (%)</label><input type="number" value={finData.recoveryRate} onChange={e=>setFin('recoveryRate',e.target.value)} className={inputCls} placeholder="e.g. 85"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Mine Life (years)</label><input type="number" value={finData.mineLife} onChange={e=>setFin('mineLife',e.target.value)} className={inputCls} placeholder="e.g. 15"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Total Resource (tonnes)</label><input type="number" value={finData.totalResourceTonnes} onChange={e=>setFin('totalResourceTonnes',e.target.value)} className={inputCls} placeholder="e.g. 500000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Grade (%)</label><input type="number" value={finData.gradePercent} onChange={e=>setFin('gradePercent',e.target.value)} className={inputCls} placeholder="e.g. 3.5"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Commodity Price (USD/tonne)</label><input type="number" value={finData.commodityPricePerTonne} onChange={e=>setFin('commodityPricePerTonne',e.target.value)} className={inputCls} placeholder="e.g. 28000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Mining Cost (USD/tonne)</label><input type="number" value={finData.miningCostPerTonne} onChange={e=>setFin('miningCostPerTonne',e.target.value)} className={inputCls} placeholder="e.g. 12000"/></div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Recovery Rate <span className="text-gray-600">(decimal — e.g. 0.87 for 87%)</span></label>
+                  <input type="number" step="0.01" min="0" max="1" value={finData.recoveryRate} onChange={e=>setFin('recoveryRate',e.target.value)} className={inputCls} placeholder="e.g. 0.87"/>
+                </div>
+                <div><label className="text-xs text-gray-400 block mb-1">Mine Life (years)</label><input type="number" value={finData.mineLifeYears} onChange={e=>setFin('mineLifeYears',e.target.value)} className={inputCls} placeholder="e.g. 15"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label><input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 4200000"/></div>
               </div>
             )}
 
             {finAsset === 'INFRASTRUCTURE' && (
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-xs text-gray-400 block mb-1">Annual Revenue (USD)</label><input type="number" value={finData.annualRevenue} onChange={e=>setFin('annualRevenue',e.target.value)} className={inputCls} placeholder="e.g. 8000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label><input type="number" value={finData.operatingMargin} onChange={e=>setFin('operatingMargin',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label><input type="number" value={finData.operatingMarginPct} onChange={e=>setFin('operatingMarginPct',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
                 <div><label className="text-xs text-gray-400 block mb-1">Contract Years Remaining</label><input type="number" value={finData.contractYears} onChange={e=>setFin('contractYears',e.target.value)} className={inputCls} placeholder="e.g. 20"/></div>
+              </div>
+            )}
+
+            {finAsset === 'AGRICULTURE' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-400 block mb-1">Annual Revenue (USD)</label><input type="number" value={finData.annualRevenue} onChange={e=>setFin('annualRevenue',e.target.value)} className={inputCls} placeholder="e.g. 3500000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label><input type="number" value={finData.operatingMarginPct} onChange={e=>setFin('operatingMarginPct',e.target.value)} className={inputCls} placeholder="e.g. 22"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label><input type="number" value={finData.growthRatePct} onChange={e=>setFin('growthRatePct',e.target.value)} className={inputCls} placeholder="e.g. 12"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Discount Rate (%)</label><input type="number" value={finData.discountRatePct} onChange={e=>setFin('discountRatePct',e.target.value)} className={inputCls} placeholder="e.g. 18"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 400000"/></div>
+                <div><label className="text-xs text-gray-400 block mb-1">Cash & Equivalents (USD)</label><input type="number" value={finData.cash} onChange={e=>setFin('cash',e.target.value)} className={inputCls} placeholder="e.g. 150000"/></div>
               </div>
             )}
 
