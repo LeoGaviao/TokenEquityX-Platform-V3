@@ -438,33 +438,25 @@ router.get('/history/:tokenSymbol', async (req, res) => {
 });
 
 // POST /api/pipeline/preview
+// tokenSymbol is optional — used for display only. No token record is required.
 router.post('/preview', authenticate, async (req, res) => {
   const { tokenSymbol, financialData } = req.body;
-  if (!tokenSymbol || !financialData) {
-    return res.status(400).json({ error: 'tokenSymbol and financialData required' });
+  if (!financialData) {
+    return res.status(400).json({ error: 'financialData is required' });
   }
   try {
-    const [tokens] = await db.execute(`
-      SELECT t.*, s.asset_type, s.sector
-      FROM tokens t JOIN spvs s ON s.id = t.spv_id
-      WHERE t.token_symbol = ?
-    `, [tokenSymbol.toUpperCase()]);
+    const assetType    = financialData.assetType || 'EQUITY';
+    const issuedShares = Number(financialData.authorisedShares) || Number(financialData.totalShares) || Number(financialData.issuedShares) || 1;
+    const totalDebt    = Number(financialData.totalDebt) || 0;
+    const cash         = Number(financialData.cash) || 0;
 
-    if (tokens.length === 0) {
-      return res.status(404).json({ error: 'Token not found' });
-    }
-    const token = tokens[0];
-
-    const result        = calculateValuation(token.asset_type, { ...financialData, sector: token.sector });
-    const issuedShares  = Number(token.issued_shares) || Number(token.authorised_shares) || 1;
-    const totalDebt     = Number(financialData.totalDebt) || 0;
-    const cash          = Number(financialData.cash) || 0;
-    const equityValue   = result.blended - totalDebt + cash;
+    const result      = calculateValuation(assetType, financialData);
+    const equityValue = result.blended - totalDebt + cash;
     const pricePerToken = issuedShares > 0 ? equityValue / issuedShares : 0;
 
     res.json({
-      tokenSymbol:   token.token_symbol,
-      assetType:     token.asset_type,
+      tokenSymbol:   tokenSymbol || null,
+      assetType,
       equityValue:   equityValue.toFixed(2),
       pricePerToken: pricePerToken.toFixed(6),
       issuedShares,

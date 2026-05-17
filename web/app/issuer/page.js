@@ -971,7 +971,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       const res = await fetch(`${API}/pipeline/preview`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tokenSymbol: form.tokenSymbol, financialData: { ...finData, assetType: finData.assetType || form.assetType } }),
+        body: JSON.stringify({ tokenSymbol: form.tokenSymbol, financialData: { ...finData, assetType: finData.assetType || form.assetType, authorisedShares: form.authorisedShares } }),
       });
       const data = await res.json();
       if (res.ok && data.pricePerToken) setEngineResult(data);
