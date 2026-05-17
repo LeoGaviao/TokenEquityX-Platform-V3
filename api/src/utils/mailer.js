@@ -60,6 +60,7 @@ function baseTemplate(title, body) {
 }
 
 async function send(to, subject, html) {
+  console.log('[mailer] attempting send to:', to, '| subject:', subject);
   if (!process.env.RESEND_API_KEY) {
     console.log(`[MAILER] RESEND_API_KEY not set. Would send "${subject}" to ${to}`);
     return { skipped: true };
@@ -233,16 +234,101 @@ async function notifyIssuerFeeReceivedAuditorAssigned({ issuerEmail, issuerName,
     `));
 }
 
-async function notifyAuditorAssigned({ auditorEmail, auditorName, tokenSymbol, entityName, referenceNumber }) {
+async function notifyAuditorAssigned({
+  auditorEmail, auditorName, tokenSymbol, entityName, referenceNumber,
+  assetType, sector, submissionDate, documentCount,
+  revenue, ebitda, netAssets, totalDebt, valuationPrice,
+}) {
+  const deadline = (() => {
+    const d = new Date();
+    let days = 0;
+    while (days < 10) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0 && d.getDay() !== 6) days++;
+    }
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  })();
+
+  const fmt = n => n ? `$${parseFloat(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—';
+  const financialRows = [
+    ['Revenue',                        fmt(revenue)],
+    ['EBITDA',                         fmt(ebitda)],
+    ['Net Assets',                     fmt(netAssets)],
+    ['Total Debt',                     fmt(totalDebt)],
+    ['Valuation Reference Price', valuationPrice ? `$${parseFloat(valuationPrice).toFixed(4)} per token` : '—'],
+  ].map(([k, v]) => `<div class="detail-row"><span>${k}</span><span>${v}</span></div>`).join('');
+
   return send(auditorEmail, `[TokenEquityX] New Audit Assignment — ${tokenSymbol}`,
     baseTemplate('New Audit Assignment', `
       <p>Dear ${auditorName || 'Auditor'},</p>
-      <p>You have been assigned to review the following tokenisation application on the TokenEquityX platform:</p>
-      <div class="detail-row"><span>Company</span><span>${entityName || tokenSymbol}</span></div>
+      <p>You have been assigned to audit the following tokenisation application on the TokenEquityX platform. Please review all materials and submit your findings by <strong>${deadline}</strong>.</p>
+
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Assignment Details</h3>
+      <div class="detail-row"><span>Entity / Company</span><span><strong>${entityName || tokenSymbol}</strong></span></div>
       <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
-      <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber || '—'}</span></div>
-      <p style="margin-top:20px;">Please log into your auditor dashboard to <strong>accept or decline</strong> this assignment within <strong>48 hours</strong>. Once accepted, you will have full access to the submission documents and be able to submit your audit report.</p>
+      <div class="detail-row"><span>Reference Number</span><span style="font-family:monospace">${referenceNumber || '—'}</span></div>
+      <div class="detail-row"><span>Asset Type</span><span>${assetType || '—'}</span></div>
+      <div class="detail-row"><span>Sector</span><span>${sector || '—'}</span></div>
+      <div class="detail-row"><span>Submission Date</span><span>${submissionDate ? new Date(submissionDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</span></div>
+      <div class="detail-row"><span>Documents Uploaded</span><span>${documentCount || 0}</span></div>
+
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Financial Data Summary</h3>
+      ${financialRows}
+
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Expected Deliverables</h3>
+      <ol style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Review all ${documentCount || ''} uploaded documents (certificate of incorporation, prospectus, financials, valuation report, KYC docs, legal opinion, regulatory approval)</li>
+        <li>Submit financial data to the TokenEquityX valuation engine via the auditor dashboard</li>
+        <li>Certify the oracle price (fair market value per token)</li>
+        <li>Set a risk rating: <strong>CONSERVATIVE / BALANCED / GROWTH / SPECULATIVE</strong></li>
+        <li>Suggest a listing type: <strong>BROWNFIELD_BOURSE</strong> (main bourse — ≥3 yrs revenues ≥$1.5M) or <strong>GREENFIELD_P2P</strong> (peer-to-peer — early stage)</li>
+        <li>Submit written audit findings and sign off the report in the auditor portal</li>
+      </ol>
+
+      <div style="background:#fef3c7;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:13px;margin:0 0 20px;">
+        <strong>Deadline:</strong> ${deadline} (10 business days from today).<br/>
+        Questions? Contact <a href="mailto:admin@tokenequityx.co.zw" style="color:#1A3C5E;">admin@tokenequityx.co.zw</a>
+      </div>
       <a href="${PLATFORM}/auditor" class="btn btn-gold">Go to Auditor Dashboard &rarr;</a>
+    `));
+}
+
+async function notifyIssuerComplianceFeeInvoice({
+  issuerEmail, issuerName, entityName, tokenSymbol,
+  complianceFee, paymentRef,
+  bankName, bankAccountName, bankAccountNo, bankBranch, bankSwift,
+}) {
+  const deadline = (() => {
+    const d = new Date();
+    let days = 0;
+    while (days < 7) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0 && d.getDay() !== 6) days++;
+    }
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  })();
+
+  return send(issuerEmail, `🧾 Compliance Fee Invoice — ${tokenSymbol} — Action Required`,
+    baseTemplate('Compliance Fee Invoice — Action Required', `
+      <p>Dear ${issuerName},</p>
+      <p>To proceed to the tokenisation and SECZ regulatory review stage, please settle the <strong>Compliance Review Fee</strong> by <strong>${deadline}</strong> (7 business days).</p>
+
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Compliance Review Fee</h3>
+      <div class="amount">$${parseFloat(complianceFee).toFixed(2)} USD</div>
+
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Bank Payment Details</h3>
+      <div class="detail-row"><span>Bank</span><span>${bankName || 'Stanbic Bank Zimbabwe'}</span></div>
+      <div class="detail-row"><span>Account Name</span><span>${bankAccountName || 'TokenEquityX Ltd'}</span></div>
+      <div class="detail-row"><span>Account Number</span><span style="font-family:monospace">${bankAccountNo || '—'}</span></div>
+      ${bankBranch ? `<div class="detail-row"><span>Branch</span><span>${bankBranch}</span></div>` : ''}
+      <div class="detail-row"><span>SWIFT Code</span><span style="font-family:monospace">${bankSwift || 'SBICZWHX'}</span></div>
+      <div class="detail-row"><span>Payment Reference</span><span style="font-family:monospace;font-weight:bold;color:#C8972B">${paymentRef}</span></div>
+
+      <p style="background:#fef3c7;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:13px;margin:20px 0 0;">
+        <strong>Important:</strong> Use the payment reference <strong>${paymentRef}</strong> exactly as shown. Payments without the correct reference cannot be matched to your application.<br/><br/>
+        Once payment is made, email proof of payment to <strong>admin@tokenequityx.co.zw</strong>. Payment must be received within 7 business days (by <strong>${deadline}</strong>).
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold" style="margin-top:24px;">View Your Application &rarr;</a>
     `));
 }
 
@@ -297,6 +383,7 @@ module.exports = {
   notifyUserWelcome,
   notifyIssuerApplicationReceived,
   notifyIssuerApplicationApproved,
+  notifyIssuerComplianceFeeInvoice,
   notifyIssuerApplicationRejected,
   notifyIssuerFeeReceivedAuditorAssigned,
   notifyIssuerSeczSubmitted,

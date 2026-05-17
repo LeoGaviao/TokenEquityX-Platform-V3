@@ -2133,8 +2133,7 @@ export default function AdminDashboard() {
                             ) : (
                               <>
                                 <button onClick={()=>advanceStage(item)} className="w-full py-2 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-600 text-white">✅ Advance to Next Stage</button>
-                                <button onClick={()=>notify('info',`Email drafted to ${item.contacts[0]?.email||'issuer'}. Configure SMTP in .env to send.`)} className="w-full py-2 rounded-lg text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-white">📧 Email Issuer</button>
-                                <button onClick={()=>setAssignModal({itemId:item.id,itemName:item.name,item})} className="w-full py-2 rounded-lg text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-white">🔍 Assign Auditor</button>
+<button onClick={()=>setAssignModal({itemId:item.id,itemName:item.name,item})} className="w-full py-2 rounded-lg text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-white">🔍 Assign Auditor</button>
                                 <div className="border-t border-gray-700/50 pt-2 mt-1 space-y-2">
                                   <button
                                     onClick={()=>suspendApplication(item)}

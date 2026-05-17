@@ -87,7 +87,7 @@ router.post('/deposit', authenticate, async (req, res) => {
       amount:        amount_usd,
       reference:     reference.trim().toUpperCase(),
       depositId,
-    }).catch(() => {});
+    }).catch(e => console.error('[MAILER] notifyAdminDepositSubmitted failed:', e.message));
 
     res.json({
       success:   true,
@@ -179,7 +179,7 @@ router.post('/withdraw', authenticate, async (req, res) => {
       accountName:   account_name,
       accountNumber: account_number,
       withdrawalId,
-    }).catch(() => {});
+    }).catch(e => console.error('[MAILER] notifyAdminWithdrawalSubmitted failed:', e.message));
 
     // Email investor
     mailer.notifyInvestorWithdrawalProcessing({
@@ -188,7 +188,7 @@ router.post('/withdraw', authenticate, async (req, res) => {
       amount:        amount_usd,
       bankName:      bank_name,
       accountNumber: account_number,
-    }).catch(() => {});
+    }).catch(e => console.error('[MAILER] notifyInvestorWithdrawalProcessing failed:', e.message));
 
     res.json({
       success:      true,
@@ -313,7 +313,7 @@ router.put('/deposit/:id/confirm',
         investorName:  dep.full_name,
         amount:        dep.amount_usd,
         reference:     dep.reference,
-      }).catch(() => {});
+      }).catch(e => console.error('[MAILER] notifyInvestorDepositConfirmed failed:', e.message));
 
       await sendMessage({
         recipientId: dep.user_id,
@@ -374,7 +374,7 @@ router.put('/deposit/:id/reject',
         amount:        dep.amount_usd,
         reference:     dep.reference,
         reason:        reason || 'Reference could not be verified on the Stanbic account',
-      }).catch(() => {});
+      }).catch(e => console.error('[MAILER] notifyInvestorDepositRejected failed:', e.message));
 
       res.json({ success: true, message: `Deposit rejected. ${dep.full_name} has been notified by email.` });
     } catch (err) {
@@ -482,7 +482,7 @@ router.put('/withdraw/:id/complete',
         bankName:      wr.bank_name,
         accountNumber: wr.account_number,
         txReference:   tx_reference,
-      }).catch(() => {});
+      }).catch(e => console.error('[MAILER] notifyInvestorWithdrawalCompleted failed:', e.message));
 
       await sendMessage({
         recipientId: wr.user_id,
@@ -543,7 +543,7 @@ router.put('/withdraw/:id/reject',
         investorName:  wr.full_name,
         amount:        wr.amount_usd,
         reason:        reason || 'Please contact support for details',
-      }).catch(() => {});
+      }).catch(e => console.error('[MAILER] notifyInvestorWithdrawalRejected failed:', e.message));
 
       await sendMessage({
         recipientId: wr.user_id,
