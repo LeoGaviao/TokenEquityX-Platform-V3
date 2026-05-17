@@ -42,8 +42,6 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
   const [yearsOfFinancials, setYearsOfFinancials] = useState('');
   const [annualRevenue,     setAnnualRevenue]     = useState('');
   const [reportSection,     setReportSection]     = useState('data'); // data | report | signoff
-  const [enginePrice,       setEnginePrice]       = useState(null);
-  const [engineLoading,     setEngineLoading]      = useState(false);
   const [varianceJustification, setVarianceJustification] = useState('');
 
   useEffect(() => {
@@ -73,27 +71,9 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
         size: val?.size || null,
       }));
 
-  // Fetch engine reference price — extracted so the refresh button can also call it
-  const fetchEnginePrice = () => {
-    if (!fullData || !item.token) return;
-    const rawData = fullData.data_json || {};
-    const financialData = rawData?.financialData || rawData || {};
-    const hasData = financialData && (
-      financialData.revenueTTM || financialData.faceValue ||
-      financialData.propertyValuation || financialData.totalResourceTonnes || financialData.annualRevenue
-    );
-    if (!hasData) return;
-    setEngineLoading(true);
-    api.post('/pipeline/preview', { tokenSymbol: item.token, financialData })
-      .then(r => { if (r.data?.pricePerToken) setEnginePrice(r.data); })
-      .catch(() => {})
-      .finally(() => setEngineLoading(false));
-  };
-
-  useEffect(() => { fetchEnginePrice(); }, [fullData, item.token]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Calculate variance between certified price and engine price
-  const enginePriceNum   = enginePrice ? parseFloat(enginePrice.pricePerToken || 0) : null;
+  // Read valuation result stored at submission time — do not re-run the engine
+  const storedValuation  = rawDataJson?.valuationResult || null;
+  const enginePriceNum   = storedValuation ? parseFloat(storedValuation.pricePerToken || 0) : null;
   const certifiedPriceNum = certifiedPrice ? parseFloat(certifiedPrice) : null;
   const priceVariancePct = enginePriceNum && certifiedPriceNum && enginePriceNum > 0
     ? ((certifiedPriceNum - enginePriceNum) / enginePriceNum * 100)
@@ -482,42 +462,32 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
 
                   {/* ── Valuation Engine Reference Panel */}
                   <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 mb-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-semibold text-gray-300 uppercase tracking-wider">🔢 Valuation Engine Reference</p>
-                      <div className="flex items-center gap-2">
-                        {engineLoading && <span className="text-xs text-gray-500">Calculating…</span>}
-                        <button
-                          onClick={fetchEnginePrice}
-                          disabled={engineLoading}
-                          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                        >↻ Refresh</button>
-                      </div>
-                    </div>
-                    {!enginePrice && !engineLoading && (
-                      <p className="text-xs text-gray-500">No engine output available — insufficient financial data submitted by issuer.</p>
+                    <p className="text-xs font-semibold text-gray-300 uppercase tracking-wider mb-3">🔢 System Reference Price</p>
+                    {!storedValuation && (
+                      <p className="text-xs text-gray-500">No system reference price available for this submission.</p>
                     )}
-                    {enginePrice && (
+                    {storedValuation && (
                       <div className="space-y-3">
                         <div className="grid grid-cols-3 gap-3">
                           <div className="bg-gray-900/60 rounded-lg p-3 text-center">
                             <p className="text-xs text-gray-500 mb-1">Asset Type</p>
-                            <p className="font-bold text-yellow-400 text-sm">{enginePrice.assetType}</p>
+                            <p className="font-bold text-yellow-400 text-sm">{storedValuation.assetType}</p>
                           </div>
                           <div className="bg-gray-900/60 rounded-lg p-3 text-center">
                             <p className="text-xs text-gray-500 mb-1">Blended Enterprise Value</p>
-                            <p className="font-bold text-green-400">{enginePrice.blended >= 1e6 ? `$${(enginePrice.blended/1e6).toFixed(2)}M` : `$${parseFloat(enginePrice.blended||0).toLocaleString()}`}</p>
+                            <p className="font-bold text-green-400">{storedValuation.blended >= 1e6 ? `$${(storedValuation.blended/1e6).toFixed(2)}M` : `$${parseFloat(storedValuation.blended||0).toLocaleString()}`}</p>
                           </div>
                           <div className="bg-gray-900/60 rounded-lg p-3 text-center border-2 border-blue-600/50">
-                            <p className="text-xs text-gray-500 mb-1">Engine Reference Price</p>
-                            <p className="font-black text-blue-300 text-lg">${parseFloat(enginePrice.pricePerToken||0).toFixed(4)}</p>
+                            <p className="text-xs text-gray-500 mb-1">System Reference Price (USD)</p>
+                            <p className="font-black text-blue-300 text-lg">${parseFloat(storedValuation.pricePerToken||0).toFixed(4)}</p>
                           </div>
                         </div>
-                        {enginePrice.models && Object.entries(enginePrice.models)
+                        {storedValuation.models && Object.entries(storedValuation.models)
                           .filter(([,v]) => v && (v.enterpriseValue > 0 || v.price > 0 || v.nav > 0)).length > 0 && (
                           <div>
                             <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Model Breakdown</p>
                             <div className="space-y-1.5">
-                              {Object.entries(enginePrice.models)
+                              {Object.entries(storedValuation.models)
                                 .filter(([,v]) => v && (v.enterpriseValue > 0 || v.price > 0 || v.nav > 0))
                                 .map(([modelName, modelData]) => {
                                   const val = modelData?.enterpriseValue || modelData?.price || modelData?.nav || 0;
@@ -532,6 +502,7 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
                             </div>
                           </div>
                         )}
+                        <p className="text-xs text-gray-600">Generated at time of issuer submission. Your certified price may differ.</p>
                         {certifiedPrice && !isNaN(parseFloat(certifiedPrice)) && (
                           <div className={`rounded-lg p-3 text-xs ${varianceExceedsThreshold ? 'bg-amber-900/30 border border-amber-700/50' : 'bg-green-900/20 border border-green-800/40'}`}>
                             <div className="flex items-center justify-between">
@@ -543,7 +514,7 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
                               </span>
                             </div>
                             <div className="flex gap-4 mt-1.5 text-gray-400">
-                              <span>Engine: <span className="text-blue-300 font-mono">${enginePriceNum?.toFixed(4)}</span></span>
+                              <span>System reference: <span className="text-blue-300 font-mono">${enginePriceNum?.toFixed(4)}</span></span>
                               <span>Certified: <span className="text-white font-mono">${parseFloat(certifiedPrice).toFixed(4)}</span></span>
                             </div>
                           </div>
@@ -604,7 +575,7 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
                       {item.current_oracle && (
                         <div className="flex gap-4 mt-2 text-xs">
                           <span className="text-gray-400">Current oracle: <span className="font-mono text-white">${parseFloat(item.current_oracle).toFixed(4)}</span></span>
-                          {enginePriceNum && <span className="text-gray-400">Engine reference: <span className="font-mono text-blue-300">${enginePriceNum.toFixed(4)}</span></span>}
+                          {enginePriceNum && <span className="text-gray-400">System reference: <span className="font-mono text-blue-300">${enginePriceNum.toFixed(4)}</span></span>}
                         </div>
                       )}
                     </div>

@@ -1018,8 +1018,34 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
       }
     }
 
+    // Run valuation engine server-side if financial data was submitted
+    let valuationResult = null;
+    if (parsedFinancialEngine && Object.values(parsedFinancialEngine).some(v => v !== '' && v !== null && v !== undefined)) {
+      try {
+        const { calculateValuation } = require('../services/valuation');
+        const finAssetType = (parsedFinancialEngine.assetType || assetType || 'EQUITY').toUpperCase();
+        const valResult    = calculateValuation(finAssetType, { ...parsedFinancialEngine, sector });
+        const totalDebtNum = Number(parsedFinancialEngine.totalDebt) || 0;
+        const cashNum      = Number(parsedFinancialEngine.cash)      || 0;
+        const equityValue  = valResult.blended - totalDebtNum + cashNum;
+        const pricePerToken = shares > 0 ? equityValue / shares : 0;
+        valuationResult = {
+          assetType:    finAssetType,
+          blended:      Math.round(valResult.blended),
+          equityValue:  parseFloat(equityValue.toFixed(2)),
+          pricePerToken: parseFloat(pricePerToken.toFixed(6)),
+          issuedShares: shares,
+          models:       valResult.models,
+          generatedAt:  new Date().toISOString(),
+        };
+      } catch (e) {
+        console.error('[VALUATION] Engine failed on submission:', e.message);
+      }
+    }
+
     const dataJson = JSON.stringify({
       financialData: { targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency, ...parsedFinancialEngine },
+      valuationResult,
       keyPersonnel: [
         { role: 'CEO',           name: ceo_name,   email: ceo_email,   idNumber: ceo_id },
         { role: 'CFO',           name: cfo_name,   email: cfo_email,   idNumber: cfo_id },
