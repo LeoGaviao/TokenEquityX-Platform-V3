@@ -378,6 +378,97 @@ async function notifyIssuerTokenLive({ issuerEmail, issuerName, tokenSymbol, ent
     `));
 }
 
+async function notifyIssuerAuditReportSubmitted({ issuerEmail, issuerName, tokenSymbol, entityName, recommendation, certifiedPrice }) {
+  const recColor = recommendation === 'APPROVE' ? '#16a34a' : recommendation === 'REJECT' ? '#dc2626' : '#d97706';
+  return send(issuerEmail, `📋 Audit Report Submitted — ${tokenSymbol}`,
+    baseTemplate('Audit Report Submitted', `
+      <p>Dear ${issuerName},</p>
+      <p>The independent auditor assigned to your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}) has submitted their review report.</p>
+      <div class="detail-row"><span>Token</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Auditor Recommendation</span><span style="color:${recColor};font-weight:700">${recommendation}</span></div>
+      <div class="detail-row"><span>Certified Oracle Price</span><span style="font-weight:700">$${parseFloat(certifiedPrice).toFixed(4)} per token</span></div>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Next step:</strong> The platform administrator will now conduct the final committee review. You will be notified once a decision is reached.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Application &rarr;</a>
+    `));
+}
+
+async function notifyIssuerInfoRequested({ issuerEmail, issuerName, tokenSymbol, entityName, notes }) {
+  return send(issuerEmail, `⚠️ Action Required — Additional Information Requested — ${tokenSymbol}`,
+    baseTemplate('Additional Information Required', `
+      <p>Dear ${issuerName},</p>
+      <p>The review team has requested additional information or documents for your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}).</p>
+      ${notes ? `<div style="background:#f3f4f6;border-radius:8px;padding:12px 16px;margin:16px 0;"><p style="margin:0;font-size:14px;color:#374151;"><strong>Reviewer's Notes:</strong><br/>${notes}</p></div>` : ''}
+      <p>Please log in to your issuer portal, navigate to the <strong>Application Journey</strong> tab, and provide the requested documents or information as soon as possible.</p>
+      <p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;">
+        Failure to provide the requested information within 10 business days may result in your application being suspended.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">Respond to Request &rarr;</a>
+    `));
+}
+
+async function notifyInvestorOfferingCancelled({ investorEmail, investorName, tokenSymbol, amountRefunded }) {
+  return send(investorEmail, `📢 Offering Cancelled — Refund Processed — ${tokenSymbol}`,
+    baseTemplate('Primary Offering Cancelled — Refund Processed', `
+      <p>Dear ${investorName},</p>
+      <p>The primary offering for <strong>${tokenSymbol}</strong> has been cancelled by the platform administrator.</p>
+      <p>Your subscription funds have been fully refunded to your TokenEquityX wallet balance.</p>
+      <div class="amount" style="color:#16a34a">$${parseFloat(amountRefunded).toFixed(2)} USD</div>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Refunded to wallet</span></div>
+      <p>You may use these funds to subscribe to other available offerings on the platform.</p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Wallet &rarr;</a>
+    `));
+}
+
+async function notifyIssuerOfferingApproved({ issuerEmail, issuerName, tokenSymbol, offeringPrice, targetRaise, deadline }) {
+  const fmt = n => n ? `$${parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+  const deadlineFmt = deadline ? new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  return send(issuerEmail, `✅ Offering Approved — Now Open to Investors — ${tokenSymbol}`,
+    baseTemplate('Primary Offering Approved', `
+      <p>Dear ${issuerName},</p>
+      <p>Your primary offering for <strong>${tokenSymbol}</strong> has been approved and is now <strong class="success">OPEN</strong> to investors.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Offering Price</span><span>${fmt(offeringPrice)} per token</span></div>
+      <div class="detail-row"><span>Target Raise</span><span>${fmt(targetRaise)}</span></div>
+      <div class="detail-row"><span>Subscription Deadline</span><span>${deadlineFmt}</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        Investors can now subscribe through the TokenEquityX platform. Track subscription progress in your issuer dashboard.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Offering Dashboard &rarr;</a>
+    `));
+}
+
+async function notifyIssuerOfferingRejected({ issuerEmail, issuerName, tokenSymbol, reason }) {
+  return send(issuerEmail, `❌ Offering Proposal Rejected — ${tokenSymbol}`,
+    baseTemplate('Offering Proposal Not Approved', `
+      <p>Dear ${issuerName},</p>
+      <p>Your primary offering proposal for <strong>${tokenSymbol}</strong> was not approved at this time.</p>
+      <div class="detail-row"><span>Token</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Reason</span><span class="danger">${reason || 'Does not meet current offering requirements'}</span></div>
+      <p>Please review the reason above, address any concerns, and resubmit your offering proposal through the issuer portal.</p>
+      <a href="${PLATFORM}/issuer" class="btn">Review and Resubmit &rarr;</a>
+    `));
+}
+
+async function notifyInvestorSubscriptionConfirmed({ investorEmail, investorName, tokenSymbol, amountUsd, tokensAllocated, deadline }) {
+  const deadlineFmt = deadline ? new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  return send(investorEmail, `✅ Subscription Confirmed — ${tokenSymbol}`,
+    baseTemplate('Subscription Confirmed', `
+      <p>Dear ${investorName},</p>
+      <p>Your subscription to the <strong>${tokenSymbol}</strong> primary offering has been confirmed.</p>
+      <div class="amount" style="color:#1A3C5E">$${parseFloat(amountUsd).toFixed(2)} USD</div>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Tokens Reserved</span><span style="font-weight:700">${parseInt(tokensAllocated).toLocaleString()} tokens</span></div>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Confirmed</span></div>
+      <div class="detail-row"><span>Offering Deadline</span><span>${deadlineFmt}</span></div>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Next step:</strong> Your tokens will be credited to your portfolio once the offering closes. No further action is required.
+      </p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Portfolio &rarr;</a>
+    `));
+}
+
 module.exports = {
   send,
   notifyUserWelcome,
@@ -397,4 +488,10 @@ module.exports = {
   notifyInvestorWithdrawalProcessing,
   notifyInvestorWithdrawalCompleted,
   notifyInvestorWithdrawalRejected,
+  notifyIssuerAuditReportSubmitted,
+  notifyIssuerInfoRequested,
+  notifyInvestorOfferingCancelled,
+  notifyIssuerOfferingApproved,
+  notifyIssuerOfferingRejected,
+  notifyInvestorSubscriptionConfirmed,
 };

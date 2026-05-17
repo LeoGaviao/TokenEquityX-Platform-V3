@@ -102,10 +102,22 @@ router.post('/applications/:id/approve', authenticate, requireRole('ADMIN'), asy
       [req.params.id, sub.token_symbol, sub.issuer_wallet, complianceFee, 0, complianceFee, req.user.userId]
     );
 
-    // Update submission with assigned auditor
+    // BUG B fix — resolve auditor email to UUID so auditor-accept/decline routes can
+    // compare assigned_auditor against req.user.userId (which is always a UUID).
+    let auditorIdApprove = auditor_email;
+    const [audApproveRows] = await db.execute(
+      "SELECT id FROM users WHERE email = ? AND role = 'AUDITOR'",
+      [auditor_email]
+    );
+    if (audApproveRows.length > 0) {
+      auditorIdApprove = audApproveRows[0].id;
+    } else {
+      console.warn(`[SETTINGS] approve: no AUDITOR user found for email ${auditor_email} — storing email as fallback`);
+    }
+
     await db.execute(
       `UPDATE data_submissions SET assigned_auditor = ?, updated_at = NOW() WHERE id = ?`,
-      [auditor_email, req.params.id]
+      [auditorIdApprove, req.params.id]
     );
 
     // Get issuer details
@@ -240,6 +252,18 @@ router.post('/applications/:id/confirm-fee', authenticate, requireRole('ADMIN'),
     if (subRows.length === 0) return res.status(404).json({ error: 'Submission not found' });
     const sub = subRows[0];
 
+    // BUG B fix — resolve auditor email to UUID for assigned_auditor column
+    let auditorIdFee = auditor_email;
+    const [audFeeRows] = await db.execute(
+      "SELECT id FROM users WHERE email = ? AND role = 'AUDITOR'",
+      [auditor_email]
+    );
+    if (audFeeRows.length > 0) {
+      auditorIdFee = audFeeRows[0].id;
+    } else {
+      console.warn(`[SETTINGS] confirm-fee: no AUDITOR user found for email ${auditor_email} — storing email as fallback`);
+    }
+
     await db.execute(
       `UPDATE data_submissions SET
          application_status = 'FEE_CONFIRMED',
@@ -248,7 +272,7 @@ router.post('/applications/:id/confirm-fee', authenticate, requireRole('ADMIN'),
          assigned_auditor = ?,
          updated_at = NOW()
        WHERE id = ?`,
-      [auditor_email, req.params.id]
+      [auditorIdFee, req.params.id]
     );
 
     await db.execute(

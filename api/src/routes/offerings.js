@@ -289,6 +289,33 @@ router.put('/:id/approve',
       );
 
       await conn.commit();
+
+      // FIX 1.4 — notify issuer that offering is now open
+      try {
+        const [approveTokenRows] = await db.execute('SELECT token_symbol FROM tokens WHERE id = ?', [offering.token_id]);
+        const approveTokenSym = approveTokenRows[0]?.token_symbol || 'your token';
+        await sendMessage({
+          recipientId: offering.issuer_id,
+          subject:     `✅ Offering Approved — Now Open — ${approveTokenSym}`,
+          body:        `Your primary offering for ${approveTokenSym} has been approved and is now OPEN to investors. Subscription deadline: ${new Date(offering.subscription_deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.`,
+          type:        'SYSTEM', category: 'OFFERING', referenceId: String(req.params.id),
+        }).catch(() => {});
+        const { notifyIssuerOfferingApproved } = require('../utils/mailer');
+        const [oapIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [offering.issuer_id]);
+        if (oapIssuerRows[0]?.email) {
+          notifyIssuerOfferingApproved({
+            issuerEmail:  oapIssuerRows[0].email,
+            issuerName:   oapIssuerRows[0].full_name,
+            tokenSymbol:  approveTokenSym,
+            offeringPrice: offering.offering_price_usd,
+            targetRaise:  offering.target_raise_usd,
+            deadline:     offering.subscription_deadline,
+          }).catch(e => console.error('[MAILER] offering-approve notifyIssuerOfferingApproved failed:', e.message));
+        }
+      } catch (notifyErr) {
+        console.error('[OFFERING-APPROVE] Notification error (non-fatal):', notifyErr.message);
+      }
+
       res.json({ success: true, message: 'Offering approved and opened. Investors can now subscribe.' });
     } catch (err) {
       await conn.rollback();
@@ -321,6 +348,31 @@ router.put('/:id/reject',
          VALUES ('OFFERING_REJECTED', ?, ?, ?)`,
         [req.user.userId, `offering:${req.params.id}`, `Offering rejected. Reason: ${reason || 'Not specified'}`]
       );
+
+      // FIX 1.5 — notify issuer of rejection
+      try {
+        const offering = rows[0];
+        const [rejectTokenRows] = await db.execute('SELECT token_symbol FROM tokens WHERE id = ?', [offering.token_id]);
+        const rejectTokenSym = rejectTokenRows[0]?.token_symbol || 'your token';
+        await sendMessage({
+          recipientId: offering.issuer_id,
+          subject:     `❌ Offering Proposal Rejected — ${rejectTokenSym}`,
+          body:        `Your primary offering proposal for ${rejectTokenSym} has been rejected. Reason: ${reason || 'Not specified'}. Please review and resubmit.`,
+          type:        'SYSTEM', category: 'OFFERING', referenceId: String(req.params.id),
+        }).catch(() => {});
+        const { notifyIssuerOfferingRejected } = require('../utils/mailer');
+        const [orpIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [offering.issuer_id]);
+        if (orpIssuerRows[0]?.email) {
+          notifyIssuerOfferingRejected({
+            issuerEmail: orpIssuerRows[0].email,
+            issuerName:  orpIssuerRows[0].full_name,
+            tokenSymbol: rejectTokenSym,
+            reason,
+          }).catch(e => console.error('[MAILER] offering-reject notifyIssuerOfferingRejected failed:', e.message));
+        }
+      } catch (notifyErr) {
+        console.error('[OFFERING-REJECT] Notification error (non-fatal):', notifyErr.message);
+      }
 
       res.json({ success: true, message: 'Offering rejected.' });
     } catch (err) {
@@ -445,6 +497,32 @@ router.post('/:id/subscribe',
         category:    'OFFERING',
         referenceId: String(req.params.id),
       }).catch(() => {});
+
+      // FIX 1.6 — confirm subscription to the investor
+      try {
+        const [subTokenRows] = await db.execute('SELECT token_symbol FROM tokens WHERE id = ?', [offering.token_id]);
+        const subTokenSym = subTokenRows[0]?.token_symbol || 'the offering';
+        await sendMessage({
+          recipientId: req.user.userId,
+          subject:     `✅ Subscription Confirmed — ${subTokenSym}`,
+          body:        `Your subscription has been confirmed. Amount: $${subscribeAmount.toFixed(2)}. Tokens reserved: ${tokensAllocated}. You will receive your tokens once the offering closes.`,
+          type:        'SYSTEM', category: 'OFFERING', referenceId: String(req.params.id),
+        }).catch(() => {});
+        const { notifyInvestorSubscriptionConfirmed } = require('../utils/mailer');
+        const [subInvRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [req.user.userId]);
+        if (subInvRows[0]?.email) {
+          notifyInvestorSubscriptionConfirmed({
+            investorEmail:   subInvRows[0].email,
+            investorName:    subInvRows[0].full_name,
+            tokenSymbol:     subTokenSym,
+            amountUsd:       subscribeAmount,
+            tokensAllocated,
+            deadline:        offering.subscription_deadline,
+          }).catch(e => console.error('[MAILER] subscribe notifyInvestorSubscriptionConfirmed failed:', e.message));
+        }
+      } catch (notifyErr) {
+        console.error('[SUBSCRIBE] Investor notification error (non-fatal):', notifyErr.message);
+      }
 
       res.json({
         success: true,
@@ -679,6 +757,41 @@ router.post('/:id/cancel',
       );
 
       await conn.commit();
+
+      // FIX 1.3 — notify each investor of the cancellation and refund, then notify issuer
+      try {
+        const { notifyInvestorOfferingCancelled } = require('../utils/mailer');
+        const [cancelTokenRows] = await db.execute('SELECT token_symbol FROM tokens WHERE id = ?', [offering.token_id]);
+        const cancelTokenSym = cancelTokenRows[0]?.token_symbol || 'the offering';
+
+        for (const sub of subscriptions) {
+          await sendMessage({
+            recipientId: sub.investor_id,
+            subject:     `📢 Offering Cancelled — Refund Processed — ${cancelTokenSym}`,
+            body:        `The ${cancelTokenSym} primary offering has been cancelled. Your subscription of $${parseFloat(sub.amount_usd).toFixed(2)} has been refunded to your wallet balance.`,
+            type:        'SYSTEM', category: 'OFFERING', referenceId: String(req.params.id),
+          }).catch(() => {});
+          const [invRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.investor_id]);
+          if (invRows[0]?.email) {
+            notifyInvestorOfferingCancelled({
+              investorEmail:  invRows[0].email,
+              investorName:   invRows[0].full_name,
+              tokenSymbol:    cancelTokenSym,
+              amountRefunded: sub.amount_usd,
+            }).catch(e => console.error('[MAILER] cancel notifyInvestorOfferingCancelled failed:', e.message));
+          }
+        }
+
+        await sendMessage({
+          recipientId: offering.issuer_id,
+          subject:     `📢 Offering Cancelled — ${cancelTokenSym}`,
+          body:        `Your primary offering for ${cancelTokenSym} has been cancelled by the platform administrator. All ${subscriptions.length} subscriber fund(s) have been refunded.${reason ? '\n\nReason: ' + reason : ''}`,
+          type:        'SYSTEM', category: 'OFFERING', referenceId: String(req.params.id),
+        }).catch(() => {});
+      } catch (notifyErr) {
+        console.error('[OFFERING-CANCEL] Notification error (non-fatal):', notifyErr.message);
+      }
+
       res.json({ success: true, refunded: subscriptions.length, message: `Offering cancelled. ${subscriptions.length} subscribers refunded.` });
     } catch (err) {
       await conn.rollback();

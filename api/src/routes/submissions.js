@@ -433,6 +433,44 @@ router.put('/:id/status',
         SET status = ?, auditor_notes = ?, updated_at = NOW()
         WHERE id = ?
       `, [status, notes || null, req.params.id]);
+
+      // FIX 1.2 — notify issuer when additional information is requested
+      if (status === 'INFO_REQUESTED') {
+        try {
+          const { sendMessage } = require('../utils/messenger');
+          const { notifyIssuerInfoRequested } = require('../utils/mailer');
+          const UUID_RE_ST = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const [stSubRows] = await db.execute(
+            'SELECT issuer_wallet, token_symbol, entity_name FROM data_submissions WHERE id = ?',
+            [req.params.id]
+          );
+          const stSub = stSubRows[0];
+          if (stSub?.issuer_wallet) {
+            await sendMessage({
+              recipientId: stSub.issuer_wallet,
+              subject:     `⚠️ Action Required — Information Requested — ${stSub.token_symbol}`,
+              body:        `Additional information has been requested for your ${stSub.token_symbol} application. Please log in to your issuer portal and provide the requested documents or information.${notes ? '\n\nReviewer\'s notes: ' + notes : ''}`,
+              type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+            }).catch(e => console.error('[MESSENGER] status INFO_REQUESTED sendMessage (issuer) failed:', e.message));
+
+            if (UUID_RE_ST.test(stSub.issuer_wallet)) {
+              const [stIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [stSub.issuer_wallet]);
+              if (stIssuerRows[0]?.email) {
+                notifyIssuerInfoRequested({
+                  issuerEmail: stIssuerRows[0].email,
+                  issuerName:  stIssuerRows[0].full_name,
+                  tokenSymbol: stSub.token_symbol,
+                  entityName:  stSub.entity_name,
+                  notes,
+                }).catch(e => console.error('[MAILER] status notifyIssuerInfoRequested failed:', e.message));
+              }
+            }
+          }
+        } catch (notifyErr) {
+          console.error('[STATUS-CHANGE] INFO_REQUESTED notification error (non-fatal):', notifyErr.message);
+        }
+      }
+
       res.json({ success: true, status, message: `Submission marked as ${status}` });
     } catch (err) {
       res.status(500).json({ error: 'Could not update status' });
@@ -478,7 +516,7 @@ router.put('/:id/audit-report',
 
     try {
       const [subRows] = await db.execute(
-        'SELECT id, status, audit_report FROM data_submissions WHERE id = ?',
+        'SELECT id, status, audit_report, issuer_wallet, token_symbol, entity_name FROM data_submissions WHERE id = ?',
         [req.params.id]
       );
       if (subRows.length === 0) return res.status(404).json({ error: 'Submission not found' });
@@ -513,6 +551,50 @@ router.put('/:id/audit-report',
         ['AUDIT_REPORT_SUBMITTED', req.user.userId, req.params.id,
          `Status: ${newStatus}. Price: $${parseFloat(certifiedPrice).toFixed(4)}. Risk: ${riskRating}`]
       );
+
+      // FIX 1.1 — notify issuer and admin that the audit report has been submitted
+      try {
+        const { sendMessage } = require('../utils/messenger');
+        const { notifyIssuerAuditReportSubmitted } = require('../utils/mailer');
+        const UUID_RE_AR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const recLabel = recommendation === 'APPROVE' ? 'APPROVE'
+          : recommendation === 'REJECT' ? 'REJECT' : 'REQUEST CHANGES';
+
+        if (currentSub.issuer_wallet) {
+          await sendMessage({
+            recipientId: currentSub.issuer_wallet,
+            subject:     `📋 Audit Report Submitted — ${currentSub.token_symbol}`,
+            body:        `Your auditor has submitted their review report for ${currentSub.token_symbol}. Recommendation: ${recLabel}. Certified price: $${parseFloat(certifiedPrice).toFixed(4)} per token. Admin will now conduct final review.`,
+            type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+          }).catch(e => console.error('[MESSENGER] audit-report sendMessage (issuer) failed:', e.message));
+
+          if (UUID_RE_AR.test(currentSub.issuer_wallet)) {
+            const [arIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [currentSub.issuer_wallet]);
+            if (arIssuerRows[0]?.email) {
+              notifyIssuerAuditReportSubmitted({
+                issuerEmail:    arIssuerRows[0].email,
+                issuerName:     arIssuerRows[0].full_name,
+                tokenSymbol:    currentSub.token_symbol,
+                entityName:     currentSub.entity_name,
+                recommendation: recLabel,
+                certifiedPrice: parseFloat(certifiedPrice),
+              }).catch(e => console.error('[MAILER] audit-report notifyIssuerAuditReportSubmitted failed:', e.message));
+            }
+          }
+        }
+
+        const [arAdminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
+        if (arAdminRows.length > 0) {
+          await sendMessage({
+            recipientId: arAdminRows[0].id,
+            subject:     `📋 Audit Report Ready — ${currentSub.token_symbol}`,
+            body:        `Audit report received for ${currentSub.token_symbol} — ${currentSub.entity_name || currentSub.token_symbol}. Recommendation: ${recLabel}. Oracle price: $${parseFloat(certifiedPrice).toFixed(4)}. Ready for final approval.`,
+            type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+          }).catch(e => console.error('[MESSENGER] audit-report sendMessage (admin) failed:', e.message));
+        }
+      } catch (notifyErr) {
+        console.error('[AUDIT-REPORT] Notification error (non-fatal):', notifyErr.message);
+      }
 
       res.json({ success: true, status: newStatus, auditReport,
                  message: `Audit report submitted. Submission ${newStatus}.` });
@@ -599,14 +681,12 @@ router.put('/:id/admin-approve',
          `Listing type: ${listingType}. Certified price: $${certifiedPrice}. Notes: ${adminNotes||'None'}. Status: TOKENIZATION_PENDING.`]
       );
 
-      // Create compliance fee record and fire three notifications
+      // Committee-stage notifications (application approval email, fee invoice, auditor assignment)
+      // were already sent when admin approved the application at the committee meeting via
+      // settings/applications/:id/approve. This route fires AFTER status=AUDITOR_APPROVED, so
+      // only a "final approval" message is sent here to avoid duplicate emails to the issuer.
       const { getNumericSetting } = require('../utils/platformSettings');
       const { sendMessage } = require('../utils/messenger');
-      const {
-        notifyIssuerApplicationApproved,
-        notifyIssuerComplianceFeeInvoice,
-        notifyAuditorAssigned,
-      } = require('../utils/mailer');
 
       const complianceFee = await getNumericSetting('compliance_fee_usd', 1500);
       const feeRef = `TEXZ-APP-${req.params.id}`;
@@ -618,107 +698,12 @@ router.put('/:id/admin-approve',
         [req.params.id, sub.token_symbol, complianceFee, feeRef]
       );
 
-      const [bankSettings] = await db.execute(
-        "SELECT key, value FROM platform_settings WHERE key IN ('bank_name','bank_account_name','bank_account_number','bank_branch','bank_swift_code')"
-      );
-      const bankMap = {};
-      bankSettings.forEach(s => { bankMap[s.key] = s.value; });
-
-      // Extract financial context from data_json for auditor notification
-      let subData = {};
-      try { subData = typeof sub.data_json === 'string' ? JSON.parse(sub.data_json) : (sub.data_json || {}); } catch {}
-      const finData   = subData.financialData || subData.financial_data || {};
-      const subSector = subData.sector || null;
-      const subAsset  = subData.assetType || sub.asset_type || null;
-
-      const [issuerRows] = UUID_RE.test(sub.issuer_wallet)
-        ? await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet])
-        : [[]];
-      const issuer = issuerRows[0] || {};
-
-      const [auditorRows] = (sub.assigned_auditor && UUID_RE.test(sub.assigned_auditor))
-        ? await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.assigned_auditor])
-        : [[]];
-      const auditor = (auditorRows || [])[0] || {};
-
-      // ── 1. Application Approved ─────────────────────────────────
       await sendMessage({
         recipientId: sub.issuer_wallet,
-        subject:     `✅ Application Approved at Committee Meeting — ${sub.token_symbol}`,
-        body:        `Congratulations! Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been approved by the Applications Appraisal Committee.\n\nReference: ${sub.reference_number}\n\nYou will receive separate notifications with the compliance fee invoice and your assigned auditor's details.`,
+        subject:     `✅ Final Approval Granted — ${sub.token_symbol}`,
+        body:        `Your tokenisation application for ${sub.entity_name} (${sub.token_symbol}) has been granted final admin approval following the auditor's review.\n\nToken status: TOKENIZATION_PENDING\nListing type: ${listingType === 'BROWNFIELD_BOURSE' ? 'Main Bourse (Brownfield)' : 'Peer-to-Peer (Greenfield)'}\nCertified price: $${certifiedPrice.toFixed(4)} per token\n\nNext step: Your application will be submitted to the Securities and Exchange Commission of Zimbabwe (SECZ) for regulatory approval. You will be notified when this is complete.\n\nReference: ${sub.reference_number}`,
         type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-      }).catch(e => console.error('[MESSENGER] admin-approve approval sendMessage failed:', e.message));
-
-      if (issuer.email) {
-        await notifyIssuerApplicationApproved({
-          issuerEmail:    issuer.email,
-          issuerName:     issuer.full_name,
-          tokenSymbol:    sub.token_symbol,
-          entityName:     sub.entity_name,
-          complianceFee,
-          paymentRef:     feeRef,
-          bankName:       bankMap.bank_name,
-          bankAccountName:bankMap.bank_account_name,
-          bankAccountNo:  bankMap.bank_account_number,
-          bankBranch:     bankMap.bank_branch,
-          bankSwift:      bankMap.bank_swift_code,
-        }).catch(e => console.error('[MAILER] admin-approve notifyIssuerApplicationApproved failed:', e.message));
-      } else {
-        console.warn(`[MAILER] admin-approve: no issuer email for submission ${req.params.id}`);
-      }
-
-      // ── 2. Compliance Fee Invoice ───────────────────────────────
-      await sendMessage({
-        recipientId: sub.issuer_wallet,
-        subject:     `🧾 Compliance Fee Invoice — Action Required — ${sub.token_symbol}`,
-        body:        `A compliance review fee of $${complianceFee.toFixed(2)} USD is due within 7 business days.\n\nPayment Reference: ${feeRef}\nBank: ${bankMap.bank_name || 'Stanbic Bank Zimbabwe'}\nAccount Name: ${bankMap.bank_account_name || 'TokenEquityX Ltd'}\nAccount Number: ${bankMap.bank_account_number || 'TBC'}\nSWIFT: ${bankMap.bank_swift_code || 'SBICZWHX'}\n\nEmail proof of payment to admin@tokenequityx.co.zw`,
-        type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-      }).catch(e => console.error('[MESSENGER] admin-approve fee sendMessage failed:', e.message));
-
-      if (issuer.email) {
-        await notifyIssuerComplianceFeeInvoice({
-          issuerEmail:    issuer.email,
-          issuerName:     issuer.full_name,
-          entityName:     sub.entity_name,
-          tokenSymbol:    sub.token_symbol,
-          complianceFee,
-          paymentRef:     feeRef,
-          bankName:       bankMap.bank_name,
-          bankAccountName:bankMap.bank_account_name,
-          bankAccountNo:  bankMap.bank_account_number,
-          bankBranch:     bankMap.bank_branch,
-          bankSwift:      bankMap.bank_swift_code,
-        }).catch(e => console.error('[MAILER] admin-approve notifyIssuerComplianceFeeInvoice failed:', e.message));
-      }
-
-      // ── 3. Auditor Assigned ─────────────────────────────────────
-      if (auditor.email) {
-        await sendMessage({
-          recipientId: sub.assigned_auditor,
-          subject:     `🔍 New Audit Assignment — ${sub.token_symbol}`,
-          body:        `You have been assigned to audit the tokenisation application for ${sub.entity_name} (${sub.token_symbol}).\n\nReference: ${sub.reference_number}\nDocuments Uploaded: ${sub.document_count || 0}\nDeadline: 10 business days from today\n\nExpected deliverables:\n1. Review all uploaded documents\n2. Submit financial data to the valuation engine\n3. Certify the oracle price\n4. Set risk rating (CONSERVATIVE/BALANCED/GROWTH/SPECULATIVE)\n5. Suggest listing type (BROWNFIELD_BOURSE or GREENFIELD_P2P)\n6. Submit written audit findings\n\nLog in to your auditor dashboard to accept or decline within 48 hours.\n\nContact admin@tokenequityx.co.zw for any questions.`,
-          type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
-        }).catch(e => console.error('[MESSENGER] admin-approve auditor sendMessage failed:', e.message));
-
-        await notifyAuditorAssigned({
-          auditorEmail:    auditor.email,
-          auditorName:     auditor.full_name,
-          tokenSymbol:     sub.token_symbol,
-          entityName:      sub.entity_name,
-          referenceNumber: sub.reference_number,
-          assetType:       subAsset,
-          sector:          subSector,
-          submissionDate:  sub.created_at,
-          documentCount:   sub.document_count,
-          revenue:         finData.revenue   || null,
-          ebitda:          finData.ebitda    || null,
-          netAssets:       finData.netAssets || null,
-          totalDebt:       finData.totalDebt || null,
-          valuationPrice:  certifiedPrice    || null,
-        }).catch(e => console.error('[MAILER] admin-approve notifyAuditorAssigned failed:', e.message));
-      } else {
-        console.warn(`[MAILER] admin-approve: no auditor email for submission ${req.params.id} (assigned_auditor=${sub.assigned_auditor})`);
-      }
+      }).catch(e => console.error('[MESSENGER] admin-approve final sendMessage (issuer) failed:', e.message));
 
       res.json({
         success: true, listingType, certifiedPrice, symbol: symbol.toUpperCase(),
