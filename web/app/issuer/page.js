@@ -929,7 +929,8 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
   const [submitted,  setSubmitted]  = useState(null);
   const [files,      setFiles]      = useState({});
   const fileRefs = useRef({});
-  const [editingId, setEditingId] = useState(null);
+  const [editingId,  setEditingId]  = useState(null);
+  const [amendingId, setAmendingId] = useState(null);
   const [symbolStatus, setSymbolStatus] = useState(null);
   const [symbolTimer,  setSymbolTimer]  = useState(null);
   const [postMsg,      setPostMsg]      = useState(null);
@@ -1061,6 +1062,73 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const amendSubmission = (app) => {
+    const data = typeof app.data_json === 'string' ? JSON.parse(app.data_json || '{}') : (app.data_json || {});
+    const fin  = data.financialData || {};
+    const pers = data.keyPersonnel  || [];
+    const ceo  = pers.find(p => p.role === 'CEO')           || {};
+    const cfo  = pers.find(p => p.role === 'CFO')           || {};
+    const leg  = pers.find(p => p.role === 'Legal Counsel') || {};
+    const restored = {
+      legalName:             app.entity_name        || '',
+      registrationNumber:    data.registrationNumber || '',
+      jurisdiction:          data.jurisdiction       || 'ZW',
+      sector:                data.sector             || 'OTHER',
+      assetType:             data.assetType          || 'EQUITY',
+      description:           data.description        || '',
+      websiteUrl:            data.websiteUrl         || '',
+      foundedYear:           data.foundedYear        || '',
+      headquarters:          data.headquarters       || '',
+      useOfProceeds:         data.useOfProceeds      || '',
+      numEmployees:          data.numEmployees       || '',
+      tokenName:             data.tokenName          || '',
+      tokenSymbol:           app.token_symbol        || '',
+      assetClass:            data.assetClass         || 'Private Equity',
+      authorisedShares:      data.authorisedShares   || '',
+      nominalValueCents:     '100',
+      targetRaiseUsd:        fin.targetRaiseUsd      || '',
+      tokenIssuePrice:       fin.tokenIssuePrice     || '1.00',
+      totalSupply:           fin.totalSupply         || '',
+      expectedYield:         fin.expectedYield       || '',
+      distributionFrequency: fin.distributionFrequency || 'Quarterly',
+      ceo_name:   ceo.name      || '',
+      ceo_email:  ceo.email     || '',
+      ceo_id:     ceo.idNumber  || '',
+      cfo_name:   cfo.name      || '',
+      cfo_email:  cfo.email     || '',
+      cfo_id:     cfo.idNumber  || '',
+      legal_name:  leg.name     || '',
+      legal_email: leg.email    || '',
+      legal_id:    leg.idNumber || '',
+      termsAccepted: false,
+    };
+    setForm(restored);
+    setStep(1);
+    setEditingId(null);
+    setAmendingId(app.id);
+    setPostMsg(null);
+    localStorage.setItem(FORM_KEY, JSON.stringify({ step: 1, form: restored }));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const withdrawSubmission = async (app) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to withdraw this application?\n\nThis cannot be undone. You will need to submit a new application to proceed.`
+    );
+    if (!confirmed) return;
+    const token = localStorage.getItem('token');
+    const res   = await fetch(`${API}/submissions/${app.id}/withdraw`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setApplications(prev => prev.filter(a => a.id !== app.id));
+      setPostMsg({ type: 'success', text: 'Application withdrawn successfully.' });
+    } else {
+      alert(`Error: ${data.error}`);
+    }
+  };
+
   const deleteSubmission = async (subId, symbol) => {
     if (!window.confirm(`Delete the ${symbol} application?\n\nThis will permanently delete the token, SPV and all related data.\n\nThis cannot be undone.`)) return;
     const typed = window.prompt(`Type "${symbol}" to confirm:`);
@@ -1094,16 +1162,29 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       });
       fd.append('financialEngineData', JSON.stringify({ ...finData, assetType: finData.assetType || form.assetType }));
       if (editingId) fd.append('editingId', editingId);
-      const res = await fetch(`${API}/submissions/unified`, {
-        method:  editingId ? 'PUT' : 'POST',
+      const url    = amendingId
+        ? `${API}/submissions/${amendingId}/amend`
+        : `${API}/submissions/unified`;
+      const method = amendingId || editingId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { Authorization: `Bearer ${token}` },
         body:    fd,
       });
       const data = await res.json();
       if (res.ok) {
         localStorage.removeItem(FORM_KEY);
-        setSubmitted(data);
-        setEditingId(null);
+        if (amendingId) {
+          setAmendingId(null);
+          setStep(1);
+          setPostMsg({ type: 'success', text: data.message || 'Amendment submitted successfully.' });
+          const t2 = localStorage.getItem('token');
+          fetch(`${API}/submissions/my`, { headers: { Authorization: `Bearer ${t2}` } })
+            .then(r => r.json()).then(d => { if (Array.isArray(d)) setApplications(d); }).catch(() => {});
+        } else {
+          setSubmitted(data);
+          setEditingId(null);
+        }
       } else {
         setPostMsg({ type: 'error', text: data.error || 'Submission failed.' });
       }
@@ -1164,14 +1245,26 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                   <p className="font-semibold text-sm">{app.token_symbol} — {app.entity_name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">Ref: {app.reference_number?.substring(0,16)}... · {new Date(app.created_at).toLocaleDateString('en-GB')}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
                   <span className={`text-xs px-2 py-0.5 rounded-full border ${
                     app.status === 'ADMIN_APPROVED' ? 'bg-green-900/40 text-green-300 border-green-700/50' :
                     app.status === 'REJECTED'       ? 'bg-red-900/40 text-red-300 border-red-700/50' :
                     app.status === 'UNDER_REVIEW'   ? 'bg-blue-900/40 text-blue-300 border-blue-700/50' :
                     'bg-yellow-900/40 text-yellow-300 border-yellow-700/50'
                   }`}>{app.application_status || app.status}</span>
-                  {['PENDING','UNDER_REVIEW','REJECTED'].includes(app.status) && (
+                  {['UNDER_REVIEW','INFO_REQUESTED','AUDITOR_ASSIGNED'].includes(app.status) && (
+                    <button onClick={() => amendSubmission(app)}
+                      className="text-xs px-2 py-1 rounded-lg bg-blue-900/30 text-blue-400 hover:bg-blue-900/50 border border-blue-800/50">
+                      ✏️ Amend
+                    </button>
+                  )}
+                  {['UNDER_REVIEW','INFO_REQUESTED'].includes(app.status) && (
+                    <button onClick={() => withdrawSubmission(app)}
+                      className="text-xs px-2 py-1 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-800/50">
+                      🗑️ Withdraw
+                    </button>
+                  )}
+                  {['PENDING','REJECTED'].includes(app.status) && (
                     <button onClick={() => deleteSubmission(app.id, app.token_symbol)}
                       className="text-xs px-2 py-1 rounded-lg bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-800/50">
                       🗑
@@ -1188,8 +1281,8 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="font-bold text-lg">New Tokenisation Application</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Apply to list a new asset on TokenEquityX</p>
+            <h3 className="font-bold text-lg">{amendingId ? 'Amend Submission' : 'New Tokenisation Application'}</h3>
+            <p className="text-gray-500 text-xs mt-0.5">{amendingId ? 'Update your application — changes will be reviewed by the compliance team.' : 'Apply to list a new asset on TokenEquityX'}</p>
           </div>
           {savedDraft?.step > 1 && (
             <button onClick={() => { localStorage.removeItem(FORM_KEY); setStep(1); setForm({ legalName:'',registrationNumber:'',jurisdiction:'ZW',sector:'OTHER',assetType:'EQUITY',description:'',websiteUrl:'',foundedYear:'',headquarters:'',useOfProceeds:'',numEmployees:'',tokenName:'',tokenSymbol:'',assetClass:'Private Equity',authorisedShares:'',nominalValueCents:'100',targetRaiseUsd:'',tokenIssuePrice:'1.00',totalSupply:'',expectedYield:'',distributionFrequency:'Quarterly',ceo_name:'',ceo_email:'',ceo_id:'',cfo_name:'',cfo_email:'',cfo_id:'',legal_name:'',legal_email:'',legal_id:'',termsAccepted:false }); }}
@@ -1222,6 +1315,12 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
           </div>
         </div>
 
+        {amendingId && (
+          <div className="bg-amber-900/20 border border-amber-700/50 rounded-xl p-3 mb-3 text-sm text-amber-300 flex items-start justify-between gap-2">
+            <span>✏️ You are amending submission <span className="font-mono text-amber-200">{applications.find(a => a.id === amendingId)?.reference_number}</span>. Changes will be reviewed by the compliance team.</span>
+            <button onClick={() => { setAmendingId(null); setStep(1); }} className="text-amber-500 hover:text-amber-300 shrink-0">✕ Cancel</button>
+          </div>
+        )}
         {postMsg && (
           <div className={`rounded-xl p-3 border mb-4 text-sm ${postMsg.type==='error'?'bg-red-900/40 border-red-700 text-red-300':'bg-green-900/40 border-green-700 text-green-300'}`}>
             {postMsg.text}

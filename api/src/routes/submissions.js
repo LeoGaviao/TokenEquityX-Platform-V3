@@ -1652,4 +1652,209 @@ router.put('/:id/set-live',
   }
 );
 
+// PUT /api/submissions/:id/amend — issuer amends an in-review submission
+router.put('/:id/amend',
+  authenticate,
+  requireRole('ISSUER', 'ADMIN'),
+  upload.fields([
+    { name: 'certificate',   maxCount: 1 },
+    { name: 'prospectus',    maxCount: 1 },
+    { name: 'financials',    maxCount: 1 },
+    { name: 'valuation',     maxCount: 1 },
+    { name: 'kyc_docs',      maxCount: 1 },
+    { name: 'legal_opinion', maxCount: 1 },
+    { name: 'regulatory',    maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const AMEND_STATUSES = ['UNDER_REVIEW', 'INFO_REQUESTED', 'AUDITOR_ASSIGNED'];
+    try {
+      const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+      const sub = rows[0];
+
+      if (req.user.role === 'ISSUER' && sub.issuer_wallet !== req.user.userId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      if (!AMEND_STATUSES.includes(sub.status) && req.user.role !== 'ADMIN') {
+        return res.status(403).json({
+          error: `Submission cannot be amended at status: ${sub.status}. Allowed: ${AMEND_STATUSES.join(', ')}`,
+        });
+      }
+
+      const {
+        legalName, description, websiteUrl, foundedYear, headquarters,
+        useOfProceeds, numEmployees, sector, assetType, assetClass, assetDescription,
+        ceo_name, ceo_email, ceo_id, cfo_name, cfo_email, cfo_id,
+        legal_name, legal_email, legal_id,
+        targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield,
+        distributionFrequency, authorisedShares, financialEngineData,
+      } = req.body;
+
+      let parsedFinancialEngine = {};
+      try { if (financialEngineData) parsedFinancialEngine = JSON.parse(financialEngineData); } catch {}
+
+      const supabase     = require('../utils/supabase');
+      const sym          = sub.token_symbol;
+      const existingData = typeof sub.data_json === 'string'
+        ? JSON.parse(sub.data_json || '{}') : (sub.data_json || {});
+      const uploadedDocs = { ...(existingData.documents || {}) };
+
+      if (req.files) {
+        for (const [docKey, fileArr] of Object.entries(req.files)) {
+          const file     = fileArr[0];
+          const filePath = `submissions/${sym}/${docKey}_${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: true });
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+            uploadedDocs[docKey] = { name: file.originalname, url: urlData.publicUrl, path: filePath, size: file.size };
+          } else {
+            console.error(`[AMEND] Upload failed for ${docKey}:`, uploadError.message);
+          }
+        }
+      }
+
+      const shares        = parseInt(authorisedShares || parsedFinancialEngine.authorisedShares || 0)
+                         || parseInt(existingData.financialData?.totalSupply || 0)
+                         || 1000000;
+      let valuationResult = existingData.valuationResult || null;
+
+      const hasFinData = parsedFinancialEngine &&
+        Object.values(parsedFinancialEngine).some(v => v !== '' && v !== null && v !== undefined);
+      if (hasFinData) {
+        try {
+          const { calculateValuation } = require('../services/valuation');
+          const finAssetType  = (parsedFinancialEngine.assetType || assetType || 'EQUITY').toUpperCase();
+          const valResult     = calculateValuation(finAssetType, { ...parsedFinancialEngine, sector });
+          const totalDebtNum  = Number(parsedFinancialEngine.totalDebt) || 0;
+          const cashNum       = Number(parsedFinancialEngine.cash) || 0;
+          const equityValue   = valResult.blended - totalDebtNum + cashNum;
+          const pricePerToken = shares > 0 ? equityValue / shares : 0;
+          valuationResult = {
+            assetType:     finAssetType,
+            blended:       Math.round(valResult.blended),
+            equityValue:   parseFloat(equityValue.toFixed(2)),
+            pricePerToken: parseFloat(pricePerToken.toFixed(6)),
+            issuedShares:  shares,
+            models:        valResult.models,
+            generatedAt:   new Date().toISOString(),
+          };
+        } catch (e) {
+          console.error('[VALUATION] Engine failed on amend:', e.message);
+        }
+      }
+
+      const keyPersonnel = [
+        { role: 'CEO',           name: ceo_name,   email: ceo_email,   idNumber: ceo_id },
+        { role: 'CFO',           name: cfo_name,   email: cfo_email,   idNumber: cfo_id },
+        { role: 'Legal Counsel', name: legal_name, email: legal_email, idNumber: legal_id },
+      ].filter(p => p.name);
+
+      const dataJson = JSON.stringify({
+        ...existingData,
+        financialData: {
+          ...(existingData.financialData || {}),
+          targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency,
+          ...parsedFinancialEngine,
+        },
+        valuationResult,
+        keyPersonnel:  keyPersonnel.length ? keyPersonnel : (existingData.keyPersonnel || []),
+        sector:        sector        || existingData.sector,
+        assetType:     assetType     || existingData.assetType,
+        assetClass:    assetClass    || existingData.assetClass,
+        description:   description   || assetDescription || existingData.description,
+        websiteUrl:    websiteUrl    || existingData.websiteUrl,
+        foundedYear:   foundedYear   || existingData.foundedYear,
+        headquarters:  headquarters  || existingData.headquarters,
+        useOfProceeds: useOfProceeds || existingData.useOfProceeds,
+        numEmployees:  numEmployees  || existingData.numEmployees,
+        documents:     uploadedDocs,
+        amendedAt:     new Date().toISOString(),
+      });
+
+      await db.execute(`
+        UPDATE data_submissions
+        SET entity_name    = COALESCE(?, entity_name),
+            data_json      = ?,
+            document_count = ?,
+            updated_at     = NOW()
+        WHERE id = ?
+      `, [legalName || null, dataJson, Object.keys(uploadedDocs).length, req.params.id]);
+
+      await db.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        ['SUBMISSION_AMENDED', req.user.userId, sym,
+         `Amendment submitted. Status remains: ${sub.status}. Ref: ${sub.reference_number}`]
+      );
+
+      const { sendMessage } = require('../utils/messenger');
+      const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
+      if (adminRows.length > 0) {
+        await sendMessage({
+          recipientId: adminRows[0].id,
+          subject:     `✏️ Submission Amended — ${sym}`,
+          body:        `Issuer has amended submission ${sub.reference_number} for ${sub.entity_name} (${sym}). Please review the updated documents.\n\nStatus: ${sub.status}\nReference: ${sub.reference_number}`,
+          type:        'SYSTEM',
+          category:    'APPLICATION',
+          referenceId: sub.reference_number,
+        }).catch(e => console.error('[MESSENGER] amend sendMessage (admin) failed:', e.message));
+      }
+
+      res.json({
+        success:     true,
+        tokenSymbol: sym,
+        message:     `Amendment for ${sym} submitted. The compliance team will review your changes.`,
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Amendment failed: ' + err.message });
+    }
+  }
+);
+
+// DELETE /api/submissions/:id/withdraw — issuer withdraws their UNDER_REVIEW or INFO_REQUESTED submission
+router.delete('/:id/withdraw', authenticate, requireRole('ISSUER', 'ADMIN'), async (req, res) => {
+  const WITHDRAW_STATUSES = ['UNDER_REVIEW', 'INFO_REQUESTED'];
+  try {
+    const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+    const sub = rows[0];
+
+    if (req.user.role !== 'ADMIN' && sub.issuer_wallet !== req.user.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.user.role !== 'ADMIN' && !WITHDRAW_STATUSES.includes(sub.status)) {
+      return res.status(403).json({
+        error: `Cannot withdraw a submission with status: ${sub.status}. Only UNDER_REVIEW or INFO_REQUESTED submissions can be withdrawn.`,
+      });
+    }
+
+    await db.execute('DELETE FROM data_submissions WHERE id = ?', [req.params.id]);
+    await db.execute('DELETE FROM application_fees WHERE token_symbol = ?', [sub.token_symbol]).catch(() => {});
+
+    await db.execute(
+      'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+      ['SUBMISSION_WITHDRAWN', req.user.userId, sub.token_symbol,
+       `Issuer withdrew application ${sub.reference_number} for ${sub.entity_name}. Previous status: ${sub.status}`]
+    );
+
+    const { sendMessage } = require('../utils/messenger');
+    const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
+    if (adminRows.length > 0) {
+      await sendMessage({
+        recipientId: adminRows[0].id,
+        subject:     `🗑️ Application Withdrawn — ${sub.token_symbol}`,
+        body:        `Issuer has withdrawn application ${sub.reference_number} for ${sub.entity_name} (${sub.token_symbol}).\n\nPrevious status: ${sub.status}`,
+        type:        'SYSTEM',
+        category:    'APPLICATION',
+        referenceId: sub.reference_number,
+      }).catch(e => console.error('[MESSENGER] withdraw sendMessage (admin) failed:', e.message));
+    }
+
+    res.json({ success: true, message: `Application for ${sub.token_symbol} withdrawn successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Withdrawal failed: ' + err.message });
+  }
+});
+
 module.exports = router;

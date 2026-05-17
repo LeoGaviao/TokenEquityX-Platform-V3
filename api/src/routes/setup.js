@@ -1345,6 +1345,30 @@ router.get('/delete-user', async (req, res) => {
   }
 });
 
+// GET /api/setup/reset-submission — reset a submission's status to UNDER_REVIEW so the issuer can amend it
+// Usage: GET /api/setup/reset-submission?secret=...&submission_id=XX
+router.get('/reset-submission', async (req, res) => {
+  const { secret, submission_id } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!submission_id) return res.status(400).json({ error: 'submission_id is required' });
+  try {
+    const result = await pool._pool.query(
+      "UPDATE data_submissions SET status = 'UNDER_REVIEW', updated_at = NOW() WHERE id = $1 RETURNING id, token_symbol, status",
+      [submission_id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: `Submission ${submission_id} not found` });
+    res.json({
+      success:    true,
+      submission: result.rows[0],
+      message:    `Submission ${submission_id} reset to UNDER_REVIEW. The issuer can now amend it.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/setup/reset-mgmc — delete all MGMC token data, preserving the issuer user account
 // Pass ?issuer_email=... to also delete the issuer's entity_kyc record
 router.get('/reset-mgmc', async (req, res) => {
