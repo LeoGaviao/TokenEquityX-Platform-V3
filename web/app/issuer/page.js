@@ -1539,8 +1539,8 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                 <p className="text-xs text-blue-300 font-semibold">Valuation Engine Result</p>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div><p className="text-gray-500 text-xs">Asset Type</p><p className="text-white">{engineResult.assetType}</p></div>
-                  <div><p className="text-gray-500 text-xs">Price Per Token</p><p className="text-yellow-400 font-bold">${engineResult.pricePerToken?.toFixed(4)}</p></div>
-                  <div className="col-span-2"><p className="text-gray-500 text-xs">Blended Enterprise Value</p><p className="text-white">${Number(engineResult.blended)?.toLocaleString()}</p></div>
+                  <div><p className="text-gray-500 text-xs">Price Per Token</p><p className="text-yellow-400 font-bold">${parseFloat(engineResult.pricePerToken || 0).toFixed(4)}</p></div>
+                  <div className="col-span-2"><p className="text-gray-500 text-xs">Blended Enterprise Value</p><p className="text-white">${parseFloat(engineResult.blended || 0).toLocaleString()}</p></div>
                 </div>
                 {engineResult.models && Object.keys(engineResult.models).length > 0 && (
                   <div className="border-t border-blue-700/30 pt-2 mt-2">
@@ -1548,7 +1548,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                     {Object.entries(engineResult.models).map(([model, val]) => (
                       <div key={model} className="flex justify-between text-xs py-0.5">
                         <span className="text-gray-400">{model}</span>
-                        <span className="text-white">${Number(val)?.toLocaleString()}</span>
+                        <span className="text-white">${parseFloat(val || 0).toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
