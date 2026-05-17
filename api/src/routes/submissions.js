@@ -1145,6 +1145,23 @@ router.put('/:id/auditor-accept', authenticate, requireRole('AUDITOR'), async (r
       type: 'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
     }).catch(e => console.error('[MESSENGER] auditor-accept sendMessage (issuer) failed:', e.message));
 
+    // FIX 2.6 — send external email to issuer confirming auditor has accepted
+    try {
+      const { notifyIssuerAuditorAccepted } = require('../utils/mailer');
+      const [aaIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      if (aaIssuerRows[0]?.email) {
+        notifyIssuerAuditorAccepted({
+          issuerEmail:     aaIssuerRows[0].email,
+          issuerName:      aaIssuerRows[0].full_name,
+          tokenSymbol:     sub.token_symbol,
+          entityName:      sub.entity_name,
+          referenceNumber: sub.reference_number,
+        }).catch(e => console.error('[MAILER] auditor-accept notifyIssuerAuditorAccepted failed:', e.message));
+      }
+    } catch (notifyErr) {
+      console.error('[AUDITOR-ACCEPT] Notification error (non-fatal):', notifyErr.message);
+    }
+
     res.json({ success: true, message: 'Assignment accepted. Issuer and admin have been notified.' });
   } catch (err) {
     res.status(500).json({ error: err.message });

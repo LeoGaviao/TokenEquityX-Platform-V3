@@ -107,10 +107,54 @@ router.put('/disbursements/:id/process', ...auth, async (req, res) => {
   const { bank_reference, notes } = req.body;
   if (!bank_reference) return res.status(400).json({ error: 'Bank reference required' });
   try {
+    const [dqRows] = await db.execute(
+      'SELECT * FROM disbursement_queue WHERE id = $1',
+      [req.params.id]
+    );
+    if (dqRows.length === 0) return res.status(404).json({ error: 'Disbursement record not found' });
+    const dq = dqRows[0];
+
     await db.execute(
       'UPDATE disbursement_queue SET status=$1, bank_reference=$2, notes=$3, disbursed_at=NOW(), disbursed_by=$4 WHERE id=$5',
       ['DISBURSED', bank_reference, notes||null, req.user.userId, req.params.id]
     );
+
+    // FIX 2.3 — notify issuer that proceeds have been disbursed
+    try {
+      const { sendMessage }               = require('../utils/messenger');
+      const { notifyIssuerProceedsDisbursed } = require('../utils/mailer');
+
+      if (dq.issuer_id) {
+        await sendMessage({
+          recipientId: dq.issuer_id,
+          subject:     `💰 Proceeds Disbursed — ${dq.token_symbol || 'Offering'}`,
+          body:        `Your primary offering proceeds for ${dq.entity_name || dq.token_symbol || 'your offering'} have been disbursed.\n\nGross Amount: $${parseFloat(dq.gross_amount).toFixed(2)}\nNet Disbursed: $${parseFloat(dq.net_amount).toFixed(2)}\nBank Reference: ${bank_reference}\n\nPlease allow 1-2 business days for the transfer to reflect in your account.`,
+          type:        'SYSTEM', category: 'OFFERING', referenceId: String(req.params.id),
+        }).catch(e => console.error('[MESSENGER] disbursements/process sendMessage (issuer) failed:', e.message));
+
+        const [disbIssuerRows] = await db.execute(
+          'SELECT email, full_name FROM users WHERE id = $1', [dq.issuer_id]
+        );
+        if (disbIssuerRows[0]?.email) {
+          const feesDeducted = parseFloat(
+            (parseFloat(dq.platform_fee || 0) + parseFloat(dq.secz_levy || 0) + parseFloat(dq.vat_on_fees || 0)).toFixed(2)
+          );
+          notifyIssuerProceedsDisbursed({
+            issuerEmail:   disbIssuerRows[0].email,
+            issuerName:    disbIssuerRows[0].full_name,
+            tokenSymbol:   dq.token_symbol,
+            entityName:    dq.entity_name,
+            grossAmount:   dq.gross_amount,
+            feesDeducted,
+            netAmount:     dq.net_amount,
+            bankReference: bank_reference,
+          }).catch(e => console.error('[MAILER] disbursements/process notifyIssuerProceedsDisbursed failed:', e.message));
+        }
+      }
+    } catch (notifyErr) {
+      console.error('[DISBURSEMENT] Notification error (non-fatal):', notifyErr.message);
+    }
+
     res.json({ success: true, message: 'Disbursement recorded.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

@@ -135,6 +135,23 @@ router.put('/:id/approve', authenticate, requireRole('ADMIN','COMPLIANCE_OFFICER
       referenceId: kyc.id,
     }).catch(e => console.error('[MESSENGER] entity-kyc/approve sendMessage (issuer) failed:', e.message));
 
+    // FIX 2.4 — send external email confirming KYC approval
+    try {
+      const { notifyIssuerEntityKycApproved } = require('../utils/mailer');
+      const [kycApproveRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [kyc.user_id]);
+      if (kycApproveRows[0]?.email) {
+        notifyIssuerEntityKycApproved({
+          issuerEmail:        kycApproveRows[0].email,
+          issuerName:         kycApproveRows[0].full_name,
+          entityName:         kyc.entity_name,
+          registrationNumber: kyc.registration_number,
+          approvalDate:       new Date(),
+        }).catch(e => console.error('[MAILER] entity-kyc/approve notifyIssuerEntityKycApproved failed:', e.message));
+      }
+    } catch (notifyErr) {
+      console.error('[ENTITY-KYC-APPROVE] Notification error (non-fatal):', notifyErr.message);
+    }
+
     res.json({ success: true, message: `Entity KYC approved for ${kyc.entity_name}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -163,6 +180,22 @@ router.put('/:id/reject', authenticate, requireRole('ADMIN','COMPLIANCE_OFFICER'
       category:    'KYC',
       referenceId: kyc.id,
     }).catch(e => console.error('[MESSENGER] entity-kyc/reject sendMessage (issuer) failed:', e.message));
+
+    // FIX 2.5 — send external email confirming KYC rejection with reason
+    try {
+      const { notifyIssuerEntityKycRejected } = require('../utils/mailer');
+      const [kycRejectRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [kyc.user_id]);
+      if (kycRejectRows[0]?.email) {
+        notifyIssuerEntityKycRejected({
+          issuerEmail: kycRejectRows[0].email,
+          issuerName:  kycRejectRows[0].full_name,
+          entityName:  kyc.entity_name,
+          reason,
+        }).catch(e => console.error('[MAILER] entity-kyc/reject notifyIssuerEntityKycRejected failed:', e.message));
+      }
+    } catch (notifyErr) {
+      console.error('[ENTITY-KYC-REJECT] Notification error (non-fatal):', notifyErr.message);
+    }
 
     res.json({ success: true, message: 'KYC rejected. Issuer has been notified.' });
   } catch (err) {

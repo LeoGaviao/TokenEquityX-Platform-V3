@@ -469,6 +469,109 @@ async function notifyInvestorSubscriptionConfirmed({ investorEmail, investorName
     `));
 }
 
+async function notifyIssuerOfferingProposed({ issuerEmail, issuerName, tokenSymbol, offeringPrice, targetRaise, tokensOffered, submittedAt }) {
+  const fmt = n => n ? `$${parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+  const dateFmt = submittedAt ? new Date(submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Today';
+  return send(issuerEmail, `📊 Offering Proposal Submitted — ${tokenSymbol}`,
+    baseTemplate('Offering Proposal Submitted', `
+      <p>Dear ${issuerName},</p>
+      <p>Your primary offering proposal for <strong>${tokenSymbol}</strong> has been received and is now pending auditor review and admin approval.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Offering Price</span><span>${fmt(offeringPrice)} per token</span></div>
+      <div class="detail-row"><span>Target Raise</span><span>${fmt(targetRaise)}</span></div>
+      <div class="detail-row"><span>Tokens Offered</span><span>${parseInt(tokensOffered).toLocaleString()}</span></div>
+      <div class="detail-row"><span>Submitted</span><span>${dateFmt}</span></div>
+      <div class="detail-row"><span>Status</span><span class="warning">⏳ Pending Approval</span></div>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        Your offering will be reviewed by our auditor and then approved by the admin committee. You will be notified at each stage.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">Track Your Offering &rarr;</a>
+    `));
+}
+
+async function notifyInvestorOfferingClosed({ investorEmail, investorName, tokenSymbol, tokensReceived, pricePerToken, totalInvestment }) {
+  const fmt = n => n ? `$${parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+  return send(investorEmail, `🎉 Offering Closed — ${tokenSymbol} Tokens Credited to Your Portfolio`,
+    baseTemplate('Offering Closed — Tokens Credited', `
+      <p>Dear ${investorName},</p>
+      <p>The primary offering for <strong>${tokenSymbol}</strong> has closed. Your tokens have been credited to your portfolio and are now available for secondary market trading.</p>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Tokens Received</span><span style="font-weight:700">${parseInt(tokensReceived).toLocaleString()} tokens</span></div>
+      <div class="detail-row"><span>Price Per Token</span><span>${fmt(pricePerToken)}</span></div>
+      <div class="detail-row"><span>Total Investment</span><span style="font-weight:700">${fmt(totalInvestment)}</span></div>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Tokens Credited</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        Your ${tokenSymbol} tokens are now live in your portfolio and eligible for secondary market trading.
+      </p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Portfolio &rarr;</a>
+    `));
+}
+
+async function notifyIssuerProceedsDisbursed({ issuerEmail, issuerName, tokenSymbol, entityName, grossAmount, feesDeducted, netAmount, bankReference }) {
+  const fmt = n => n ? `$${parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+  return send(issuerEmail, `💰 Proceeds Disbursed — ${tokenSymbol}`,
+    baseTemplate('Offering Proceeds Disbursed', `
+      <p>Dear ${issuerName},</p>
+      <p>The net proceeds from the primary offering for <strong>${entityName || tokenSymbol}</strong> (${tokenSymbol}) have been disbursed to your bank account.</p>
+      <div class="amount" style="color:#16a34a">${fmt(netAmount)}</div>
+      <div class="detail-row"><span>Gross Amount Raised</span><span>${fmt(grossAmount)}</span></div>
+      <div class="detail-row"><span>Platform Fees &amp; Levies</span><span class="danger">−${fmt(feesDeducted)}</span></div>
+      <div class="detail-row"><span>Net Disbursed</span><span style="font-weight:800;color:#16a34a">${fmt(netAmount)}</span></div>
+      ${bankReference ? `<div class="detail-row"><span>Bank Reference</span><span style="font-family:monospace">${bankReference}</span></div>` : ''}
+      <div class="detail-row"><span>Status</span><span class="success">✔ Disbursed</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        Funds have been processed by the banking partner. Please allow 1-2 business days for the transfer to reflect in your account.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">View Your Dashboard &rarr;</a>
+    `));
+}
+
+async function notifyIssuerEntityKycApproved({ issuerEmail, issuerName, entityName, registrationNumber, approvalDate }) {
+  const dateFmt = approvalDate ? new Date(approvalDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Today';
+  return send(issuerEmail, `✅ Entity KYC Approved — ${entityName}`,
+    baseTemplate('Entity KYC & AML Verification Approved', `
+      <p>Dear ${issuerName},</p>
+      <p>Congratulations! Your Entity KYC & AML verification for <strong>${entityName}</strong> has been approved by the TokenEquityX compliance team.</p>
+      <div class="detail-row"><span>Entity Name</span><span style="font-weight:700">${entityName}</span></div>
+      <div class="detail-row"><span>Registration Number</span><span style="font-family:monospace">${registrationNumber || '—'}</span></div>
+      <div class="detail-row"><span>Approval Date</span><span>${dateFmt}</span></div>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Approved</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Next step:</strong> You may now proceed with your tokenisation application. Go to the <strong>Tokenisation Application</strong> section of your issuer dashboard to begin.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">Start Your Application &rarr;</a>
+    `));
+}
+
+async function notifyIssuerEntityKycRejected({ issuerEmail, issuerName, entityName, reason }) {
+  return send(issuerEmail, `❌ Entity KYC Not Approved — ${entityName}`,
+    baseTemplate('Entity KYC Verification Not Approved', `
+      <p>Dear ${issuerName},</p>
+      <p>Your Entity KYC & AML submission for <strong>${entityName}</strong> has not been approved at this time.</p>
+      ${reason ? `<div class="detail-row"><span>Reason</span><span class="danger">${reason}</span></div>` : ''}
+      <p>You may resubmit after addressing the issues raised. Our compliance team is available to answer questions.</p>
+      <p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;">
+        Please contact <a href="mailto:compliance@tokenequityx.co.zw" style="color:#1A3C5E;">compliance@tokenequityx.co.zw</a> for guidance before resubmitting.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn">Contact Compliance &rarr;</a>
+    `));
+}
+
+async function notifyIssuerAuditorAccepted({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber }) {
+  return send(issuerEmail, `🔍 Auditor Accepted Assignment — ${tokenSymbol}`,
+    baseTemplate('Auditor Has Accepted Your Assignment', `
+      <p>Dear ${issuerName},</p>
+      <p>The auditor assigned to your tokenisation application for <strong>${entityName}</strong> (${tokenSymbol}) has accepted the assignment and will commence their review.</p>
+      <div class="detail-row"><span>Token</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Reference</span><span style="font-family:monospace">${referenceNumber || '—'}</span></div>
+      <div class="detail-row"><span>Status</span><span class="warning">⏳ Audit In Progress</span></div>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        The auditor will contact you directly to agree the scope and documentation requirements. Please have all financial records and company documents ready.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">Track Your Application &rarr;</a>
+    `));
+}
+
 module.exports = {
   send,
   notifyUserWelcome,
@@ -494,4 +597,10 @@ module.exports = {
   notifyIssuerOfferingApproved,
   notifyIssuerOfferingRejected,
   notifyInvestorSubscriptionConfirmed,
+  notifyIssuerOfferingProposed,
+  notifyInvestorOfferingClosed,
+  notifyIssuerProceedsDisbursed,
+  notifyIssuerEntityKycApproved,
+  notifyIssuerEntityKycRejected,
+  notifyIssuerAuditorAccepted,
 };

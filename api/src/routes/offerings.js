@@ -189,6 +189,46 @@ router.post('/',
       );
 
       await conn.commit();
+
+      // FIX 2.1 — notify issuer and admin that a new offering has been proposed
+      try {
+        const { notifyIssuerOfferingProposed } = require('../utils/mailer');
+        const offeringSym = token.token_symbol || token.symbol;
+        const offeringId  = result.insertId;
+
+        sendMessage({
+          recipientId: req.user.userId,
+          subject:     `📊 Offering Proposed — ${offeringSym}`,
+          body:        `Your primary offering proposal for ${offeringSym} has been submitted and is now awaiting auditor review and admin approval.\n\nOffering Price: $${parseFloat(offering_price_usd).toFixed(2)}\nTarget Raise: $${parseFloat(target_raise_usd).toFixed(2)}\nTokens Offered: ${parseInt(total_tokens_offered).toLocaleString()}\n\nYou will be notified once reviewed.`,
+          type: 'SYSTEM', category: 'OFFERING', referenceId: String(offeringId),
+        }).catch(e => console.error('[MESSENGER] offerings POST sendMessage (issuer) failed:', e.message));
+
+        const [ofpAdminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
+        if (ofpAdminRows.length > 0) {
+          sendMessage({
+            recipientId: ofpAdminRows[0].id,
+            subject:     `🆕 New Offering Proposed — ${offeringSym}`,
+            body:        `A new primary offering has been proposed for ${offeringSym}.\n\nOffering Price: $${parseFloat(offering_price_usd).toFixed(2)}\nTarget Raise: $${parseFloat(target_raise_usd).toFixed(2)}\nTokens Offered: ${parseInt(total_tokens_offered).toLocaleString()}\n\nPlease review via the Offerings tab in the admin dashboard.`,
+            type: 'SYSTEM', category: 'OFFERING', referenceId: String(offeringId),
+          }).catch(e => console.error('[MESSENGER] offerings POST sendMessage (admin) failed:', e.message));
+        }
+
+        const [ofpIssuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [req.user.userId]);
+        if (ofpIssuerRows[0]?.email) {
+          notifyIssuerOfferingProposed({
+            issuerEmail:    ofpIssuerRows[0].email,
+            issuerName:     ofpIssuerRows[0].full_name,
+            tokenSymbol:    offeringSym,
+            offeringPrice:  offering_price_usd,
+            targetRaise:    target_raise_usd,
+            tokensOffered:  total_tokens_offered,
+            submittedAt:    new Date(),
+          }).catch(e => console.error('[MAILER] offerings POST notifyIssuerOfferingProposed failed:', e.message));
+        }
+      } catch (notifyErr) {
+        console.error('[OFFERING-PROPOSE] Notification error (non-fatal):', notifyErr.message);
+      }
+
       res.status(201).json({
         success: true,
         offering_id: result.insertId,
@@ -683,6 +723,33 @@ router.post('/:id/close',
         category:    'OFFERING',
         referenceId: String(req.params.id),
       }).catch(() => {});
+
+      // FIX 2.2 — notify each investor that the offering closed and their tokens are credited
+      try {
+        const { notifyInvestorOfferingClosed } = require('../utils/mailer');
+        const closedSym = token.token_symbol || token.symbol;
+        for (const sub of subscriptions) {
+          sendMessage({
+            recipientId: sub.investor_id,
+            subject:     `🎉 Offering Closed — ${closedSym} Tokens Credited`,
+            body:        `The ${closedSym} primary offering has closed. Your ${parseInt(sub.tokens_allocated).toLocaleString()} tokens have been credited to your portfolio and are now available for secondary market trading.\n\nTokens Received: ${parseInt(sub.tokens_allocated).toLocaleString()}\nTotal Investment: $${parseFloat(sub.amount_usd).toFixed(2)} USD`,
+            type:        'SYSTEM', category: 'OFFERING', referenceId: String(req.params.id),
+          }).catch(() => {});
+          const [closedInvRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.investor_id]);
+          if (closedInvRows[0]?.email) {
+            notifyInvestorOfferingClosed({
+              investorEmail:   closedInvRows[0].email,
+              investorName:    closedInvRows[0].full_name,
+              tokenSymbol:     closedSym,
+              tokensReceived:  sub.tokens_allocated,
+              pricePerToken:   offering.offering_price_usd,
+              totalInvestment: sub.amount_usd,
+            }).catch(e => console.error('[MAILER] close notifyInvestorOfferingClosed failed:', e.message));
+          }
+        }
+      } catch (notifyErr) {
+        console.error('[OFFERING-CLOSE] Investor notification error (non-fatal):', notifyErr.message);
+      }
 
       res.json({
         success: true,
