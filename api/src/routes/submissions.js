@@ -85,7 +85,7 @@ router.post('/financial',
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
-        ['FINANCIAL_SUBMISSION', req.user.wallet || req.user.userId, tokenSymbol,
+        ['FINANCIAL_SUBMISSION', req.user.userId, tokenSymbol,
          `Period: ${period}, Files: ${uploadedDocs.length}`]
       );
 
@@ -174,7 +174,7 @@ router.post('/tokenise',
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
-        ['TOKENISATION_APPLICATION', req.user.wallet || req.user.userId,
+        ['TOKENISATION_APPLICATION', req.user.userId,
          proposedSymbol.toUpperCase(), `Entity: ${legalEntityName}, Files: ${uploadedDocs.length}`]
       );
 
@@ -243,8 +243,7 @@ router.get('/pending',
           ORDER BY ds.created_at ASC
         `);
       } else {
-        const auditorId     = req.user.userId;
-        const auditorWallet = req.user.wallet || '';
+        const auditorId = req.user.userId;
         [rows] = await db.execute(`
           SELECT ds.id, ds.token_symbol, ds.status,
                  ds.created_at, ds.auditor_notes, ds.updated_at as reviewed_at,
@@ -254,9 +253,9 @@ router.get('/pending',
                  ds.auditor_status, ds.auditor_declined_reason, ds.document_count
           FROM data_submissions ds
           WHERE ds.status NOT IN ('APPROVED', 'REJECTED')
-          AND (ds.assigned_auditor = ? OR ds.assigned_auditor = ? OR ds.assigned_auditor LIKE ?)
+          AND ds.assigned_auditor = ?
           ORDER BY ds.created_at ASC
-        `, [auditorId, auditorWallet, `%${auditorWallet.slice(0,8)}%`]);
+        `, [auditorId]);
       }
       res.json(rows);
     } catch (err) {
@@ -332,6 +331,11 @@ router.put('/:id/assign',
         }
       }
 
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!UUID_RE.test(auditorUUID)) {
+        return res.status(400).json({ error: `Could not resolve "${assignedAuditor}" to a registered auditor. Please select from the auditor list or use a valid email address.` });
+      }
+
       await db.execute(`
         UPDATE data_submissions
         SET assigned_auditor = ?, status = 'UNDER_REVIEW',
@@ -341,7 +345,7 @@ router.put('/:id/assign',
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
-        ['AUDITOR_ASSIGNED', req.user.wallet || req.user.userId, req.params.id,
+        ['AUDITOR_ASSIGNED', req.user.userId, req.params.id,
          `Assigned to: ${assignedAuditor}`]
       );
 
@@ -455,7 +459,7 @@ router.put('/:id/audit-report',
 
     const auditReport = {
       auditorId:           req.user.userId,
-      auditorWallet:       req.user.wallet || req.user.userId,
+      auditorWallet:       req.user.userId,
       reportDate:          new Date().toISOString(),
       findings:            findings || '',
       methodology:         methodology || '',
@@ -491,7 +495,7 @@ router.put('/:id/audit-report',
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
-        ['AUDIT_REPORT_SUBMITTED', req.user.wallet || req.user.userId, req.params.id,
+        ['AUDIT_REPORT_SUBMITTED', req.user.userId, req.params.id,
          `Status: ${newStatus}. Price: $${parseFloat(certifiedPrice).toFixed(4)}. Risk: ${riskRating}`]
       );
 
@@ -519,6 +523,7 @@ router.put('/:id/admin-approve',
       if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
 
       const sub = rows[0];
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
       if (sub.status !== 'AUDITOR_APPROVED') {
         return res.status(422).json({
@@ -565,7 +570,8 @@ router.put('/:id/admin-approve',
         `, [
           symbol.toUpperCase(), sub.entity_name || symbol, sub.entity_name || symbol,
           symbol.toUpperCase(), sub.entity_name || symbol,
-          sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY', sub.issuer_wallet || null,
+          sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY',
+          UUID_RE.test(sub.issuer_wallet) ? sub.issuer_wallet : null,
           total_supply, certifiedPrice, certifiedPrice,
           parseFloat(certifiedPrice) * total_supply, trading_mode,
           listingType, sub.jurisdiction || 'Zimbabwe', req.params.id
@@ -574,7 +580,7 @@ router.put('/:id/admin-approve',
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
-        ['ADMIN_FINAL_APPROVAL', req.user.wallet || req.user.userId, symbol,
+        ['ADMIN_FINAL_APPROVAL', req.user.userId, symbol,
          `Listing type: ${listingType}. Certified price: $${certifiedPrice}. Notes: ${adminNotes||'None'}. Status: TOKENIZATION_PENDING.`]
       );
 
@@ -610,10 +616,12 @@ router.put('/:id/admin-approve',
       const subSector = subData.sector || null;
       const subAsset  = subData.assetType || sub.asset_type || null;
 
-      const [issuerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet]);
+      const [issuerRows] = UUID_RE.test(sub.issuer_wallet)
+        ? await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.issuer_wallet])
+        : [[]];
       const issuer = issuerRows[0] || {};
 
-      const [auditorRows] = sub.assigned_auditor
+      const [auditorRows] = (sub.assigned_auditor && UUID_RE.test(sub.assigned_auditor))
         ? await db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.assigned_auditor])
         : [[]];
       const auditor = (auditorRows || [])[0] || {};
@@ -1322,7 +1330,7 @@ router.put('/:id/submit-to-secz',
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
-        ['SECZ_REVIEW_SUBMITTED', req.user.wallet || req.user.userId, sub.token_symbol,
+        ['SECZ_REVIEW_SUBMITTED', req.user.userId, sub.token_symbol,
          `Submitted to SECZ for regulatory review.`]
       );
 
@@ -1380,7 +1388,7 @@ router.put('/:id/secz-approve',
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
-        ['SECZ_APPROVED', req.user.wallet || req.user.userId, sub.token_symbol,
+        ['SECZ_APPROVED', req.user.userId, sub.token_symbol,
          `SECZ regulatory approval recorded. Ready to go live.`]
       );
 
@@ -1425,6 +1433,7 @@ router.put('/:id/set-live',
       if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
 
       const sub = rows[0];
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (sub.status !== 'SECZ_APPROVED') {
         return res.status(422).json({
           error: `Cannot set live: submission status is '${sub.status}'. Required: SECZ_APPROVED.`,
@@ -1463,7 +1472,8 @@ router.put('/:id/set-live',
         `, [
           symbol.toUpperCase(), sub.entity_name || symbol, sub.entity_name || symbol,
           symbol.toUpperCase(), sub.entity_name || symbol,
-          sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY', sub.issuer_wallet || null,
+          sub.asset_type || 'EQUITY', sub.asset_type || 'EQUITY',
+          UUID_RE.test(sub.issuer_wallet) ? sub.issuer_wallet : null,
           total_supply, certifiedPrice, certifiedPrice,
           parseFloat(certifiedPrice) * total_supply, trading_mode,
           listingType, sub.jurisdiction || 'Zimbabwe', req.params.id
@@ -1477,7 +1487,7 @@ router.put('/:id/set-live',
 
       await db.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
-        ['TOKEN_SET_LIVE', req.user.wallet || req.user.userId, symbol,
+        ['TOKEN_SET_LIVE', req.user.userId, symbol,
          `Token activated. Price: $${certifiedPrice}. Mode: ${trading_mode}. Listing: ${listingType}.`]
       );
 
