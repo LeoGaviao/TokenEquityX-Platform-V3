@@ -702,9 +702,9 @@ router.put('/:id/admin-approve',
       const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
       if (sub.status !== 'AUDITOR_APPROVED') {
-        return res.status(422).json({
-          error: `Cannot approve: submission status is '${sub.status}'. Admin final approval requires the submission to be in AUDITOR_APPROVED status.`,
-        });
+        const reason422 = `Cannot approve: submission status is '${sub.status}'. Admin final approval requires the submission to be in AUDITOR_APPROVED status.`;
+        console.error('[admin-approve] 422:', reason422);
+        return res.status(422).json({ error: reason422 });
       }
 
       // ── Gate: prerequisites before admin final approval ────────────────
@@ -722,14 +722,15 @@ router.put('/:id/admin-approve',
       if (!aaGateData.valuationResult) {
         aaMissing.push('Valuation engine must have been run on the financial data');
       }
-      if (sub.auditor_status !== 'ACCEPTED') {
-        aaMissing.push('Auditor must have accepted the assignment');
+      if (!['ACCEPTED', 'AUDITOR_APPROVED'].includes(sub.auditor_status)) {
+        aaMissing.push('Auditor must have submitted their report before admin approval');
       }
       if (!sub.audit_report) {
         aaMissing.push('Audit report must be submitted before admin can give final approval');
       }
       if (aaMissing.length > 0) {
-        return res.status(400).json({ error: 'Prerequisites not met for admin final approval', missing: aaMissing });
+        console.error('[admin-approve] 422: prerequisites not met:', aaMissing);
+        return res.status(422).json({ error: 'Prerequisites not met for admin final approval', missing: aaMissing });
       }
       // ──────────────────────────────────────────────────────────────────
 
