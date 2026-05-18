@@ -1395,6 +1395,8 @@ export default function AdminDashboard() {
   const [appFeeModal, setAppFeeModal] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
   const [feeConfirmModal, setFeeConfirmModal] = useState(null);
+  const [deleteListingModal, setDeleteListingModal] = useState(null); // { item, step:1|2, input:'' }
+
   const [auditorFeeInput, setAuditorFeeInput] = useState('2500');
   const [rejectionReason, setRejectionReason] = useState('');
   const [auditorEmailInput, setAuditorEmailInput] = useState('');
@@ -2195,6 +2197,13 @@ export default function AdminDashboard() {
                                       ✅ Reinstate Listing
                                     </button>
                                   )}
+                                  <div className="border-t border-red-900/40 pt-2 mt-1">
+                                    <button
+                                      onClick={()=>setDeleteListingModal({ item, step: 1, input: '' })}
+                                      className="w-full py-1.5 rounded-lg text-xs font-medium bg-transparent text-red-600 border border-red-900/60 hover:bg-red-950/40 hover:text-red-400 transition-colors">
+                                      🗑️ Delete Listing Permanently
+                                    </button>
+                                  </div>
                                 </div>
                               </>
                             )}
@@ -3428,6 +3437,81 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* ── HARD DELETE LISTING MODAL ── */}
+      {deleteListingModal && (() => {
+        const { item, step, input } = deleteListingModal;
+        const sym = item.symbol || item.name || '';
+        const matches = input.trim().toUpperCase() === sym.toUpperCase();
+        const close = () => setDeleteListingModal(null);
+        const confirmDelete = async () => {
+          try {
+            const r = await api.delete(`/admin/listings/${sym}?confirm=true`);
+            setPipeline(p => p.filter(i => i.id !== item.id));
+            close();
+            notify('success', r.data?.message || `${sym} permanently deleted from the platform.`);
+          } catch (e) {
+            notify('error', e.response?.data?.error || 'Delete failed');
+          }
+        };
+        return (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 px-4">
+            <div className="bg-gray-900 border border-red-900/60 rounded-2xl p-6 w-full max-w-md">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg text-red-400">🗑️ Delete Listing Permanently</h3>
+                <button onClick={close} className="text-gray-500 hover:text-white text-xl">✕</button>
+              </div>
+              {step === 1 ? (
+                <>
+                  <div className="bg-red-950/40 border border-red-800/50 rounded-xl p-4 mb-4 space-y-1">
+                    <p className="text-red-300 text-sm font-semibold">⚠️ This action is irreversible.</p>
+                    <p className="text-gray-400 text-xs">All records for <span className="text-white font-bold">{sym}</span> will be permanently deleted, including:</p>
+                    <ul className="text-xs text-gray-500 mt-2 space-y-0.5 list-disc list-inside">
+                      <li>Submission and application data</li>
+                      <li>Token holdings and order history</li>
+                      <li>Primary offerings and subscriptions</li>
+                      <li>P2P offers and settlement records</li>
+                      <li>Audit logs and fee records</li>
+                    </ul>
+                  </div>
+                  <p className="text-sm text-gray-300 mb-2">Type <span className="font-mono text-white bg-gray-800 px-1.5 py-0.5 rounded">{sym}</span> to confirm:</p>
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={e => setDeleteListingModal(m => ({ ...m, input: e.target.value }))}
+                    placeholder={`Type ${sym} here`}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-red-600 mb-4"
+                    autoFocus
+                  />
+                  <div className="flex gap-3">
+                    <button onClick={close} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">Cancel</button>
+                    <button
+                      disabled={!matches}
+                      onClick={() => setDeleteListingModal(m => ({ ...m, step: 2 }))}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed bg-red-800 hover:bg-red-700 text-white">
+                      Continue →
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-300 text-sm mb-6">
+                    Final confirmation — permanently delete <span className="font-bold text-white">{sym}</span> and all associated platform data? This cannot be undone.
+                  </p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setDeleteListingModal(m => ({ ...m, step: 1 }))} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">← Back</button>
+                    <button
+                      onClick={confirmDelete}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-red-700 hover:bg-red-600 text-white border border-red-500">
+                      ⚠️ Permanently Delete {sym}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── USER PROFILE MODAL ── */}
       {selectedUser && (
