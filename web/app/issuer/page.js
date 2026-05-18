@@ -927,7 +927,8 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
   const [step,       setStep]       = useState(savedDraft?.step || 1);
   const [submitting, setSubmitting] = useState(false);
   const [submitted,  setSubmitted]  = useState(null);
-  const [files,      setFiles]      = useState({});
+  const [files,        setFiles]        = useState({});
+  const [existingDocs, setExistingDocs] = useState({});
   const fileRefs = useRef({});
   const [editingId,  setEditingId]  = useState(null);
   const [amendingId, setAmendingId] = useState(null);
@@ -1062,15 +1063,25 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const amendSubmission = (app) => {
-    const data = typeof app.data_json === 'string' ? JSON.parse(app.data_json || '{}') : (app.data_json || {});
+  const amendSubmission = async (app) => {
+    // Fetch full submission data from API so we always have the latest data_json
+    let fullData = {};
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`${API}/submissions/${app.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) { const d = await res.json(); fullData = d; }
+    } catch {}
+
+    const raw  = fullData.data_json ?? app.data_json ?? {};
+    const data = typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {});
     const fin  = data.financialData || {};
     const pers = data.keyPersonnel  || [];
     const ceo  = pers.find(p => p.role === 'CEO')           || {};
     const cfo  = pers.find(p => p.role === 'CFO')           || {};
     const leg  = pers.find(p => p.role === 'Legal Counsel') || {};
+
     const restored = {
-      legalName:             app.entity_name        || '',
+      legalName:             fullData.entity_name    || app.entity_name        || '',
       registrationNumber:    data.registrationNumber || '',
       jurisdiction:          data.jurisdiction       || 'ZW',
       sector:                data.sector             || 'OTHER',
@@ -1082,15 +1093,15 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       useOfProceeds:         data.useOfProceeds      || '',
       numEmployees:          data.numEmployees       || '',
       tokenName:             data.tokenName          || '',
-      tokenSymbol:           app.token_symbol        || '',
+      tokenSymbol:           fullData.token_symbol   || app.token_symbol || '',
       assetClass:            data.assetClass         || 'Private Equity',
       authorisedShares:      data.authorisedShares   || '',
       nominalValueCents:     '100',
-      targetRaiseUsd:        fin.targetRaiseUsd      || '',
-      tokenIssuePrice:       fin.tokenIssuePrice     || '1.00',
-      totalSupply:           fin.totalSupply         || '',
-      expectedYield:         fin.expectedYield       || '',
-      distributionFrequency: fin.distributionFrequency || 'Quarterly',
+      targetRaiseUsd:        fin.targetRaiseUsd      || data.targetRaiseUsd      || '',
+      tokenIssuePrice:       fin.tokenIssuePrice     || data.tokenIssuePrice     || '1.00',
+      totalSupply:           fin.totalSupply         || data.totalSupply         || '',
+      expectedYield:         fin.expectedYield       || data.expectedYield       || '',
+      distributionFrequency: fin.distributionFrequency || data.distributionFrequency || 'Quarterly',
       ceo_name:   ceo.name      || '',
       ceo_email:  ceo.email     || '',
       ceo_id:     ceo.idNumber  || '',
@@ -1102,7 +1113,46 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
       legal_id:    leg.idNumber || '',
       termsAccepted: false,
     };
+
+    // Pre-populate financial data (Step 6)
+    const finRestored = {
+      assetType:              data.assetType          || fin.assetType          || '',
+      revenueTTM:             fin.revenueTTM          || '',
+      ebitdaTTM:              fin.ebitdaTTM           || '',
+      freeCashFlow:           fin.freeCashFlow        || '',
+      totalDebt:              fin.totalDebt           || '',
+      cash:                   fin.cash                || '',
+      growthRatePct:          fin.growthRatePct       || '',
+      discountRatePct:        fin.discountRatePct     || '',
+      faceValue:              fin.faceValue           || '',
+      couponRatePct:          fin.couponRatePct       || '',
+      marketYieldPct:         fin.marketYieldPct      || '',
+      periodsRemaining:       fin.periodsRemaining    || '',
+      periodsPerYear:         fin.periodsPerYear      || '',
+      propertyValuation:      fin.propertyValuation   || '',
+      netOperatingIncome:     fin.netOperatingIncome  || '',
+      capRate:                fin.capRate             || '',
+      totalResourceTonnes:    fin.totalResourceTonnes || '',
+      gradePercent:           fin.gradePercent        || '',
+      commodityPricePerTonne: fin.commodityPricePerTonne || '',
+      miningCostPerTonne:     fin.miningCostPerTonne  || '',
+      recoveryRate:           fin.recoveryRate        || '',
+      mineLifeYears:          fin.mineLifeYears       || '',
+      annualRevenue:          fin.annualRevenue       || '',
+      operatingMarginPct:     fin.operatingMarginPct  || '',
+      contractYears:          fin.contractYears       || '',
+      occupancyPct:           fin.occupancyPct        || '',
+      unitCount:              fin.unitCount           || '',
+    };
+
     setForm(restored);
+    setFinData(finRestored);
+    // Restore valuation preview if it was already run
+    if (data.valuationResult) setEngineResult(data.valuationResult);
+    else setEngineResult(null);
+    // Pre-populate existing document URLs so Step 5 shows them as already uploaded
+    setExistingDocs(data.documents || {});
+    setFiles({});
     setStep(1);
     setEditingId(null);
     setAmendingId(app.id);
@@ -1316,9 +1366,14 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
         </div>
 
         {amendingId && (
-          <div className="bg-amber-900/20 border border-amber-700/50 rounded-xl p-3 mb-3 text-sm text-amber-300 flex items-start justify-between gap-2">
-            <span>✏️ You are amending submission <span className="font-mono text-amber-200">{applications.find(a => a.id === amendingId)?.reference_number}</span>. Changes will be reviewed by the compliance team.</span>
-            <button onClick={() => { setAmendingId(null); setStep(1); }} className="text-amber-500 hover:text-amber-300 shrink-0">✕ Cancel</button>
+          <div className="bg-amber-900/20 border border-amber-700/50 rounded-xl p-4 mb-3 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-300 mb-0.5">
+                ✏️ Amending submission <span className="font-mono">{applications.find(a => a.id === amendingId)?.reference_number}</span>
+              </p>
+              <p className="text-xs text-amber-400">All fields are pre-filled with your previous submission. Navigate to the step you want to change and resubmit. Existing documents are preserved — only upload a new file if you want to replace one.</p>
+            </div>
+            <button onClick={() => { setAmendingId(null); setStep(1); setExistingDocs({}); setFiles({}); }} className="text-amber-500 hover:text-amber-300 shrink-0 text-lg leading-none">✕</button>
           </div>
         )}
         {postMsg && (
@@ -1510,30 +1565,40 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                 { key:'kyc_docs',      label:'KYC Documents — All Directors', required: true },
                 { key:'legal_opinion', label:'Legal Opinion on Asset Ownership' },
                 { key:'regulatory',    label:'Environmental / Regulatory Approvals' },
-              ].map(doc => (
-                <div key={doc.key} className={`flex items-center justify-between rounded-xl px-4 py-3 border ${files[doc.key]?'bg-green-900/20 border-green-700/40':'bg-gray-800/50 border-gray-700/40'}`}>
-                  <div className="flex items-center gap-2">
-                    <span>{files[doc.key] ? '✅' : '📎'}</span>
-                    <div>
+              ].map(doc => {
+                const newFile    = files[doc.key];
+                const existing   = existingDocs[doc.key];
+                const hasDoc     = !!(newFile || existing);
+                return (
+                <div key={doc.key} className={`flex items-center justify-between rounded-xl px-4 py-3 border ${hasDoc?'bg-green-900/20 border-green-700/40':'bg-gray-800/50 border-gray-700/40'}`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="shrink-0">{hasDoc ? '✅' : '📎'}</span>
+                    <div className="min-w-0">
                       <p className="text-sm text-white">{doc.label}{doc.required&&<span className="text-red-400 ml-1">*</span>}</p>
-                      {files[doc.key] && <p className="text-xs text-green-400">{files[doc.key].name}</p>}
+                      {newFile && <p className="text-xs text-green-400 truncate">New: {newFile.name}</p>}
+                      {!newFile && existing && (
+                        <p className="text-xs text-green-500 truncate">
+                          Previously uploaded: <a href={existing.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-green-300">{existing.name}</a>
+                        </p>
+                      )}
                     </div>
                   </div>
-                  <div>
+                  <div className="shrink-0 ml-2">
                     <input type="file" ref={el=>fileRefs.current[doc.key]=el} onChange={handleFile(doc.key)} className="hidden" accept=".pdf,.doc,.docx,.xlsx"/>
                     <button onClick={()=>fileRefs.current[doc.key]?.click()}
                       className="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">
-                      {files[doc.key] ? 'Replace' : 'Upload'}
+                      {hasDoc ? 'Replace' : 'Upload'}
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
             {(() => {
               const DOC_KEYS = ['certificate','prospectus','financials','valuation','kyc_docs','legal_opinion','regulatory'];
               const DOC_LABELS = { certificate:'Certificate of Incorporation', prospectus:'Prospectus / Information Memorandum', financials:'Audited Financial Statements', valuation:'Independent Valuation Report', kyc_docs:'KYC Documents (Directors)', legal_opinion:'Legal Opinion on Asset Ownership', regulatory:'Environmental / Regulatory Approvals' };
-              const uploaded = DOC_KEYS.filter(k => files[k]);
-              const missing = DOC_KEYS.filter(k => !files[k]);
+              const uploaded = DOC_KEYS.filter(k => files[k] || existingDocs[k]);
+              const missing  = DOC_KEYS.filter(k => !files[k] && !existingDocs[k]);
               const allUploaded = uploaded.length >= 7;
               return (
                 <>
@@ -1741,7 +1806,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
         {/* STEP 7: Review & Submit */}
         {step === 7 && (() => {
           const DOC_KEYS = ['certificate','prospectus','financials','valuation','kyc_docs','legal_opinion','regulatory'];
-          const docsUploaded = DOC_KEYS.filter(k => files[k]).length;
+          const docsUploaded = DOC_KEYS.filter(k => files[k] || existingDocs[k]).length;
           const hasFinData = Object.values(finData).filter(v => v !== '' && v !== null && v !== undefined && v !== (finData.assetType)).length >= 3;
           const hasPreview = !!(engineResult && !engineResult.error);
           const hasDirectors = !!(form.ceo_name || form.directors?.length > 0);
