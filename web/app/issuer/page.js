@@ -1973,18 +1973,33 @@ function IssuerOfferingTab({ notify, submissionStatus = null }) {
     setLoading(true);
     Promise.all([
       fetch(`${API}/offerings`, { headers: hdrs() }).then(r=>r.json()).catch(()=>[]),
-      fetch(`${API}/assets`, { headers: hdrs() }).then(r=>r.json()).catch(()=>[]),
+      fetch(`${API}/assets/my`, { headers: hdrs() }).then(r=>r.json()).catch(()=>[]),
     ]).then(([offs, toks]) => {
       if (Array.isArray(offs)) setOfferings(offs);
-      if (Array.isArray(toks)) setTokens(toks.filter(t => t.status === 'ACTIVE' || t.market_state === 'PRE_LAUNCH'));
+      if (Array.isArray(toks)) {
+        // Show all issuer tokens — backend enforces pipeline eligibility at submission time
+        const eligible = toks.filter(t => t.status !== 'SUSPENDED' && t.status !== 'DELISTED');
+        setTokens(eligible);
+        // Auto-select if only one token available
+        if (eligible.length === 1) {
+          setForm(f => ({ ...f, token_id: eligible[0].id }));
+        }
+      }
     }).finally(() => setLoading(false));
   };
 
   useEffect(() => { loadData(); }, []);
 
   const submitOffering = async () => {
-    if (!form.token_id || !form.offering_price_usd || !form.target_raise_usd || !form.total_tokens_offered || !form.subscription_deadline) {
-      notify('error', 'Please fill in all required fields.'); return;
+    const missing = [
+      !form.token_id              && 'Token',
+      !form.offering_price_usd    && 'Offering Price',
+      !form.target_raise_usd      && 'Target Raise',
+      !form.total_tokens_offered  && 'Total Tokens Offered',
+      !form.subscription_deadline && 'Subscription Deadline',
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      notify('error', `Please fill in: ${missing.join(', ')}`); return;
     }
     setSubmitting(true);
     try {
