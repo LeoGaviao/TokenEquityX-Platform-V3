@@ -1529,13 +1529,36 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                 </div>
               ))}
             </div>
-            <div className="flex gap-3">
-              <button onClick={()=>goToStep(4)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
-              <button onClick={()=>{ setPostMsg(null); goToStep(6); }}
-                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>
-                Next: Financial Data →
-              </button>
-            </div>
+            {(() => {
+              const DOC_KEYS = ['certificate','prospectus','financials','valuation','kyc_docs','legal_opinion','regulatory'];
+              const DOC_LABELS = { certificate:'Certificate of Incorporation', prospectus:'Prospectus / Information Memorandum', financials:'Audited Financial Statements', valuation:'Independent Valuation Report', kyc_docs:'KYC Documents (Directors)', legal_opinion:'Legal Opinion on Asset Ownership', regulatory:'Environmental / Regulatory Approvals' };
+              const uploaded = DOC_KEYS.filter(k => files[k]);
+              const missing = DOC_KEYS.filter(k => !files[k]);
+              const allUploaded = uploaded.length >= 7;
+              return (
+                <>
+                  <div className={`rounded-xl p-3 border text-sm ${allUploaded ? 'bg-green-900/20 border-green-700/40' : 'bg-amber-900/20 border-amber-700/40'}`}>
+                    <p className={`font-semibold text-xs mb-1 ${allUploaded ? 'text-green-300' : 'text-amber-300'}`}>
+                      {allUploaded ? '✅ All 7 documents uploaded' : `📋 ${uploaded.length} of 7 documents uploaded`}
+                    </p>
+                    {!allUploaded && (
+                      <div className="space-y-0.5 mt-1">
+                        {missing.map(k => <p key={k} className="text-xs text-amber-400">• {DOC_LABELS[k]} — missing</p>)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={()=>goToStep(4)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+                    <button onClick={()=>{ setPostMsg(null); goToStep(6); }}
+                      disabled={!allUploaded}
+                      className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={allUploaded ? {background:NAVY} : {}}>
+                      {allUploaded ? 'Next: Financial Data →' : `Upload all 7 documents to continue`}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -1662,65 +1685,115 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
               </div>
             )}
 
-            <div className="flex gap-3">
-              <button onClick={()=>goToStep(5)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
-              <button onClick={()=>{ setPostMsg(null); goToStep(7); }}
-                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm" style={{background:NAVY}}>
-                Next: Review & Submit →
-              </button>
-            </div>
+            {(() => {
+              const REQUIRED_FIELDS = {
+                EQUITY:         ['revenueTTM','ebitdaTTM','freeCashFlow'],
+                BOND:           ['faceValue','couponRatePct','marketYieldPct'],
+                REAL_ESTATE:    ['propertyValuation','totalDebt','netOperatingIncome'],
+                REIT:           ['propertyValuation','totalDebt','netOperatingIncome'],
+                MINING:         ['totalResourceTonnes','gradePercent','commodityPricePerTonne','miningCostPerTonne','recoveryRate','mineLifeYears'],
+                INFRASTRUCTURE: ['annualRevenue','operatingMarginPct','contractYears'],
+                AGRICULTURE:    ['annualRevenue','operatingMarginPct','growthRatePct'],
+              };
+              const FIELD_LABELS = {
+                revenueTTM:'Revenue TTM', ebitdaTTM:'EBITDA TTM', freeCashFlow:'Free Cash Flow',
+                faceValue:'Face Value', couponRatePct:'Coupon Rate', marketYieldPct:'Market Yield',
+                propertyValuation:'Property Valuation', totalDebt:'Total Debt', netOperatingIncome:'Net Operating Income',
+                totalResourceTonnes:'Total Resource (tonnes)', gradePercent:'Grade (%)', commodityPricePerTonne:'Commodity Price',
+                miningCostPerTonne:'Mining Cost', recoveryRate:'Recovery Rate', mineLifeYears:'Mine Life (years)',
+                annualRevenue:'Annual Revenue', operatingMarginPct:'Operating Margin', contractYears:'Contract Years',
+                growthRatePct:'Revenue Growth Rate',
+              };
+              const asset = finData.assetType || form.assetType || 'EQUITY';
+              const reqFields = REQUIRED_FIELDS[asset] || REQUIRED_FIELDS.EQUITY;
+              const missingFields = reqFields.filter(f => !finData[f] || finData[f] === '');
+              const hasPreview = engineResult && !engineResult.error;
+              const canProceed = missingFields.length === 0 && hasPreview;
+              return (
+                <>
+                  {missingFields.length > 0 && (
+                    <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-3">
+                      <p className="text-amber-300 text-xs font-semibold mb-1">Required fields for {asset}:</p>
+                      {missingFields.map(f => <p key={f} className="text-xs text-amber-400">• {FIELD_LABELS[f] || f} — required</p>)}
+                    </div>
+                  )}
+                  {missingFields.length === 0 && !hasPreview && (
+                    <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-3">
+                      <p className="text-amber-400 text-xs">⚡ Run the Valuation Preview above before proceeding.</p>
+                    </div>
+                  )}
+                  <div className="flex gap-3">
+                    <button onClick={()=>goToStep(5)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+                    <button onClick={()=>{ setPostMsg(null); goToStep(7); }}
+                      disabled={!canProceed}
+                      className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={canProceed ? {background:NAVY} : {}}>
+                      {canProceed ? 'Next: Review & Submit →' : missingFields.length > 0 ? 'Fill required fields to continue' : 'Run Valuation Preview to continue'}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
           );
         })()}
 
         {/* STEP 7: Review & Submit */}
-        {step === 7 && (
-          <div className="space-y-4">
-            <p className="text-gray-400 text-sm">Review your application before submitting.</p>
-            {!finData.revenueTTM && !finData.faceValue && !finData.propertyValuation && !finData.totalResourceTonnes && !finData.annualRevenue && (
-              <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-3 text-xs text-amber-300">
-                ⚠ No financial data provided. Your application will be reviewed without a valuation engine reference. Go back to Step 6 to add financial data.
+        {step === 7 && (() => {
+          const DOC_KEYS = ['certificate','prospectus','financials','valuation','kyc_docs','legal_opinion','regulatory'];
+          const docsUploaded = DOC_KEYS.filter(k => files[k]).length;
+          const hasFinData = Object.values(finData).filter(v => v !== '' && v !== null && v !== undefined && v !== (finData.assetType)).length >= 3;
+          const hasPreview = !!(engineResult && !engineResult.error);
+          const hasDirectors = !!(form.ceo_name || form.directors?.length > 0);
+          const hasDeclaration = !!form.termsAccepted;
+          const checklist = [
+            { label: 'All 7 documents uploaded',      ok: docsUploaded >= 7,  detail: `${docsUploaded}/7 uploaded`,    required: true },
+            { label: 'Financial data provided',       ok: hasFinData,         detail: hasFinData ? 'Complete' : 'Missing — go back to Step 6', required: true },
+            { label: 'Valuation preview run',         ok: hasPreview,         detail: hasPreview ? `$${parseFloat(engineResult.pricePerToken||0).toFixed(4)} per token` : 'Not run — go back to Step 6', required: true },
+            { label: 'Directors / CEO named',         ok: hasDirectors,       detail: form.ceo_name || 'Not provided', required: false },
+            { label: 'Declaration accepted',          ok: hasDeclaration,     detail: hasDeclaration ? 'Accepted' : 'Check the box below', required: true },
+          ];
+          const blockingItems = checklist.filter(c => c.required && !c.ok);
+          const canSubmit = blockingItems.length === 0 && !submitting;
+          return (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">Review your application before submitting.</p>
+              <div className="bg-gray-800/50 rounded-xl p-4 space-y-2">
+                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-3">Pre-submission Checklist</p>
+                {checklist.map(item => (
+                  <div key={item.label} className={`flex items-start gap-3 py-2 border-b border-gray-700/40 last:border-0`}>
+                    <span className={`text-base flex-shrink-0 mt-0.5 ${item.ok ? 'text-green-400' : item.required ? 'text-red-400' : 'text-amber-400'}`}>
+                      {item.ok ? '✅' : item.required ? '❌' : '⚠️'}
+                    </span>
+                    <div className="flex-1">
+                      <p className={`text-sm font-medium ${item.ok ? 'text-white' : item.required ? 'text-red-300' : 'text-amber-300'}`}>{item.label}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{item.detail}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
-            <div className="bg-gray-800/50 rounded-xl p-4 space-y-2 text-sm">
-              {[
-                ['Legal Entity',     form.legalName],
-                ['Registration No.', form.registrationNumber],
-                ['Token Symbol',     form.tokenSymbol],
-                ['Token Name',       form.tokenName],
-                ['Asset Type',       form.assetType],
-                ['Asset Class',      form.assetClass],
-                ['Sector',           form.sector],
-                ['Jurisdiction',     form.jurisdiction],
-                ['Target Raise',     form.targetRaiseUsd ? `$${parseFloat(form.targetRaiseUsd).toLocaleString()}` : '—'],
-                ['Issue Price',      `$${form.tokenIssuePrice}`],
-                ['Total Supply',     form.totalSupply ? parseInt(form.totalSupply).toLocaleString() : '—'],
-                ['Annual Yield',     form.expectedYield ? `${form.expectedYield}%` : '—'],
-                ['Distribution',     form.distributionFrequency],
-                ['CEO',              form.ceo_name || '—'],
-                ['Documents',        `${Object.keys(files).length} uploaded`],
-              ].map(([label, value]) => (
-                <div key={label} className="flex justify-between py-1 border-b border-gray-700/50 last:border-0">
-                  <span className="text-gray-400">{label}</span>
-                  <span className="text-white font-medium text-right max-w-xs truncate">{value}</span>
+              {blockingItems.length > 0 && (
+                <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-3">
+                  <p className="text-red-300 text-xs font-semibold">Complete the following before submitting:</p>
+                  {blockingItems.map(c => <p key={c.label} className="text-xs text-red-400 mt-0.5">• {c.label}</p>)}
                 </div>
-              ))}
+              )}
+              <label className="flex items-start gap-3 cursor-pointer bg-gray-800/50 rounded-xl p-4">
+                <input type="checkbox" checked={form.termsAccepted} onChange={e=>set('termsAccepted',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
+                <span className="text-xs text-gray-300">I confirm that all information provided is accurate and complete. I understand that submitting false or misleading information may result in rejection and potential regulatory referral under the Securities and Exchange Act (Chapter 24:25).</span>
+              </label>
+              <div className="flex gap-3">
+                <button onClick={()=>goToStep(6)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
+                <button onClick={submit} disabled={!canSubmit}
+                  className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={canSubmit ? {background:NAVY} : {}}>
+                  {submitting ? '⏳ Submitting...' : canSubmit ? '🚀 Submit Tokenisation Application' : 'Complete checklist to submit'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 text-center">Platform issuance fee: 0.25% of total raise value, payable on SECZ approval.</p>
             </div>
-            <label className="flex items-start gap-3 cursor-pointer bg-gray-800/50 rounded-xl p-4">
-              <input type="checkbox" checked={form.termsAccepted} onChange={e=>set('termsAccepted',e.target.checked)} className="mt-0.5 flex-shrink-0"/>
-              <span className="text-xs text-gray-300">I confirm that all information provided is accurate and complete. I understand that submitting false or misleading information may result in rejection and potential regulatory referral under the Securities and Exchange Act (Chapter 24:25).</span>
-            </label>
-            <div className="flex gap-3">
-              <button onClick={()=>goToStep(6)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
-              <button onClick={submit} disabled={submitting || !form.termsAccepted}
-                className="flex-1 py-2.5 rounded-xl font-semibold text-white text-sm disabled:opacity-40"
-                style={{background:NAVY}}>
-                {submitting ? '⏳ Submitting...' : '🚀 Submit Tokenisation Application'}
-              </button>
-            </div>
-            <p className="text-xs text-gray-600 text-center">Platform issuance fee: 0.25% of total raise value, payable on SECZ approval.</p>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
     )}

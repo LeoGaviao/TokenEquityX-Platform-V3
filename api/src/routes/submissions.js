@@ -294,6 +294,34 @@ router.put('/:id/assign',
       return res.status(400).json({ error: 'assignedAuditor is required' });
     }
     try {
+      // ── Gate: prerequisites before assigning auditor ──────────────
+      const [subGate] = await db.execute(
+        'SELECT status, document_count, issuer_wallet FROM data_submissions WHERE id = ?',
+        [req.params.id]
+      );
+      if (subGate.length === 0) return res.status(404).json({ error: 'Submission not found' });
+      const gSub = subGate[0];
+      const gateMissing = [];
+      if (gSub.status !== 'UNDER_REVIEW') {
+        gateMissing.push(`Submission must be in UNDER_REVIEW status (current: ${gSub.status})`);
+      }
+      if ((gSub.document_count || 0) < 7) {
+        gateMissing.push(`All 7 documents must be uploaded (${gSub.document_count || 0} of 7 uploaded)`);
+      }
+      if (gSub.issuer_wallet) {
+        const [kycGate] = await db.execute(
+          "SELECT status FROM entity_kyc WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+          [gSub.issuer_wallet]
+        );
+        if (!kycGate.length || kycGate[0].status !== 'APPROVED') {
+          gateMissing.push("Issuer Entity KYC must be APPROVED before an auditor can be assigned");
+        }
+      }
+      if (gateMissing.length > 0) {
+        return res.status(400).json({ error: 'Prerequisites not met to assign auditor', missing: gateMissing });
+      }
+      // ─────────────────────────────────────────────────────────────
+
       // Resolve auditor identifier to UUID
       // assignedAuditor could be email, UUID, or wallet address
       let auditorUUID = assignedAuditor;
@@ -516,7 +544,7 @@ router.put('/:id/audit-report',
 
     try {
       const [subRows] = await db.execute(
-        'SELECT id, status, audit_report, issuer_wallet, token_symbol, entity_name FROM data_submissions WHERE id = ?',
+        'SELECT id, status, audit_report, issuer_wallet, token_symbol, entity_name, document_count, data_json, auditor_status FROM data_submissions WHERE id = ?',
         [req.params.id]
       );
       if (subRows.length === 0) return res.status(404).json({ error: 'Submission not found' });
@@ -529,6 +557,29 @@ router.put('/:id/audit-report',
           error: `Cannot re-submit audit report: application has already progressed to '${currentSub.status}'. Contact an admin if a correction is needed.`,
         });
       }
+
+      // ── Gate: prerequisites before submitting audit report ─────────────
+      const arGateData = typeof currentSub.data_json === 'string'
+        ? JSON.parse(currentSub.data_json || '{}')
+        : (currentSub.data_json || {});
+      const arFinFields = Object.values(arGateData.financialData || {}).filter(v => v !== '' && v !== null && v !== undefined);
+      const arMissing = [];
+      if (currentSub.auditor_status !== 'ACCEPTED') {
+        arMissing.push('Auditor must accept the assignment before submitting a report');
+      }
+      if ((currentSub.document_count || 0) < 7) {
+        arMissing.push(`All 7 documents must be uploaded (${currentSub.document_count || 0} of 7)`);
+      }
+      if (arFinFields.length < 3) {
+        arMissing.push('Issuer must submit financial data (at least 3 fields)');
+      }
+      if (!arGateData.valuationResult) {
+        arMissing.push('Valuation engine must be run on the financial data before audit report');
+      }
+      if (arMissing.length > 0) {
+        return res.status(400).json({ error: 'Prerequisites not met to submit audit report', missing: arMissing });
+      }
+      // ──────────────────────────────────────────────────────────────────
 
       const newStatus = recommendation === 'APPROVE'
         ? 'AUDITOR_APPROVED'
@@ -627,6 +678,32 @@ router.put('/:id/admin-approve',
           error: `Cannot approve: submission status is '${sub.status}'. Admin final approval requires the submission to be in AUDITOR_APPROVED status.`,
         });
       }
+
+      // ── Gate: prerequisites before admin final approval ────────────────
+      const aaGateData = typeof sub.data_json === 'string'
+        ? JSON.parse(sub.data_json || '{}')
+        : (sub.data_json || {});
+      const aaFinFields = Object.values(aaGateData.financialData || {}).filter(v => v !== '' && v !== null && v !== undefined);
+      const aaMissing = [];
+      if ((sub.document_count || 0) < 7) {
+        aaMissing.push(`All 7 documents must be uploaded (${sub.document_count || 0} of 7)`);
+      }
+      if (aaFinFields.length < 3) {
+        aaMissing.push('Issuer must have submitted financial data (at least 3 fields)');
+      }
+      if (!aaGateData.valuationResult) {
+        aaMissing.push('Valuation engine must have been run on the financial data');
+      }
+      if (sub.auditor_status !== 'ACCEPTED') {
+        aaMissing.push('Auditor must have accepted the assignment');
+      }
+      if (!sub.audit_report) {
+        aaMissing.push('Audit report must be submitted before admin can give final approval');
+      }
+      if (aaMissing.length > 0) {
+        return res.status(400).json({ error: 'Prerequisites not met for admin final approval', missing: aaMissing });
+      }
+      // ──────────────────────────────────────────────────────────────────
 
       const auditReport    = sub.audit_report
         ? (typeof sub.audit_report === 'string' ? JSON.parse(sub.audit_report) : sub.audit_report)
@@ -1446,6 +1523,21 @@ router.put('/:id/submit-to-secz',
         });
       }
 
+      // ── Gate: prerequisites before SECZ submission ─────────────────────
+      const seczMissing = [];
+      if (!sub.audit_report) {
+        seczMissing.push('Audit report must exist before submitting to SECZ');
+      } else {
+        const ar = typeof sub.audit_report === 'string' ? JSON.parse(sub.audit_report) : sub.audit_report;
+        if (!ar.certifiedPrice || parseFloat(ar.certifiedPrice) <= 0) {
+          seczMissing.push('Audit report must include a valid certified price (> 0)');
+        }
+      }
+      if (seczMissing.length > 0) {
+        return res.status(400).json({ error: 'Prerequisites not met to submit to SECZ', missing: seczMissing });
+      }
+      // ──────────────────────────────────────────────────────────────────
+
       await db.execute(
         "UPDATE data_submissions SET status = 'SECZ_REVIEW', updated_at = NOW() WHERE id = ?",
         [req.params.id]
@@ -1562,6 +1654,15 @@ router.put('/:id/set-live',
           error: `Cannot set live: submission status is '${sub.status}'. Required: SECZ_APPROVED.`,
         });
       }
+
+      // ── Gate: audit report must exist before going live ────────────────
+      if (!sub.audit_report) {
+        return res.status(400).json({
+          error: 'Prerequisites not met to set token live',
+          missing: ['Audit report must exist and include a certified price before going live'],
+        });
+      }
+      // ──────────────────────────────────────────────────────────────────
 
       const auditReport    = sub.audit_report
         ? (typeof sub.audit_report === 'string' ? JSON.parse(sub.audit_report) : sub.audit_report)

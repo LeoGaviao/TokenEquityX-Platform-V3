@@ -1407,4 +1407,50 @@ router.get('/reset-mgmc', async (req, res) => {
   }
 });
 
+// GET /api/setup/clear-audit-report — roll a submission back to AUDITOR_ASSIGNED/ACCEPTED state
+// Usage: GET /api/setup/clear-audit-report?secret=tokenequityx-setup-2024&submission_id=19
+router.get('/clear-audit-report', async (req, res) => {
+  const { secret, submission_id } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!submission_id) return res.status(400).json({ error: 'submission_id is required' });
+  try {
+    const subResult = await pool._pool.query(
+      `UPDATE data_submissions
+       SET status        = 'AUDITOR_ASSIGNED',
+           auditor_status = 'ACCEPTED',
+           audit_report  = NULL,
+           updated_at    = NOW()
+       WHERE id = $1
+       RETURNING id, token_symbol, status, auditor_status`,
+      [submission_id]
+    );
+    if (subResult.rowCount === 0) {
+      return res.status(404).json({ error: `Submission ${submission_id} not found` });
+    }
+    const { token_symbol } = subResult.rows[0];
+
+    const tokResult = await pool._pool.query(
+      `UPDATE tokens
+       SET status            = 'PENDING',
+           oracle_price      = NULL,
+           current_price_usd = NULL,
+           updated_at        = NOW()
+       WHERE token_symbol = $1
+       RETURNING id, token_symbol, status, oracle_price, current_price_usd`,
+      [token_symbol]
+    );
+
+    res.json({
+      success:    true,
+      submission: subResult.rows[0],
+      token:      tokResult.rows[0] || null,
+      message:    `Submission ${submission_id} reset to AUDITOR_ASSIGNED/ACCEPTED with audit_report cleared. Token ${token_symbol} set to PENDING with prices nulled.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

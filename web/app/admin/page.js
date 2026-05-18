@@ -1605,6 +1605,10 @@ export default function AdminDashboard() {
           auditor:s.assigned_auditor||'Pending assignment',partner:'None',
           notes:`Ref: ${s.reference_number||s.id} · Status: ${s.status} · Documents: ${s.document_count||0}`,
           isNewApplication:true,
+          document_count: s.document_count||0,
+          has_financial_data: (() => { try { const d = typeof s.data_json==='string'?JSON.parse(s.data_json):(s.data_json||{}); return Object.values(d.financialData||{}).filter(v=>v!==''&&v!==null&&v!==undefined).length >= 3; } catch { return false; } })(),
+          kyc_approved: entityKycMap[s.issuer_wallet] === 'APPROVED',
+          auditor_status: s.auditor_status || null,
         }));
         const financialSubs = subRes.value.data.filter(s=>s.submission_type!=='TOKENISATION_APPLICATION'&&s.period!=='TOKENISATION_APPLICATION').map(s=>({
           id:s.id,name:`${s.token_symbol} — ${s.entity_name||s.token_symbol}`,symbol:s.token_symbol,asset_class:'Financial Data',
@@ -2126,15 +2130,49 @@ export default function AdminDashboard() {
                                 <p className="text-xs text-gray-500 text-center px-1">Token will enter PRIMARY_ONLY market state. Issuer must create a primary offering before full trading begins.</p>
                               </div>
                             ) : item.status === 'AUDITOR_APPROVED' ? (
-                              <AdminFinalApproval item={item} onApprove={(listingType, notes, riskCategory) => {
-                                api.put(`/submissions/${item.id}/admin-approve`, { listingType, adminNotes:notes, tokenSymbol:item.symbol, riskCategory })
-                                  .then(r => { setPipeline(p => p.map(i => i.id===item.id ? { ...i, status:'TOKENIZATION_PENDING', stages:{...i.stages,contract:true} } : i)); notify('success', r.data.message); })
-                                  .catch(e => notify('error', e.response?.data?.error || 'Approval failed'));
-                              }} onReject={() => rejectApplication(item)}/>
+                              <>
+                                {!item.audit_report && (
+                                  <div className="bg-red-900/20 border border-red-700/40 rounded-lg p-2 mb-2">
+                                    <p className="text-red-400 text-xs">🔒 No audit report on file. Admin approval will be blocked until an auditor submits a report.</p>
+                                  </div>
+                                )}
+                                <AdminFinalApproval item={item} onApprove={(listingType, notes, riskCategory) => {
+                                  api.put(`/submissions/${item.id}/admin-approve`, { listingType, adminNotes:notes, tokenSymbol:item.symbol, riskCategory })
+                                    .then(r => { setPipeline(p => p.map(i => i.id===item.id ? { ...i, status:'TOKENIZATION_PENDING', stages:{...i.stages,contract:true} } : i)); notify('success', r.data.message); })
+                                    .catch(e => notify('error', e.response?.data?.error || 'Approval failed'));
+                                }} onReject={() => rejectApplication(item)}/>
+                              </>
                             ) : (
                               <>
+                                {!item.has_financial_data && item.isNewApplication && (
+                                  <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg p-2 mb-1">
+                                    <p className="text-amber-400 text-xs">⚠️ Financial data not yet submitted by issuer</p>
+                                  </div>
+                                )}
                                 <button onClick={()=>advanceStage(item)} className="w-full py-2 rounded-lg text-xs font-semibold bg-green-700 hover:bg-green-600 text-white">✅ Advance to Next Stage</button>
-<button onClick={()=>setAssignModal({itemId:item.id,itemName:item.name,item})} className="w-full py-2 rounded-lg text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-white">🔍 Assign Auditor</button>
+                                {(() => {
+                                  const docCount = item.document_count || 0;
+                                  const kycOk = item.kyc_approved;
+                                  const canAssign = docCount >= 7 && kycOk;
+                                  const tips = [];
+                                  if (docCount < 7) tips.push(`${docCount}/7 documents uploaded`);
+                                  if (!kycOk) tips.push('Entity KYC not approved');
+                                  return (
+                                    <>
+                                      {!canAssign && item.isNewApplication && (
+                                        <div className="bg-red-900/20 border border-red-700/40 rounded-lg p-2">
+                                          <p className="text-red-400 text-xs">🔒 Cannot assign auditor: {tips.join('; ')}</p>
+                                        </div>
+                                      )}
+                                      <button
+                                        disabled={!canAssign && item.isNewApplication}
+                                        onClick={()=>setAssignModal({itemId:item.id,itemName:item.name,item})}
+                                        className={`w-full py-2 rounded-lg text-xs font-semibold text-white ${!canAssign && item.isNewApplication ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600'}`}>
+                                        🔍 Assign Auditor
+                                      </button>
+                                    </>
+                                  );
+                                })()}
                                 <div className="border-t border-gray-700/50 pt-2 mt-1 space-y-2">
                                   <button
                                     onClick={()=>suspendApplication(item)}
