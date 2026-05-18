@@ -1466,47 +1466,59 @@ router.get('/cleanup-test-listings', async (req, res) => {
   for (const sym of TEST_SYMBOLS) {
     const counts = {};
     try {
-      // 1. token_holdings
-      const h = await pool._pool.query('DELETE FROM token_holdings WHERE token_symbol = $1', [sym]);
-      counts.token_holdings = h.rowCount || 0;
-
-      // 2. offering_subscriptions (via primary_offerings FK)
-      const os = await pool._pool.query(
-        'DELETE FROM offering_subscriptions WHERE offering_id IN (SELECT id FROM primary_offerings WHERE token_symbol = $1)',
-        [sym]
+      // Resolve token UUID — token_holdings and primary_offerings use token_id, not token_symbol
+      const tokenRes = await pool._pool.query(
+        'SELECT id FROM tokens WHERE token_symbol = $1 OR symbol = $1 LIMIT 1', [sym]
       );
-      counts.offering_subscriptions = os.rowCount || 0;
+      const tokenId = tokenRes.rows[0]?.id || null;
 
-      // 3. primary_offerings
-      const po = await pool._pool.query('DELETE FROM primary_offerings WHERE token_symbol = $1', [sym]);
-      counts.primary_offerings = po.rowCount || 0;
+      // 1. token_holdings — keyed by token_id
+      if (tokenId) {
+        const h = await pool._pool.query('DELETE FROM token_holdings WHERE token_id = $1', [tokenId]);
+        counts.token_holdings = h.rowCount || 0;
+      } else {
+        counts.token_holdings = 0;
+      }
 
-      // 4. p2p_offers
+      // 2. offering_subscriptions — joined through primary_offerings.token_id
+      if (tokenId) {
+        const os = await pool._pool.query(
+          'DELETE FROM offering_subscriptions WHERE offering_id IN (SELECT id FROM primary_offerings WHERE token_id = $1)',
+          [tokenId]
+        );
+        counts.offering_subscriptions = os.rowCount || 0;
+      } else {
+        counts.offering_subscriptions = 0;
+      }
+
+      // 3. primary_offerings — keyed by token_id
+      if (tokenId) {
+        const po = await pool._pool.query('DELETE FROM primary_offerings WHERE token_id = $1', [tokenId]);
+        counts.primary_offerings = po.rowCount || 0;
+      } else {
+        counts.primary_offerings = 0;
+      }
+
+      // 4. p2p_offers — has direct token_symbol column
       const p2p = await pool._pool.query('DELETE FROM p2p_offers WHERE token_symbol = $1', [sym]);
       counts.p2p_offers = p2p.rowCount || 0;
 
-      // 5. settlement_instructions
-      try {
-        const si = await pool._pool.query('DELETE FROM settlement_instructions WHERE token_symbol = $1', [sym]);
-        counts.settlement_instructions = si.rowCount || 0;
-      } catch { counts.settlement_instructions = 0; }
-
-      // 6. spv_annual_fees
+      // 5. spv_annual_fees — has token_symbol column
       try {
         const sf = await pool._pool.query('DELETE FROM spv_annual_fees WHERE token_symbol = $1', [sym]);
         counts.spv_annual_fees = sf.rowCount || 0;
       } catch { counts.spv_annual_fees = 0; }
 
-      // 7. application_fees
+      // 6. application_fees — has token_symbol column
       const af = await pool._pool.query('DELETE FROM application_fees WHERE token_symbol = $1', [sym]);
       counts.application_fees = af.rowCount || 0;
 
-      // 8. data_submissions
+      // 7. data_submissions — has token_symbol column
       const ds = await pool._pool.query('DELETE FROM data_submissions WHERE token_symbol = $1', [sym]);
       counts.data_submissions = ds.rowCount || 0;
 
-      // 9. tokens
-      const tk = await pool._pool.query('DELETE FROM tokens WHERE token_symbol = $1', [sym]);
+      // 8. tokens — delete last
+      const tk = await pool._pool.query('DELETE FROM tokens WHERE token_symbol = $1 OR symbol = $1', [sym]);
       counts.tokens = tk.rowCount || 0;
 
       summary[sym] = { deleted: counts };
