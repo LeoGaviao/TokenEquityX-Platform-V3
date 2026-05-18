@@ -1202,15 +1202,54 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
     try {
       const token = localStorage.getItem('token');
       const fd = new FormData();
-      // Append all form fields
-      Object.entries(form).forEach(([k, v]) => {
-        if (v !== null && v !== undefined && k !== 'termsAccepted') fd.append(k, v);
-      });
-      // Append files
+
+      // Bundle ALL form steps into one structured object so the backend always
+      // receives a complete, consistent payload regardless of which step a field
+      // lives on.  totalSupply is explicitly included in financialData so the
+      // valuation engine has it without relying on a separate req.body key.
+      const submissionPayload = {
+        // Step 1 — Company
+        legalName:           form.legalName,
+        registrationNumber:  form.registrationNumber,
+        jurisdiction:        form.jurisdiction,
+        sector:              form.sector,
+        assetType:           form.assetType,
+        description:         form.description,
+        websiteUrl:          form.websiteUrl,
+        foundedYear:         form.foundedYear,
+        headquarters:        form.headquarters,
+        useOfProceeds:       form.useOfProceeds,
+        numEmployees:        form.numEmployees,
+        // Step 2 — Token
+        tokenName:           form.tokenName,
+        tokenSymbol:         form.tokenSymbol,
+        assetClass:          form.assetClass,
+        authorisedShares:    form.authorisedShares,
+        nominalValueCents:   form.nominalValueCents,
+        // Step 3 — Economics (totalSupply lives here)
+        totalSupply:         form.totalSupply,
+        targetRaiseUsd:      form.targetRaiseUsd,
+        tokenIssuePrice:     form.tokenIssuePrice,
+        expectedYield:       form.expectedYield,
+        distributionFrequency: form.distributionFrequency,
+        // Step 4 — Personnel
+        ceo_name:   form.ceo_name,   ceo_email:   form.ceo_email,   ceo_id:   form.ceo_id,
+        cfo_name:   form.cfo_name,   cfo_email:   form.cfo_email,   cfo_id:   form.cfo_id,
+        legal_name: form.legal_name, legal_email: form.legal_email, legal_id: form.legal_id,
+        // Step 6 — Financial Data with totalSupply injected so the engine always sees it
+        financialData: {
+          ...finData,
+          assetType:        finData.assetType        || form.assetType,
+          totalSupply:      form.totalSupply,
+          authorisedShares: form.authorisedShares    || form.totalSupply,
+        },
+      };
+      fd.append('submissionData', JSON.stringify(submissionPayload));
+
+      // Files are binary — still appended individually
       Object.entries(files).forEach(([docKey, file]) => {
         if (file) fd.append(docKey, file, file.name);
       });
-      fd.append('financialEngineData', JSON.stringify({ ...finData, assetType: finData.assetType || form.assetType }));
       if (editingId) fd.append('editingId', editingId);
       const url    = amendingId
         ? `${API}/submissions/${amendingId}/amend`
@@ -1683,17 +1722,31 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
             )}
 
             {finAsset === 'MINING' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Total Resource (tonnes)</label><input type="number" value={finData.totalResourceTonnes} onChange={e=>setFin('totalResourceTonnes',e.target.value)} className={inputCls} placeholder="e.g. 500000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Grade (%)</label><input type="number" value={finData.gradePercent} onChange={e=>setFin('gradePercent',e.target.value)} className={inputCls} placeholder="e.g. 3.5"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Commodity Price (USD/tonne)</label><input type="number" value={finData.commodityPricePerTonne} onChange={e=>setFin('commodityPricePerTonne',e.target.value)} className={inputCls} placeholder="e.g. 28000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Mining Cost (USD/tonne)</label><input type="number" value={finData.miningCostPerTonne} onChange={e=>setFin('miningCostPerTonne',e.target.value)} className={inputCls} placeholder="e.g. 12000"/></div>
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">Recovery Rate <span className="text-gray-600">(decimal — e.g. 0.87 for 87%)</span></label>
-                  <input type="number" step="0.01" min="0" max="1" value={finData.recoveryRate} onChange={e=>setFin('recoveryRate',e.target.value)} className={inputCls} placeholder="e.g. 0.87"/>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs text-gray-400 block mb-1">Total Resource (tonnes of ore)</label><input type="number" value={finData.totalResourceTonnes} onChange={e=>setFin('totalResourceTonnes',e.target.value)} className={inputCls} placeholder="e.g. 850000"/></div>
+                  <div><label className="text-xs text-gray-400 block mb-1">Grade (%)</label><input type="number" value={finData.gradePercent} onChange={e=>setFin('gradePercent',e.target.value)} className={inputCls} placeholder="e.g. 3.5"/></div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Gross Revenue per Tonne of Ore <span className="text-gray-600">(USD/t-ore)</span></label>
+                    <input type="number" value={finData.commodityPricePerTonne} onChange={e=>setFin('commodityPricePerTonne',e.target.value)} className={inputCls} placeholder="e.g. 62"/>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">All-In Mining Cost per Tonne of Ore <span className="text-gray-600">(USD/t-ore)</span></label>
+                    <input type="number" value={finData.miningCostPerTonne} onChange={e=>setFin('miningCostPerTonne',e.target.value)} className={inputCls} placeholder="e.g. 28"/>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Recovery Rate <span className="text-gray-600">(decimal — e.g. 0.87 for 87%)</span></label>
+                    <input type="number" step="0.01" min="0" max="1" value={finData.recoveryRate} onChange={e=>setFin('recoveryRate',e.target.value)} className={inputCls} placeholder="e.g. 0.85"/>
+                  </div>
+                  <div><label className="text-xs text-gray-400 block mb-1">Mine Life (years)</label><input type="number" value={finData.mineLifeYears} onChange={e=>setFin('mineLifeYears',e.target.value)} className={inputCls} placeholder="e.g. 10"/></div>
+                  <div><label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label><input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 4200000"/></div>
                 </div>
-                <div><label className="text-xs text-gray-400 block mb-1">Mine Life (years)</label><input type="number" value={finData.mineLifeYears} onChange={e=>setFin('mineLifeYears',e.target.value)} className={inputCls} placeholder="e.g. 15"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label><input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 4200000"/></div>
+                <div className="bg-amber-950/30 border border-amber-700/30 rounded-lg p-3 text-xs text-amber-300/80 space-y-1">
+                  <p className="font-semibold text-amber-300">How to calculate gross revenue per tonne of ore</p>
+                  <p>Revenue/t-ore = (grade ÷ 100) × recovery rate × commodity price per tonne of pure metal</p>
+                  <p className="text-gray-500">Example: 3.5% grade, 85% recovery, $2,100/t pure metal → (0.035 × 0.85 × 2100) ≈ <span className="text-amber-400">$62/t-ore</span></p>
+                  <p className="text-gray-500">Both revenue and cost fields must use the same per-tonne-of-ore basis from your project economics.</p>
+                </div>
               </div>
             )}
 

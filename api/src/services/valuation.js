@@ -140,12 +140,17 @@ function resourceValuation({
   const containedMetal    = totalResourceTonnes * (gradePercent / 100);
   const recoverableMetal  = containedMetal * recoveryRate;
 
-  // Annual production (simplified: evenly spread)
+  // Annual production of recoverable metal — reported for display only.
   const annualProduction  = recoverableMetal / mineLifeYears;
 
-  // Annual revenue and costs
-  const annualRevenue     = annualProduction * commodityPricePerTonne;
-  const annualCosts       = totalResourceTonnes / mineLifeYears * miningCostPerTonne;
+  // Cash-flow model: both commodityPricePerTonne and miningCostPerTonne are expressed
+  // per tonne of ORE MINED/PROCESSED (i.e. gross revenue and cost per tonne of ore),
+  // NOT per tonne of pure commodity.  Issuers enter the blended "price/cost per tonne
+  // of material moved" from their project economics, which already incorporates grade
+  // and recovery.  Keeping both on the same ore-tonne basis avoids unit inconsistency.
+  const orePerYear        = totalResourceTonnes / mineLifeYears;
+  const annualRevenue     = orePerYear * commodityPricePerTonne;
+  const annualCosts       = orePerYear * miningCostPerTonne;
   const annualCashFlow    = annualRevenue - annualCosts;
 
   // DCF of mine cash flows
@@ -260,6 +265,8 @@ function blendModels(models) {
 function calculateValuation(assetType, data) {
   const type = assetType?.toUpperCase();
 
+  let models, blended;
+
   if (type === 'EQUITY' || type === 'OTHER') {
     const rm  = data.revenueTTM  ? revenueMultiple({ revenueTTM: data.revenueTTM, sector: data.sector }) : null;
     const eb  = data.ebitdaTTM   ? ebitdaMultiple({ ebitdaTTM: data.ebitdaTTM, sector: data.sector }) : null;
@@ -268,83 +275,55 @@ function calculateValuation(assetType, data) {
       growthRate:   (data.growthRatePct || 15) / 100,
       discountRate: (data.discountRatePct || 12) / 100
     }) : null;
+    blended = blendModels([rm, eb, dcfResult].filter(Boolean));
+    models  = { revenueMultiple: rm, ebitdaMultiple: eb, dcf: dcfResult };
 
-    const blended = blendModels([rm, eb, dcfResult].filter(Boolean));
-
-    return {
-      models:   { revenueMultiple: rm, ebitdaMultiple: eb, dcf: dcfResult },
-      blended,
-      assetType: type
-    };
-  }
-
-  if (type === 'REAL_ESTATE' || type === 'REIT') {
-    const nav = data.propertyValuation
-      ? realEstateNAV(data)
-      : null;
+  } else if (type === 'REAL_ESTATE' || type === 'REIT') {
+    const nav = data.propertyValuation ? realEstateNAV(data) : null;
     const cap = data.netOperatingIncome && data.capRate
       ? capRateValuation({ netOperatingIncome: data.netOperatingIncome, capRate: data.capRate })
       : null;
+    blended = blendModels([nav, cap].filter(Boolean));
+    models  = { nav, capRate: cap };
 
-    const blended = blendModels([nav, cap].filter(Boolean));
+  } else if (type === 'MINING') {
+    const resource = data.totalResourceTonnes ? resourceValuation(data) : null;
+    const rm = data.revenueTTM ? revenueMultiple({ revenueTTM: data.revenueTTM, sector: 'MINING' }) : null;
+    blended = blendModels([resource, rm].filter(Boolean));
+    models  = { resourceValuation: resource, revenueMultiple: rm };
 
-    return {
-      models:   { nav, capRate: cap },
-      blended,
-      assetType: type
-    };
+  } else if (type === 'INFRASTRUCTURE') {
+    const infra = data.annualRevenue ? infrastructureValuation(data) : null;
+    blended = infra?.enterpriseValue || 0;
+    models  = { infrastructure: infra };
+
+  } else if (type === 'BOND') {
+    const bond = data.faceValue ? bondPricing(data) : null;
+    blended = bond?.price || 0;
+    models  = { bondPricing: bond };
+
+  } else {
+    // Default — use whatever data is available
+    const rm = data.revenueTTM ? revenueMultiple({ revenueTTM: data.revenueTTM, sector: data.sector }) : null;
+    blended = rm?.enterpriseValue || 0;
+    models  = { revenueMultiple: rm };
   }
 
-  if (type === 'MINING') {
-    const resource = data.totalResourceTonnes
-      ? resourceValuation(data)
-      : null;
-    const rm = data.revenueTTM
-      ? revenueMultiple({ revenueTTM: data.revenueTTM, sector: 'MINING' })
-      : null;
-
-    const blended = blendModels([resource, rm].filter(Boolean));
-
-    return {
-      models:   { resourceValuation: resource, revenueMultiple: rm },
-      blended,
-      assetType: type
-    };
-  }
-
-  if (type === 'INFRASTRUCTURE') {
-    const infra = data.annualRevenue
-      ? infrastructureValuation(data)
-      : null;
-
-    return {
-      models:   { infrastructure: infra },
-      blended:  infra?.enterpriseValue || 0,
-      assetType: type
-    };
-  }
-
-  if (type === 'BOND') {
-    const bond = data.faceValue
-      ? bondPricing(data)
-      : null;
-
-    return {
-      models:   { bondPricing: bond },
-      blended:  bond?.price || 0,
-      assetType: type
-    };
-  }
-
-  // Default — use whatever data is available
-  const rm = data.revenueTTM
-    ? revenueMultiple({ revenueTTM: data.revenueTTM, sector: data.sector })
-    : null;
+  // Compute pricePerToken using totalSupply from financialData.
+  // Both totalSupply and authorisedShares are accepted; fall back to 1,000,000.
+  const shares      = parseInt(data.totalSupply || data.authorisedShares || data.issuedShares) || 1000000;
+  const totalDebt   = Number(data.totalDebt) || 0;
+  const cash        = Number(data.cash)      || 0;
+  const equityValue = blended - totalDebt + cash;
+  const pricePerToken = shares > 0 ? equityValue / shares : 0;
 
   return {
-    models:  { revenueMultiple: rm },
-    blended: rm?.enterpriseValue || 0,
-    assetType: type
+    models,
+    blended,
+    assetType:    type,
+    equityValue:  parseFloat(equityValue.toFixed(2)),
+    pricePerToken: parseFloat(pricePerToken.toFixed(6)),
+    issuedShares: shares,
   };
 }
 

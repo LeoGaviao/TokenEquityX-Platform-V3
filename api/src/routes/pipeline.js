@@ -445,20 +445,26 @@ router.post('/preview', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'financialData is required' });
   }
   try {
-    const assetType    = financialData.assetType || 'EQUITY';
-    const issuedShares = Number(financialData.authorisedShares) || Number(financialData.totalShares) || Number(financialData.issuedShares) || 1;
-    const totalDebt    = Number(financialData.totalDebt) || 0;
-    const cash         = Number(financialData.cash) || 0;
+    const assetType = financialData.assetType || 'EQUITY';
+    // totalSupply (Step 3) and authorisedShares (Step 2) are now both included in
+    // financialData by the frontend; fall back through all possible field names.
+    const issuedShares = Number(financialData.totalSupply)
+                      || Number(financialData.authorisedShares)
+                      || Number(financialData.totalShares)
+                      || Number(financialData.issuedShares)
+                      || 1000000;
 
-    const result      = calculateValuation(assetType, financialData);
-    const equityValue = result.blended - totalDebt + cash;
+    // The engine now returns pricePerToken using its own shares computation; we
+    // override with the more-accurate issuedShares from the form if available.
+    const result        = calculateValuation(assetType, { ...financialData, totalSupply: issuedShares });
+    const equityValue   = result.equityValue ?? (result.blended - (Number(financialData.totalDebt) || 0) + (Number(financialData.cash) || 0));
     const pricePerToken = issuedShares > 0 ? equityValue / issuedShares : 0;
 
     res.json({
       tokenSymbol:   tokenSymbol || null,
       assetType,
-      equityValue:   equityValue.toFixed(2),
-      pricePerToken: pricePerToken.toFixed(6),
+      equityValue:   parseFloat(equityValue.toFixed(2)),
+      pricePerToken: parseFloat(pricePerToken.toFixed(6)),
       issuedShares,
       models:        result.models,
       blended:       Math.round(result.blended),

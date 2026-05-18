@@ -993,19 +993,50 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
   { name: 'legal_opinion', maxCount: 1 },
   { name: 'regulatory',    maxCount: 1 },
 ]), async (req, res) => {
-  const {
-    legalName, registrationNumber, jurisdiction, sector, assetType,
-    description, websiteUrl, foundedYear, headquarters, useOfProceeds, numEmployees,
-    tokenName, tokenSymbol, authorisedShares, nominalValueCents,
-    targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield, distributionFrequency,
-    ceo_name, ceo_email, ceo_id,
-    cfo_name, cfo_email, cfo_id,
-    legal_name, legal_email, legal_id,
-    assetDescription, assetClass, financialEngineData,
-  } = req.body;
+  // Parse the complete structured payload (new format).
+  // Fall back to individual req.body keys for backward compatibility.
+  let sd = {};
+  try { if (req.body.submissionData) sd = JSON.parse(req.body.submissionData); } catch { /* ignore */ }
 
+  const legalName             = sd.legalName             || req.body.legalName;
+  const registrationNumber    = sd.registrationNumber    || req.body.registrationNumber;
+  const jurisdiction          = sd.jurisdiction          || req.body.jurisdiction;
+  const sector                = sd.sector                || req.body.sector;
+  const assetType             = sd.assetType             || req.body.assetType;
+  const description           = sd.description           || req.body.description   || req.body.assetDescription;
+  const websiteUrl            = sd.websiteUrl            || req.body.websiteUrl;
+  const foundedYear           = sd.foundedYear           || req.body.foundedYear;
+  const headquarters          = sd.headquarters          || req.body.headquarters;
+  const useOfProceeds         = sd.useOfProceeds         || req.body.useOfProceeds;
+  const numEmployees          = sd.numEmployees          || req.body.numEmployees;
+  const tokenName             = sd.tokenName             || req.body.tokenName;
+  const tokenSymbol           = sd.tokenSymbol           || req.body.tokenSymbol;
+  const assetClass            = sd.assetClass            || req.body.assetClass;
+  const authorisedShares      = sd.authorisedShares      || req.body.authorisedShares;
+  const nominalValueCents     = sd.nominalValueCents     || req.body.nominalValueCents;
+  const totalSupply           = sd.totalSupply           || req.body.totalSupply;
+  const targetRaiseUsd        = sd.targetRaiseUsd        || req.body.targetRaiseUsd;
+  const tokenIssuePrice       = sd.tokenIssuePrice       || req.body.tokenIssuePrice;
+  const expectedYield         = sd.expectedYield         || req.body.expectedYield;
+  const distributionFrequency = sd.distributionFrequency || req.body.distributionFrequency;
+  const ceo_name              = sd.ceo_name              || req.body.ceo_name;
+  const ceo_email             = sd.ceo_email             || req.body.ceo_email;
+  const ceo_id                = sd.ceo_id                || req.body.ceo_id;
+  const cfo_name              = sd.cfo_name              || req.body.cfo_name;
+  const cfo_email             = sd.cfo_email             || req.body.cfo_email;
+  const cfo_id                = sd.cfo_id                || req.body.cfo_id;
+  const legal_name            = sd.legal_name            || req.body.legal_name;
+  const legal_email           = sd.legal_email           || req.body.legal_email;
+  const legal_id              = sd.legal_id              || req.body.legal_id;
+
+  // Financial data: prefer the structured financialData block (includes totalSupply),
+  // fall back to the legacy financialEngineData JSON string.
   let parsedFinancialEngine = {};
-  try { if (financialEngineData) parsedFinancialEngine = JSON.parse(financialEngineData); } catch { /* ignore */ }
+  if (sd.financialData && Object.keys(sd.financialData).length > 0) {
+    parsedFinancialEngine = sd.financialData;
+  } else {
+    try { if (req.body.financialEngineData) parsedFinancialEngine = JSON.parse(req.body.financialEngineData); } catch { /* ignore */ }
+  }
 
   if (!legalName || !registrationNumber || !tokenSymbol || !tokenName) {
     return res.status(400).json({ error: 'legalName, registrationNumber, tokenSymbol and tokenName are required' });
@@ -1086,19 +1117,22 @@ router.post('/unified', authenticate, requireRole('ISSUER','ADMIN'), upload.fiel
       try {
         const { calculateValuation } = require('../services/valuation');
         const finAssetType = (parsedFinancialEngine.assetType || assetType || 'EQUITY').toUpperCase();
-        const valResult    = calculateValuation(finAssetType, { ...parsedFinancialEngine, sector });
-        const totalDebtNum = Number(parsedFinancialEngine.totalDebt) || 0;
-        const cashNum      = Number(parsedFinancialEngine.cash)      || 0;
-        const equityValue  = valResult.blended - totalDebtNum + cashNum;
-        const pricePerToken = shares > 0 ? equityValue / shares : 0;
+        // Pass totalSupply/authorisedShares so the engine can compute pricePerToken correctly.
+        const engineInput = {
+          ...parsedFinancialEngine,
+          sector,
+          totalSupply:      parseInt(totalSupply || authorisedShares) || parsedFinancialEngine.totalSupply,
+          authorisedShares: parseInt(authorisedShares || totalSupply) || parsedFinancialEngine.authorisedShares,
+        };
+        const valResult = calculateValuation(finAssetType, engineInput);
         valuationResult = {
-          assetType:    finAssetType,
-          blended:      Math.round(valResult.blended),
-          equityValue:  parseFloat(equityValue.toFixed(2)),
-          pricePerToken: parseFloat(pricePerToken.toFixed(6)),
-          issuedShares: shares,
-          models:       valResult.models,
-          generatedAt:  new Date().toISOString(),
+          assetType:     finAssetType,
+          blended:       Math.round(valResult.blended),
+          equityValue:   valResult.equityValue,
+          pricePerToken: valResult.pricePerToken,
+          issuedShares:  valResult.issuedShares,
+          models:        valResult.models,
+          generatedAt:   new Date().toISOString(),
         };
       } catch (e) {
         console.error('[VALUATION] Engine failed on submission:', e.message);
@@ -1782,17 +1816,42 @@ router.put('/:id/amend',
         });
       }
 
-      const {
-        legalName, description, websiteUrl, foundedYear, headquarters,
-        useOfProceeds, numEmployees, sector, assetType, assetClass, assetDescription,
-        ceo_name, ceo_email, ceo_id, cfo_name, cfo_email, cfo_id,
-        legal_name, legal_email, legal_id,
-        targetRaiseUsd, tokenIssuePrice, totalSupply, expectedYield,
-        distributionFrequency, authorisedShares, financialEngineData,
-      } = req.body;
+      // Parse complete structured payload with fallback to individual req.body keys.
+      let amendSd = {};
+      try { if (req.body.submissionData) amendSd = JSON.parse(req.body.submissionData); } catch {}
+
+      const legalName             = amendSd.legalName             || req.body.legalName;
+      const description           = amendSd.description           || req.body.description     || req.body.assetDescription;
+      const websiteUrl            = amendSd.websiteUrl            || req.body.websiteUrl;
+      const foundedYear           = amendSd.foundedYear           || req.body.foundedYear;
+      const headquarters          = amendSd.headquarters          || req.body.headquarters;
+      const useOfProceeds         = amendSd.useOfProceeds         || req.body.useOfProceeds;
+      const numEmployees          = amendSd.numEmployees          || req.body.numEmployees;
+      const sector                = amendSd.sector                || req.body.sector;
+      const assetType             = amendSd.assetType             || req.body.assetType;
+      const assetClass            = amendSd.assetClass            || req.body.assetClass;
+      const ceo_name              = amendSd.ceo_name              || req.body.ceo_name;
+      const ceo_email             = amendSd.ceo_email             || req.body.ceo_email;
+      const ceo_id                = amendSd.ceo_id                || req.body.ceo_id;
+      const cfo_name              = amendSd.cfo_name              || req.body.cfo_name;
+      const cfo_email             = amendSd.cfo_email             || req.body.cfo_email;
+      const cfo_id                = amendSd.cfo_id                || req.body.cfo_id;
+      const legal_name            = amendSd.legal_name            || req.body.legal_name;
+      const legal_email           = amendSd.legal_email           || req.body.legal_email;
+      const legal_id              = amendSd.legal_id              || req.body.legal_id;
+      const targetRaiseUsd        = amendSd.targetRaiseUsd        || req.body.targetRaiseUsd;
+      const tokenIssuePrice       = amendSd.tokenIssuePrice       || req.body.tokenIssuePrice;
+      const totalSupply           = amendSd.totalSupply           || req.body.totalSupply;
+      const expectedYield         = amendSd.expectedYield         || req.body.expectedYield;
+      const distributionFrequency = amendSd.distributionFrequency || req.body.distributionFrequency;
+      const authorisedShares      = amendSd.authorisedShares      || req.body.authorisedShares;
 
       let parsedFinancialEngine = {};
-      try { if (financialEngineData) parsedFinancialEngine = JSON.parse(financialEngineData); } catch {}
+      if (amendSd.financialData && Object.keys(amendSd.financialData).length > 0) {
+        parsedFinancialEngine = amendSd.financialData;
+      } else {
+        try { if (req.body.financialEngineData) parsedFinancialEngine = JSON.parse(req.body.financialEngineData); } catch {}
+      }
 
       const supabase     = require('../utils/supabase');
       const sym          = sub.token_symbol;
@@ -1816,9 +1875,6 @@ router.put('/:id/amend',
         }
       }
 
-      const shares        = parseInt(authorisedShares || parsedFinancialEngine.authorisedShares || 0)
-                         || parseInt(existingData.financialData?.totalSupply || 0)
-                         || 1000000;
       let valuationResult = existingData.valuationResult || null;
 
       const hasFinData = parsedFinancialEngine &&
@@ -1826,18 +1882,22 @@ router.put('/:id/amend',
       if (hasFinData) {
         try {
           const { calculateValuation } = require('../services/valuation');
-          const finAssetType  = (parsedFinancialEngine.assetType || assetType || 'EQUITY').toUpperCase();
-          const valResult     = calculateValuation(finAssetType, { ...parsedFinancialEngine, sector });
-          const totalDebtNum  = Number(parsedFinancialEngine.totalDebt) || 0;
-          const cashNum       = Number(parsedFinancialEngine.cash) || 0;
-          const equityValue   = valResult.blended - totalDebtNum + cashNum;
-          const pricePerToken = shares > 0 ? equityValue / shares : 0;
+          const finAssetType = (parsedFinancialEngine.assetType || assetType || 'EQUITY').toUpperCase();
+          const engineInput  = {
+            ...parsedFinancialEngine,
+            sector,
+            totalSupply:      parseInt(totalSupply || authorisedShares) || parsedFinancialEngine.totalSupply
+                           || parseInt(existingData.financialData?.totalSupply) || undefined,
+            authorisedShares: parseInt(authorisedShares || totalSupply) || parsedFinancialEngine.authorisedShares
+                           || parseInt(existingData.financialData?.authorisedShares) || undefined,
+          };
+          const valResult = calculateValuation(finAssetType, engineInput);
           valuationResult = {
             assetType:     finAssetType,
             blended:       Math.round(valResult.blended),
-            equityValue:   parseFloat(equityValue.toFixed(2)),
-            pricePerToken: parseFloat(pricePerToken.toFixed(6)),
-            issuedShares:  shares,
+            equityValue:   valResult.equityValue,
+            pricePerToken: valResult.pricePerToken,
+            issuedShares:  valResult.issuedShares,
             models:        valResult.models,
             generatedAt:   new Date().toISOString(),
           };
