@@ -1767,7 +1767,7 @@ router.put('/:id/amend',
     { name: 'regulatory',    maxCount: 1 },
   ]),
   async (req, res) => {
-    const AMEND_STATUSES = ['UNDER_REVIEW', 'INFO_REQUESTED', 'AUDITOR_ASSIGNED'];
+    const AMEND_STATUSES = ['PENDING', 'UNDER_REVIEW', 'INFO_REQUESTED', 'AUDITOR_ASSIGNED'];
     try {
       const [rows] = await db.execute('SELECT * FROM data_submissions WHERE id = ?', [req.params.id]);
       if (rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
