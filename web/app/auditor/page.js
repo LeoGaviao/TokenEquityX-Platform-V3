@@ -43,10 +43,12 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
   const [annualRevenue,     setAnnualRevenue]     = useState('');
   const [reportSection,     setReportSection]     = useState('data'); // data | report | signoff
   const [varianceJustification, setVarianceJustification] = useState('');
+  const [varianceAcknowledged, setVarianceAcknowledged]  = useState(false);
 
   useEffect(() => {
     setLoading(true);
     setCertifiedPrice(''); setFindings(''); setRiskRating(''); setMethodology('');
+    setVarianceJustification(''); setVarianceAcknowledged(false);
     setReportSection('data');
     api.get(`/submissions/${item.id}`)
       .then(r => { setFullData(r.data); })
@@ -78,7 +80,19 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
   const priceVariancePct = enginePriceNum && certifiedPriceNum && enginePriceNum > 0
     ? ((certifiedPriceNum - enginePriceNum) / enginePriceNum * 100)
     : null;
-  const varianceExceedsThreshold = priceVariancePct !== null && Math.abs(priceVariancePct) > 5;
+
+  const VARIANCE_THRESHOLDS = {
+    EQUITY: 0.10, BOND: 0.05, REAL_ESTATE: 0.15, REIT: 0.15,
+    MINING: 0.25, INFRASTRUCTURE: 0.15, AGRICULTURE: 0.20,
+  };
+  const assetType = (
+    storedValuation?.assetType ||
+    rawDataJson?.assetType ||
+    rawDataJson?.financialData?.assetType ||
+    'EQUITY'
+  ).toUpperCase();
+  const varianceThresholdPct = (VARIANCE_THRESHOLDS[assetType] || 0.10) * 100;
+  const varianceExceedsThreshold = priceVariancePct !== null && Math.abs(priceVariancePct) > varianceThresholdPct;
   const existingReport = fullData?.audit_report ? (
     typeof fullData.audit_report === 'string' ? JSON.parse(fullData.audit_report) : fullData.audit_report
   ) : null;
@@ -93,17 +107,13 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
     if (!findings)       { alert('Audit findings are required.'); return; }
     setSubmitting(true);
     try {
-      if (varianceExceedsThreshold && !varianceJustification.trim()) {
-        alert('You must provide a variance justification when the certified price deviates more than 5% from the engine reference price.');
-        setSubmitting(false);
-        return;
-      }
       const res = await api.put(`/submissions/${item.id}/audit-report`, {
         findings, methodology, riskRating, recommendation,
         caveats, certifiedPrice, valuationMethod,
-        engineReferencePrice: enginePriceNum || null,
-        priceVariancePct:     priceVariancePct || null,
+        engineReferencePrice:  enginePriceNum || null,
+        priceVariancePct:      priceVariancePct || null,
         varianceJustification: varianceJustification || null,
+        varianceAcknowledged:  varianceAcknowledged || false,
         yearsOfFinancials, annualRevenueUsd: annualRevenue,
       });
       // Also set oracle price if approving
@@ -348,14 +358,14 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
                   )}
                 </div>
 
-                {/* ── Variance justification — required if >5% deviation */}
+                {/* ── Variance justification — documented when price deviates beyond asset-class threshold */}
                 {varianceExceedsThreshold && (
-                  <div className="bg-amber-900/20 border border-amber-700/50 rounded-xl p-4">
-                    <label className="text-xs text-amber-300 block mb-1 font-semibold">
-                      ⚠️ Variance Justification Required *
+                  <div className="bg-amber-900/20 border border-amber-700/50 rounded-xl p-4 space-y-2">
+                    <label className="text-xs text-amber-300 block font-semibold">
+                      ⚠️ Price Variance Documentation
                     </label>
-                    <p className="text-xs text-gray-400 mb-2">
-                      Your certified price deviates more than 5% from the engine reference price. You must document your justification for this variance. This is required for regulatory compliance.
+                    <p className="text-xs text-gray-400">
+                      Your certified price deviates beyond the {varianceThresholdPct.toFixed(0)}% threshold for {assetType}. Document your justification below for the compliance record.
                     </p>
                     <textarea rows={3}
                       value={varianceJustification}
@@ -507,13 +517,18 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
                           <div className={`rounded-lg p-3 text-xs ${varianceExceedsThreshold ? 'bg-amber-900/30 border border-amber-700/50' : 'bg-green-900/20 border border-green-800/40'}`}>
                             <div className="flex items-center justify-between">
                               <span className={varianceExceedsThreshold ? 'text-amber-300 font-semibold' : 'text-green-300 font-semibold'}>
-                                {varianceExceedsThreshold ? '⚠️ Variance exceeds 5% threshold' : '✓ Variance within acceptable range'}
+                                {varianceExceedsThreshold
+                                  ? `⚠️ Variance exceeds ${varianceThresholdPct.toFixed(0)}% threshold for ${assetType}`
+                                  : `✅ Certified price is within the acceptable ${varianceThresholdPct.toFixed(0)}% threshold for ${assetType}`}
                               </span>
                               <span className={`font-mono font-bold ${priceVariancePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {priceVariancePct !== null ? `${priceVariancePct >= 0 ? '+' : ''}${priceVariancePct.toFixed(2)}%` : '—'}
                               </span>
                             </div>
                             <div className="flex gap-4 mt-1.5 text-gray-400">
+                              <span>Variance from system reference: <span className={`font-mono font-bold ${varianceExceedsThreshold ? 'text-amber-300' : 'text-green-300'}`}>{priceVariancePct !== null ? `${Math.abs(priceVariancePct).toFixed(2)}%` : '—'}</span> (threshold for {assetType}: {varianceThresholdPct.toFixed(0)}%)</span>
+                            </div>
+                            <div className="flex gap-4 mt-1 text-gray-500">
                               <span>System reference: <span className="text-blue-300 font-mono">${enginePriceNum?.toFixed(4)}</span></span>
                               <span>Certified: <span className="text-white font-mono">${parseFloat(certifiedPrice).toFixed(4)}</span></span>
                             </div>
@@ -539,6 +554,28 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
                     </div>
                   )}
                 </div>
+
+                {/* ── Variance warning banner + acknowledgement (signoff tab) */}
+                {varianceExceedsThreshold && certifiedPrice && !isNaN(parseFloat(certifiedPrice)) && (
+                  <div className="bg-amber-950/40 border border-amber-600/50 rounded-xl p-4 space-y-3">
+                    <p className="text-amber-300 font-semibold text-sm">
+                      ⚠️ Your certified price of ${parseFloat(certifiedPrice).toFixed(4)} varies by {Math.abs(priceVariancePct).toFixed(2)}% from the system reference price of ${enginePriceNum?.toFixed(4)}.
+                    </p>
+                    <p className="text-amber-200/70 text-xs">
+                      The acceptable threshold for {assetType} is {varianceThresholdPct.toFixed(0)}%. Please provide a detailed justification in your audit findings (Report tab).
+                    </p>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={varianceAcknowledged}
+                        onChange={e => setVarianceAcknowledged(e.target.checked)}
+                        className="mt-0.5 accent-amber-400 w-4 h-4 flex-shrink-0"/>
+                      <span className="text-xs text-amber-200/80 leading-relaxed">
+                        I acknowledge the price variance and confirm my certified price is supported by documented evidence in the audit findings.
+                      </span>
+                    </label>
+                  </div>
+                )}
 
                 {/* Auditor notes to issuer */}
                 <div>
@@ -582,7 +619,7 @@ function AuditReviewPanel({ item, note, setNote, doAction, userRole }) {
                   )}
                   <button
                     onClick={()=>handleSubmitReport('APPROVE')}
-                    disabled={submitting || !certifiedPrice || !riskRating || !findings}
+                    disabled={submitting || !certifiedPrice || !riskRating || !findings || (varianceExceedsThreshold && !varianceAcknowledged)}
                     className="w-full py-3 rounded-xl font-bold text-white bg-green-700 hover:bg-green-600 disabled:opacity-40 transition-colors">
                     {submitting ? '⏳ Submitting report…' : '✅ Submit Audit Report & Approve'}
                   </button>

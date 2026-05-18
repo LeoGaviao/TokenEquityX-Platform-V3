@@ -514,6 +514,11 @@ router.put('/:id/status',
   }
 );
 
+const VARIANCE_THRESHOLDS = {
+  EQUITY: 0.10, BOND: 0.05, REAL_ESTATE: 0.15, REIT: 0.15,
+  MINING: 0.25, INFRASTRUCTURE: 0.15, AGRICULTURE: 0.20,
+};
+
 // ── PUT /api/submissions/:id/audit-report ──────────────────────
 router.put('/:id/audit-report',
   authenticate,
@@ -523,6 +528,8 @@ router.put('/:id/audit-report',
       findings, methodology, riskRating, recommendation,
       caveats, certifiedPrice, valuationMethod,
       yearsOfFinancials, annualRevenueUsd,
+      engineReferencePrice, priceVariancePct: clientVariancePct,
+      varianceJustification, varianceAcknowledged,
     } = req.body;
 
     if (!certifiedPrice || !riskRating || !recommendation) {
@@ -588,6 +595,19 @@ router.put('/:id/audit-report',
         return res.status(400).json({ error: 'Prerequisites not met to submit audit report', missing: arMissing });
       }
       // ──────────────────────────────────────────────────────────────────
+
+      // Compute variance compliance fields for audit trail
+      const arAssetType     = (arGateData.assetType || arGateData.financialData?.assetType || arGateData.valuationResult?.assetType || 'EQUITY').toUpperCase();
+      const arVarThreshold  = VARIANCE_THRESHOLDS[arAssetType] || 0.10;
+      const refPrice        = parseFloat(engineReferencePrice || arGateData.valuationResult?.pricePerToken || 0);
+      const certPrice       = parseFloat(certifiedPrice);
+      const computedVarPct  = refPrice > 0 ? ((certPrice - refPrice) / refPrice) * 100 : null;
+      auditReport.engineReferencePrice  = refPrice || null;
+      auditReport.priceVariancePct      = computedVarPct !== null ? parseFloat(computedVarPct.toFixed(4)) : null;
+      auditReport.varianceThreshold     = arVarThreshold;
+      auditReport.varianceExceeded      = computedVarPct !== null && Math.abs(computedVarPct) > arVarThreshold * 100;
+      auditReport.varianceAcknowledged  = varianceAcknowledged || false;
+      auditReport.varianceJustification = varianceJustification || null;
 
       const newStatus = recommendation === 'APPROVE'
         ? 'AUDITOR_APPROVED'
