@@ -1453,4 +1453,69 @@ router.get('/clear-audit-report', async (req, res) => {
   }
 });
 
+// GET /api/setup/cleanup-test-listings — hard-delete all records for known test token symbols
+router.get('/cleanup-test-listings', async (req, res) => {
+  const { secret } = req.query;
+  if (secret !== process.env.SETUP_SECRET && secret !== 'tokenequityx-setup-2024') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const TEST_SYMBOLS = ['ZGWB', 'HCPR', 'GDMR', 'HCBD', 'ZWG'];
+  const summary = {};
+
+  for (const sym of TEST_SYMBOLS) {
+    const counts = {};
+    try {
+      // 1. token_holdings
+      const h = await pool._pool.query('DELETE FROM token_holdings WHERE token_symbol = $1', [sym]);
+      counts.token_holdings = h.rowCount || 0;
+
+      // 2. offering_subscriptions (via primary_offerings FK)
+      const os = await pool._pool.query(
+        'DELETE FROM offering_subscriptions WHERE offering_id IN (SELECT id FROM primary_offerings WHERE token_symbol = $1)',
+        [sym]
+      );
+      counts.offering_subscriptions = os.rowCount || 0;
+
+      // 3. primary_offerings
+      const po = await pool._pool.query('DELETE FROM primary_offerings WHERE token_symbol = $1', [sym]);
+      counts.primary_offerings = po.rowCount || 0;
+
+      // 4. p2p_offers
+      const p2p = await pool._pool.query('DELETE FROM p2p_offers WHERE token_symbol = $1', [sym]);
+      counts.p2p_offers = p2p.rowCount || 0;
+
+      // 5. settlement_instructions
+      try {
+        const si = await pool._pool.query('DELETE FROM settlement_instructions WHERE token_symbol = $1', [sym]);
+        counts.settlement_instructions = si.rowCount || 0;
+      } catch { counts.settlement_instructions = 0; }
+
+      // 6. spv_annual_fees
+      try {
+        const sf = await pool._pool.query('DELETE FROM spv_annual_fees WHERE token_symbol = $1', [sym]);
+        counts.spv_annual_fees = sf.rowCount || 0;
+      } catch { counts.spv_annual_fees = 0; }
+
+      // 7. application_fees
+      const af = await pool._pool.query('DELETE FROM application_fees WHERE token_symbol = $1', [sym]);
+      counts.application_fees = af.rowCount || 0;
+
+      // 8. data_submissions
+      const ds = await pool._pool.query('DELETE FROM data_submissions WHERE token_symbol = $1', [sym]);
+      counts.data_submissions = ds.rowCount || 0;
+
+      // 9. tokens
+      const tk = await pool._pool.query('DELETE FROM tokens WHERE token_symbol = $1', [sym]);
+      counts.tokens = tk.rowCount || 0;
+
+      summary[sym] = { deleted: counts };
+    } catch (err) {
+      summary[sym] = { error: err.message, partial: counts };
+    }
+  }
+
+  res.json({ success: true, symbols: TEST_SYMBOLS, summary });
+});
+
 module.exports = router;
