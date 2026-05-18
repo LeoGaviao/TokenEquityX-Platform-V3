@@ -1507,14 +1507,21 @@ export default function AdminDashboard() {
 
   const assignAuditor = async (item, auditorName) => {
     try {
-      if (item.isNewApplication || item.id) await api.put(`/submissions/${item.id}/assign`, { assignedAuditor: auditorName });
-      setPipeline(p => p.map(i => i.id===item.id ? { ...i, auditor: auditorName } : i));
+      const res = await api.put(`/submissions/${item.id}/assign`, { assignedAuditor: auditorName });
+      const { assignedAuditor: resolvedEmail, newStatus } = res.data || {};
+      setPipeline(p => p.map(i => i.id === item.id ? {
+        ...i,
+        auditor: resolvedEmail || auditorName,
+        assigned_auditor: resolvedEmail || auditorName,
+        analyst: resolvedEmail || auditorName,
+        status: newStatus || i.status,
+        stages: { ...i.stages, auditor: true },
+      } : i));
       setAssignModal(null); setAssignNote('');
-      notify('success', `🔍 "${auditorName}" assigned to ${item.name}.`);
+      notify('success', `Auditor "${resolvedEmail || auditorName}" assigned to ${item.name}.`);
     } catch(e) {
-      setPipeline(p => p.map(i => i.id===item.id ? { ...i, auditor: auditorName } : i));
       setAssignModal(null); setAssignNote('');
-      notify('success', `🔍 "${auditorName}" assigned to ${item.name}.`);
+      notify('error', e?.response?.data?.error || `Failed to assign auditor to ${item.name}.`);
     }
   };
 

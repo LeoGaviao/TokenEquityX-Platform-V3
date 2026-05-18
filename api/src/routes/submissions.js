@@ -302,8 +302,8 @@ router.put('/:id/assign',
       if (subGate.length === 0) return res.status(404).json({ error: 'Submission not found' });
       const gSub = subGate[0];
       const gateMissing = [];
-      if (gSub.status !== 'UNDER_REVIEW') {
-        gateMissing.push(`Submission must be in UNDER_REVIEW status (current: ${gSub.status})`);
+      if (!['PENDING', 'UNDER_REVIEW'].includes(gSub.status)) {
+        gateMissing.push(`Submission must be in PENDING or UNDER_REVIEW status (current: ${gSub.status})`);
       }
       if ((gSub.document_count || 0) < 7) {
         gateMissing.push(`All 7 documents must be uploaded (${gSub.document_count || 0} of 7 uploaded)`);
@@ -366,7 +366,9 @@ router.put('/:id/assign',
 
       await db.execute(`
         UPDATE data_submissions
-        SET assigned_auditor = ?, status = 'UNDER_REVIEW',
+        SET assigned_auditor = ?,
+            status = CASE WHEN status = 'PENDING' THEN 'UNDER_REVIEW' ELSE status END,
+            auditor_status = 'PENDING',
             auditor_notes = COALESCE(auditor_notes, '') || ' | Assigned to: ' || ?
         WHERE id = ?
       `, [auditorUUID, auditorEmailResolved, req.params.id]);
@@ -438,7 +440,13 @@ router.put('/:id/assign',
         category:    'APPLICATION',
       }).catch(e => console.error('[MESSENGER] assign sendMessage (admin confirm) failed:', e.message));
 
-      res.json({ success: true, assignedAuditor, message: `Submission assigned to ${assignedAuditor}` });
+      res.json({
+        success: true,
+        assignedAuditor: auditorEmailResolved || auditorUUID,
+        auditorId: auditorUUID,
+        newStatus: gSub.status === 'PENDING' ? 'UNDER_REVIEW' : gSub.status,
+        message: `Submission assigned to ${auditorEmailResolved || assignedAuditor}`,
+      });
     } catch (err) {
       res.status(500).json({ error: 'Could not assign auditor: ' + err.message });
     }
