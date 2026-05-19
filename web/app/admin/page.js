@@ -315,6 +315,8 @@ function AdminOfferingsTab({ NAVY, GOLD, GREEN, RED, notify }) {
   const [view,          setView]          = useState('list'); // 'list' | 'detail'
   const [submitting,    setSubmitting]    = useState(false);
   const [closeForm,     setCloseForm]     = useState({ bank_reference:'', admin_notes:'', trading_mode:'FULL_TRADING' });
+  const [previewOffering,   setPreviewOffering]   = useState(null);
+  const [expandedRationale, setExpandedRationale] = useState(new Set());
   const API  = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
   const hdrs = () => ({ Authorization:`Bearer ${localStorage.getItem('token')}`, 'Content-Type':'application/json' });
   const fmt  = n => { const v=parseFloat(n||0); if(v>=1e6) return `$${(v/1e6).toFixed(2)}M`; if(v>=1e3) return `$${(v/1e3).toFixed(1)}K`; return `$${v.toFixed(2)}`; };
@@ -586,39 +588,98 @@ function AdminOfferingsTab({ NAVY, GOLD, GREEN, RED, notify }) {
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block"/>
             Awaiting Review / Approval ({pendingQueue.length})
           </h3>
-          <div className="space-y-3">
-            {pendingQueue.map(o=>(
-              <div key={o.id} className="bg-gray-900 border border-amber-800/30 rounded-xl p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="font-bold text-blue-300">{o.symbol}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[o.status]||''}`}>{o.status?.replace('_',' ')}</span>
-                      {o.auditor_recommendation && (
-                        <span className={`text-xs font-semibold ${RECOMMENDATION_COLORS[o.auditor_recommendation]||''}`}>
-                          Auditor: {o.auditor_recommendation?.replace('_',' ')}
-                        </span>
+          <div className="space-y-4">
+            {pendingQueue.map(o => {
+              const isExpanded = expandedRationale.has(o.id);
+              const rationale  = o.offering_rationale || '';
+              const truncated  = rationale.length > 150 ? rationale.slice(0, 150) : rationale;
+              const REC_STYLE  = {
+                APPROVE:         'text-green-400 bg-green-900/30 border-green-700/50',
+                REJECT:          'text-red-400 bg-red-900/30 border-red-700/50',
+                REQUEST_CHANGES: 'text-amber-400 bg-amber-900/30 border-amber-700/50',
+              };
+              const openDetail = () => { setSelected(o); setView('detail'); loadSubscriptions(o.id); };
+              return (
+                <div key={o.id} onClick={openDetail}
+                  className="bg-gray-900 border border-amber-800/30 rounded-xl p-4 space-y-3 cursor-pointer hover:border-amber-600/50 transition-colors">
+
+                  {/* Header: reference, symbol, asset type, status */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="text-xs font-mono text-gray-500 bg-gray-800 px-2 py-0.5 rounded">#{o.id}</span>
+                      <span className="font-bold text-blue-300 text-base">{o.token_symbol || o.symbol}</span>
+                      {o.token_name && <span className="text-xs text-gray-400">{o.token_name}</span>}
+                      {o.asset_type && <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded uppercase">{o.asset_type}</span>}
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[o.status] || ''}`}>{o.status?.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => setPreviewOffering(o)}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600">👁️ Preview</button>
+                      <button onClick={openDetail}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-blue-900/40 text-blue-300 hover:bg-blue-900/60">Review</button>
+                      <button onClick={() => approveOffering(o.id)} disabled={submitting}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-green-900/40 text-green-300 hover:bg-green-900/60 disabled:opacity-40">✅ Approve</button>
+                      <button onClick={() => rejectOffering(o.id)}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-red-900/40 text-red-300 hover:bg-red-900/60">❌ Reject</button>
+                    </div>
+                  </div>
+
+                  {/* Issuer info */}
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-500">👤</span>
+                    <span className="text-white font-medium">{o.issuer_name || '—'}</span>
+                    {o.issuer_email && <><span className="text-gray-600">·</span><span className="text-gray-400">{o.issuer_email}</span></>}
+                  </div>
+
+                  {/* Key metrics grid */}
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
+                    {[
+                      ['Price/Token',    `$${parseFloat(o.offering_price_usd || 0).toFixed(4)}`],
+                      ['Target Raise',   fmt(o.target_raise_usd)],
+                      ['Tokens Offered', parseInt(o.total_tokens_offered || 0).toLocaleString()],
+                      ['Min Sub.',       fmt(o.min_subscription_usd)],
+                      ['Max Sub.',       o.max_subscription_usd ? fmt(o.max_subscription_usd) : 'No limit'],
+                      ['Deadline',       new Date(o.subscription_deadline).toLocaleDateString('en-GB')],
+                    ].map(([l, v]) => (
+                      <div key={l} className="bg-gray-800/50 rounded-lg px-2 py-1.5">
+                        <p className="text-gray-500 mb-0.5">{l}</p>
+                        <p className="text-white font-semibold truncate">{v}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Auditor recommendation */}
+                  {o.auditor_recommendation && (
+                    <div className={`text-xs px-3 py-1.5 rounded-lg border inline-flex items-center gap-2 ${REC_STYLE[o.auditor_recommendation] || 'text-gray-300 bg-gray-800 border-gray-700'}`}>
+                      <span className="font-semibold">🔍 Auditor: {o.auditor_recommendation.replace(/_/g, ' ')}</span>
+                      {o.auditor_notes && <><span className="opacity-40">·</span><span className="opacity-75">{o.auditor_notes.slice(0, 80)}{o.auditor_notes.length > 80 ? '…' : ''}</span></>}
+                    </div>
+                  )}
+
+                  {/* Offering rationale */}
+                  {rationale && (
+                    <div className="text-xs text-gray-400 leading-relaxed" onClick={e => e.stopPropagation()}>
+                      <span className="text-gray-500 font-medium">Rationale: </span>
+                      {isExpanded ? rationale : truncated}
+                      {rationale.length > 150 && (
+                        <>
+                          {!isExpanded && '…'}
+                          <button
+                            onClick={() => setExpandedRationale(prev => {
+                              const next = new Set(prev);
+                              isExpanded ? next.delete(o.id) : next.add(o.id);
+                              return next;
+                            })}
+                            className="ml-1 text-blue-400 hover:text-blue-300 underline">
+                            {isExpanded ? 'show less' : 'read more'}
+                          </button>
+                        </>
                       )}
                     </div>
-                    <div className="flex gap-5 text-xs text-gray-400 flex-wrap">
-                      <span>Price: <span className="text-white">${parseFloat(o.offering_price_usd).toFixed(4)}</span></span>
-                      <span>Target: <span className="text-white">{fmt(o.target_raise_usd)}</span></span>
-                      <span>Tokens: <span className="text-white">{parseInt(o.total_tokens_offered).toLocaleString()}</span></span>
-                      <span>Deadline: <span className="text-white">{new Date(o.subscription_deadline).toLocaleDateString('en-GB')}</span></span>
-                      <span>Issuer: <span className="text-white">{o.issuer_name || o.issuer_email || '—'}</span></span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button onClick={()=>{ setSelected(o); setView('detail'); loadSubscriptions(o.id); }}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-blue-900/40 text-blue-300 hover:bg-blue-900/60">Review</button>
-                    <button onClick={()=>approveOffering(o.id)} disabled={submitting}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-green-900/40 text-green-300 hover:bg-green-900/60 disabled:opacity-40">✅ Approve</button>
-                    <button onClick={()=>rejectOffering(o.id)}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-red-900/40 text-red-300 hover:bg-red-900/60">❌ Reject</button>
-                  </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -684,6 +745,65 @@ function AdminOfferingsTab({ NAVY, GOLD, GREEN, RED, notify }) {
           <p className="text-3xl mb-3">🏦</p>
           <p className="font-semibold mb-1">No offering proposals yet</p>
           <p className="text-gray-500 text-sm">Issuers will submit offering proposals from their dashboard once their token is approved through the pipeline.</p>
+        </div>
+      )}
+
+      {/* ── INVESTOR PREVIEW MODAL */}
+      {previewOffering && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={() => setPreviewOffering(null)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto space-y-4"
+            onClick={e => e.stopPropagation()}>
+
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="text-xs bg-amber-900/50 text-amber-300 border border-amber-700/50 px-2 py-0.5 rounded-full">Preview Only — Not Live</span>
+                <h3 className="text-lg font-bold mt-2">
+                  {previewOffering.token_name || previewOffering.symbol}
+                  <span className="text-gray-400 font-normal text-sm ml-2">({previewOffering.token_symbol || previewOffering.symbol})</span>
+                </h3>
+                {previewOffering.asset_type && (
+                  <span className="text-xs bg-blue-900/40 text-blue-300 border border-blue-800/40 px-2 py-0.5 rounded mt-1 inline-block uppercase">{previewOffering.asset_type}</span>
+                )}
+              </div>
+              <button onClick={() => setPreviewOffering(null)} className="text-gray-500 hover:text-white text-2xl leading-none flex-shrink-0">×</button>
+            </div>
+
+            <div className="bg-gray-800 rounded-xl p-4">
+              <p className="text-xs text-gray-500 mb-1">Offering Price</p>
+              <p className="text-2xl font-black text-yellow-400">
+                ${parseFloat(previewOffering.offering_price_usd || 0).toFixed(4)}
+                <span className="text-sm font-normal text-gray-400 ml-2">per token</span>
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {[
+                ['Target Raise',        fmt(previewOffering.target_raise_usd)],
+                ['Fundraising Progress','0% — not yet open'],
+                ['Min Subscription',    fmt(previewOffering.min_subscription_usd)],
+                ['Max Subscription',    previewOffering.max_subscription_usd ? fmt(previewOffering.max_subscription_usd) : 'No limit'],
+                ['Subscription Deadline', new Date(previewOffering.subscription_deadline).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })],
+                ['Total Tokens Offered', parseInt(previewOffering.total_tokens_offered || 0).toLocaleString()],
+              ].map(([l, v]) => (
+                <div key={l} className="bg-gray-800 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 mb-0.5">{l}</p>
+                  <p className="font-semibold text-white">{v}</p>
+                </div>
+              ))}
+            </div>
+
+            {previewOffering.offering_rationale && (
+              <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-4">
+                <p className="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Offering Rationale</p>
+                <p className="text-sm text-gray-300 leading-relaxed">{previewOffering.offering_rationale}</p>
+              </div>
+            )}
+
+            <div className="bg-amber-900/20 border border-amber-700/40 rounded-lg px-4 py-3">
+              <p className="text-xs text-amber-300">⚠️ Preview only — this offering is not yet open to investors</p>
+            </div>
+          </div>
         </div>
       )}
     </div>
