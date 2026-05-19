@@ -1991,27 +1991,6 @@ function IssuerOfferingTab({ notify, submissionStatus = null }) {
   useEffect(() => { loadData(); }, []);
 
   const submitOffering = async () => {
-    console.log('[OFFERING FORM STATE]', {
-      token_id:              form.token_id,
-      offering_price_usd:    form.offering_price_usd,
-      total_tokens_offered:  form.total_tokens_offered,
-      target_raise_usd:      form.target_raise_usd,
-      min_subscription_usd:  form.min_subscription_usd,
-      max_subscription_usd:  form.max_subscription_usd,
-      subscription_deadline: form.subscription_deadline,
-      offering_rationale:    form.offering_rationale,
-    });
-
-    const missingDebug = [];
-    if (!form.token_id)              missingDebug.push('token_id');
-    if (!form.offering_price_usd)    missingDebug.push('offering_price_usd');
-    if (!form.total_tokens_offered)  missingDebug.push('total_tokens_offered');
-    if (!form.target_raise_usd)      missingDebug.push('target_raise_usd');
-    if (!form.min_subscription_usd)  missingDebug.push('min_subscription_usd');
-    if (!form.subscription_deadline) missingDebug.push('subscription_deadline');
-    if (!form.offering_rationale)    missingDebug.push('offering_rationale');
-    console.log('[OFFERING MISSING FIELDS]', missingDebug);
-
     const missing = [
       !form.token_id              && 'Token',
       !form.offering_price_usd    && 'Offering Price',
@@ -2154,7 +2133,7 @@ function IssuerOfferingTab({ notify, submissionStatus = null }) {
             <div><label className="text-xs text-gray-400 block mb-1">Offering Price (USD) *</label><input type="number" value={form.offering_price_usd} onChange={e=>setForm(f=>({...f,offering_price_usd:e.target.value}))} className={inputCls} placeholder="e.g. 1.00"/></div>
             <div><label className="text-xs text-gray-400 block mb-1">Target Raise (USD) *</label><input type="number" value={form.target_raise_usd} onChange={e=>setForm(f=>({...f,target_raise_usd:e.target.value}))} className={inputCls} placeholder="e.g. 2000000"/></div>
             <div><label className="text-xs text-gray-400 block mb-1">Total Tokens Offered *</label><input type="number" value={form.total_tokens_offered} onChange={e=>setForm(f=>({...f,total_tokens_offered:e.target.value}))} className={inputCls} placeholder="e.g. 2000000"/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Subscription Deadline *</label><input type="datetime-local" value={form.subscription_deadline} onChange={e=>setForm(f=>({...f,subscription_deadline:e.target.value}))} className={inputCls}/></div>
+            <div><label className="text-xs text-gray-400 block mb-1">Subscription Deadline *</label><input type="date" value={form.subscription_deadline} min={new Date().toISOString().split('T')[0]} onChange={e=>setForm(f=>({...f,subscription_deadline:e.target.value}))} className={inputCls}/></div>
             <div><label className="text-xs text-gray-400 block mb-1">Min Subscription (USD)</label><input type="number" value={form.min_subscription_usd} onChange={e=>setForm(f=>({...f,min_subscription_usd:e.target.value}))} className={inputCls} placeholder="100"/></div>
             <div><label className="text-xs text-gray-400 block mb-1">Max Subscription (USD)</label><input type="number" value={form.max_subscription_usd} onChange={e=>setForm(f=>({...f,max_subscription_usd:e.target.value}))} className={inputCls} placeholder="Optional"/></div>
           </div>
