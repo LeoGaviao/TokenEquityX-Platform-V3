@@ -794,7 +794,7 @@ export default function OnboardingPage() {
                 {investorTier === 'CORPORATE'
                   ? 'Upload your personal ID and your company registration certificate.'
                   : investorTier === 'INSTITUTION'
-                  ? 'Upload your personal ID and your institution's registration certificate.'
+                  ? 'Upload your personal ID and your institution registration certificate.'
                   : role === 'ISSUER'
                   ? 'Upload a government-issued ID for the authorised company representative.'
                   : role === 'PARTNER'
