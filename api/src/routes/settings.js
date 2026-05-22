@@ -10,7 +10,13 @@ const { sendMessage }  = require('../utils/messenger');
 
 // ── GET /api/settings/public — unauthenticated subset of settings for frontend use
 router.get('/public', async (req, res) => {
-  const PUBLIC_KEYS = ['beneficial_owner_threshold'];
+  const PUBLIC_KEYS = [
+    'beneficial_owner_threshold',
+    'tier1_min_investment_usd',
+    'tier2_min_investment_usd',
+    'tier3_min_investment_usd',
+    'premium_trial_days_new_investors',
+  ];
   try {
     const [rows] = await db.execute(
       `SELECT key, value FROM platform_settings WHERE key = ANY($1::text[])`,

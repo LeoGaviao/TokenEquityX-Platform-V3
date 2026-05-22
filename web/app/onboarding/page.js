@@ -3,13 +3,29 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
 
-// ── Step definitions per role ──────────────────────────────────────────────
-const INVESTOR_STEPS = [
+// ── Step definitions ───────────────────────────────────────────────────────
+const RETAIL_STEPS = [
   { id: 'welcome',  label: 'Welcome',       icon: '👋' },
   { id: 'personal', label: 'Personal Info', icon: '🪪' },
   { id: 'address',  label: 'Address',       icon: '🏠' },
   { id: 'docs',     label: 'Documents',     icon: '📄' },
   { id: 'risk',     label: 'Risk Profile',  icon: '📊' },
+];
+const CORPORATE_STEPS = [
+  { id: 'welcome',  label: 'Welcome',        icon: '👋' },
+  { id: 'personal', label: 'Representative', icon: '🪪' },
+  { id: 'address',  label: 'Address',        icon: '🏠' },
+  { id: 'docs',     label: 'Documents',      icon: '📄' },
+  { id: 'company',  label: 'Company Info',   icon: '🏢' },
+  { id: 'risk',     label: 'Risk Profile',   icon: '📊' },
+];
+const INSTITUTION_STEPS = [
+  { id: 'welcome',     label: 'Welcome',      icon: '👋' },
+  { id: 'personal',    label: 'Officer Info', icon: '🪪' },
+  { id: 'address',     label: 'Address',      icon: '🏠' },
+  { id: 'docs',        label: 'Documents',    icon: '📄' },
+  { id: 'institution', label: 'Institution',  icon: '🏦' },
+  { id: 'mandate',     label: 'Mandate',      icon: '📋' },
 ];
 const ISSUER_STEPS = [
   { id: 'welcome',     label: 'Welcome',      icon: '👋' },
@@ -25,9 +41,14 @@ const PARTNER_STEPS = [
   { id: 'docs',        label: 'Documents',    icon: '📄' },
   { id: 'declaration', label: 'Declaration',  icon: '✍️' },
 ];
-const STEPS_FOR_ROLE = { INVESTOR: INVESTOR_STEPS, ISSUER: ISSUER_STEPS, PARTNER: PARTNER_STEPS };
 
-// ── Risk questionnaire — investors only ────────────────────────────────────
+function stepsForTier(tier) {
+  if (tier === 'CORPORATE')   return CORPORATE_STEPS;
+  if (tier === 'INSTITUTION') return INSTITUTION_STEPS;
+  return RETAIL_STEPS;
+}
+
+// ── Risk questionnaire ─────────────────────────────────────────────────────
 const RISK_QUESTIONS = [
   {
     id: 'objective',
@@ -113,7 +134,8 @@ const PROFILE_DESC = {
 };
 
 // ── Shared styles ──────────────────────────────────────────────────────────
-const INPUT = 'w-full bg-[#0D1B2A] border border-[#1A3C5E] rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C8972B] placeholder-gray-600';
+const INPUT    = 'w-full bg-[#0D1B2A] border border-[#1A3C5E] rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C8972B] placeholder-gray-600';
+const TEXTAREA = INPUT + ' resize-none';
 
 // ── Helper components ──────────────────────────────────────────────────────
 function FormField({ label, required, children }) {
@@ -127,11 +149,13 @@ function FormField({ label, required, children }) {
   );
 }
 
-function NavButtons({ step, setStep, canAdvance, isLastStep, advance, loading, nextLabel }) {
+function NavButtons({ step, canAdvance, isLastStep, advance, loading, nextLabel, onBack }) {
+  const handleBack = onBack || null;
+  const showBack   = step > 0 || !!onBack;
   return (
     <div className="mt-6 flex justify-between items-center">
-      {step > 0
-        ? <button onClick={() => setStep(s => s - 1)} className="text-gray-400 text-sm hover:text-gray-200">← Back</button>
+      {showBack
+        ? <button onClick={handleBack || (() => {})} className="text-gray-400 text-sm hover:text-gray-200">← Back</button>
         : <div />
       }
       <button
@@ -175,22 +199,59 @@ export default function OnboardingPage() {
   const router = useRouter();
 
   const [role,  setRole]  = useState('INVESTOR');
-  const [steps, setSteps] = useState(INVESTOR_STEPS);
+  const [steps, setSteps] = useState(RETAIL_STEPS);
   const [step,  setStep]  = useState(0);
   const [user,  setUser]  = useState(null);
 
+  // Investor tier selection
+  const [investorTier,  setInvestorTier]  = useState(null);   // 'RETAIL' | 'CORPORATE' | 'INSTITUTION'
+  const [tierSelected,  setTierSelected]  = useState(false);
+  const [platformSettings, setPlatformSettings] = useState({});
+
+  // Personal fields (shared across all tiers/roles)
   const [personal, setPersonal] = useState({
     fullName: '', dateOfBirth: '', nationality: '',
-    idType: 'national_id', idNumber: '', jobTitle: '',
+    idType: 'national_id', idNumber: '', phone: '',
+    occupation: '', jobTitle: '',
   });
+
+  // Address
   const [address, setAddress] = useState({
     addressLine1: '', addressLine2: '', city: '', country: '',
   });
-  const [idDoc, setIdDoc] = useState(null);
 
+  // Documents
+  const [idDoc,      setIdDoc]      = useState(null);
+  const [companyDoc, setCompanyDoc] = useState(null);
+  const [mandateDoc, setMandateDoc] = useState(null);
+
+  // Risk questionnaire
   const [riskAnswers, setRiskAnswers] = useState({});
   const [riskResult,  setRiskResult]  = useState(null);
+  const [investorDecl, setInvestorDecl] = useState(false);
 
+  // Tier 3 mandate declaration
+  const [institutionDecl, setInstitutionDecl] = useState(false);
+
+  // Corporate details (Tier 2)
+  const [corporate, setCorporate] = useState({
+    companyName: '', registrationNumber: '', countryOfRegistration: '',
+    businessType: '', sourceOfFunds: '', businessDescription: '',
+    directors: [{ name: '', idNumber: '', email: '' }],
+    beneficialOwners: [{ name: '', ownershipPct: '', nationality: '' }],
+    amlDecl: false, pepDecl: false,
+  });
+
+  // Institutional details (Tier 3)
+  const [institutional, setInstitutional] = useState({
+    institutionName: '', institutionType: 'ASSET_MANAGER',
+    registrationNumber: '', countryOfRegistration: '',
+    aumUsd: '', ipecRegistered: false, seczRegistered: false,
+    otherRegulator: '', mandateScope: '', sourceOfFunds: '',
+    amlDecl: false, pepDecl: false,
+  });
+
+  // Issuer / Partner declarations
   const [issuerDecl, setIssuerDecl] = useState({
     authorised: false, goodStanding: false, accurate: false,
   });
@@ -201,6 +262,14 @@ export default function OnboardingPage() {
   const [loading,   setLoading]   = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error,     setError]     = useState('');
+
+  useEffect(() => {
+    // Fetch public platform settings for tier min investment display
+    fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api') + '/settings/public')
+      .then(r => r.json())
+      .then(d => { if (d && typeof d === 'object') setPlatformSettings(d); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -223,29 +292,81 @@ export default function OnboardingPage() {
     setUser(cleanUser);
     const r = cleanUser.role || 'INVESTOR';
     setRole(r);
-    setSteps(STEPS_FOR_ROLE[r] || INVESTOR_STEPS);
+
+    // Non-investor roles skip tier selection and go straight to their steps
+    if (r !== 'INVESTOR') {
+      const roleSteps = r === 'ISSUER' ? ISSUER_STEPS : PARTNER_STEPS;
+      setSteps(roleSteps);
+      setTierSelected(true);
+    }
   }, []);
+
+  // Select a tier and enter the multi-step flow
+  const selectTier = (tier) => {
+    setInvestorTier(tier);
+    setSteps(stepsForTier(tier));
+    setTierSelected(true);
+    setStep(0);
+  };
 
   const stepId     = steps[step]?.id;
   const isLastStep = step === steps.length - 1;
 
   const canAdvance = () => {
     switch (stepId) {
-      case 'welcome':  return true;
-      case 'personal':
-        return !!(
+      case 'welcome': return true;
+
+      case 'personal': {
+        const base = !!(
           personal.fullName.trim() &&
           personal.dateOfBirth &&
           personal.nationality.trim() &&
           personal.idNumber.trim() &&
-          (role !== 'ISSUER' || personal.jobTitle.trim())
+          personal.phone.trim()
         );
+        if (investorTier === 'CORPORATE' || investorTier === 'INSTITUTION' || role === 'ISSUER')
+          return base && !!personal.jobTitle.trim();
+        return base;
+      }
+
       case 'address':
         return !!(address.addressLine1.trim() && address.city.trim() && address.country.trim());
+
       case 'docs':
+        if (investorTier === 'CORPORATE' || investorTier === 'INSTITUTION')
+          return !!idDoc && !!companyDoc;
         return !!idDoc;
+
+      case 'company':
+        return !!(
+          corporate.companyName.trim() &&
+          corporate.registrationNumber.trim() &&
+          corporate.countryOfRegistration.trim() &&
+          corporate.businessType.trim() &&
+          corporate.sourceOfFunds.trim() &&
+          corporate.amlDecl &&
+          corporate.pepDecl
+        );
+
+      case 'institution':
+        return !!(
+          institutional.institutionName.trim() &&
+          institutional.institutionType &&
+          institutional.registrationNumber.trim() &&
+          institutional.countryOfRegistration.trim() &&
+          institutional.aumUsd &&
+          institutional.mandateScope.trim() &&
+          institutional.sourceOfFunds.trim() &&
+          institutional.amlDecl &&
+          institutional.pepDecl
+        );
+
+      case 'mandate':
+        return !!mandateDoc && institutionDecl;
+
       case 'risk':
-        return Object.keys(riskAnswers).length === RISK_QUESTIONS.length;
+        return Object.keys(riskAnswers).length === RISK_QUESTIONS.length && investorDecl;
+
       case 'declaration':
         if (role === 'ISSUER')
           return issuerDecl.authorised && issuerDecl.goodStanding && issuerDecl.accurate;
@@ -253,7 +374,18 @@ export default function OnboardingPage() {
           return partnerDecl.authorised && partnerDecl.agreeTerms &&
                  partnerDecl.institutionName.trim() !== '' && partnerDecl.jobTitle.trim() !== '';
         return false;
+
       default: return false;
+    }
+  };
+
+  const goBack = () => {
+    if (step === 0) {
+      // Return to tier selection
+      setTierSelected(false);
+      setInvestorTier(null);
+    } else {
+      setStep(s => s - 1);
     }
   };
 
@@ -276,6 +408,7 @@ export default function OnboardingPage() {
       fd.append('nationality',  personal.nationality.trim());
       fd.append('idType',       personal.idType);
       fd.append('idNumber',     personal.idNumber.trim());
+      fd.append('phone',        personal.phone.trim());
       fd.append('addressLine1', address.addressLine1.trim());
       fd.append('addressLine2', address.addressLine2.trim());
       fd.append('city',         address.city.trim());
@@ -285,10 +418,57 @@ export default function OnboardingPage() {
       if (idDoc) fd.append('id_doc', idDoc);
 
       if (role === 'INVESTOR') {
-        fd.append('riskProfile', riskResult?.profile || 'BALANCED');
-        fd.append('riskScore',   String(riskResult?.score  || 0));
-        fd.append('riskAnswers', JSON.stringify(riskAnswers));
+        fd.append('investorTier', investorTier);
+
+        if (investorTier === 'RETAIL') {
+          if (personal.occupation.trim()) fd.append('occupation', personal.occupation.trim());
+          fd.append('riskProfile', riskResult?.profile || 'BALANCED');
+          fd.append('riskScore',   String(riskResult?.score  || 0));
+          fd.append('riskAnswers', JSON.stringify(riskAnswers));
+        }
+
+        if (investorTier === 'CORPORATE') {
+          fd.append('jobTitle', personal.jobTitle.trim());
+          if (companyDoc) fd.append('company_doc', companyDoc);
+          fd.append('corporateDetails', JSON.stringify({
+            companyName:           corporate.companyName.trim(),
+            registrationNumber:    corporate.registrationNumber.trim(),
+            countryOfRegistration: corporate.countryOfRegistration.trim(),
+            businessType:          corporate.businessType.trim(),
+            sourceOfFunds:         corporate.sourceOfFunds.trim(),
+            businessDescription:   corporate.businessDescription.trim(),
+            directors:             corporate.directors.filter(d => d.name.trim()),
+            beneficialOwners:      corporate.beneficialOwners.filter(b => b.name.trim()),
+            amlDecl:               corporate.amlDecl,
+            pepDecl:               corporate.pepDecl,
+          }));
+          fd.append('riskProfile', riskResult?.profile || 'BALANCED');
+          fd.append('riskScore',   String(riskResult?.score  || 0));
+          fd.append('riskAnswers', JSON.stringify(riskAnswers));
+        }
+
+        if (investorTier === 'INSTITUTION') {
+          fd.append('jobTitle', personal.jobTitle.trim());
+          if (companyDoc)  fd.append('company_doc',        companyDoc);
+          if (mandateDoc)  fd.append('investment_mandate', mandateDoc);
+          fd.append('institutionalDetails', JSON.stringify({
+            institutionName:       institutional.institutionName.trim(),
+            institutionType:       institutional.institutionType,
+            registrationNumber:    institutional.registrationNumber.trim(),
+            countryOfRegistration: institutional.countryOfRegistration.trim(),
+            aumUsd:                institutional.aumUsd,
+            ipecRegistered:        institutional.ipecRegistered,
+            seczRegistered:        institutional.seczRegistered,
+            otherRegulator:        institutional.otherRegulator.trim(),
+            mandateScope:          institutional.mandateScope.trim(),
+            sourceOfFunds:         institutional.sourceOfFunds.trim(),
+            amlDecl:               institutional.amlDecl,
+            pepDecl:               institutional.pepDecl,
+          }));
+          // No risk profiling for Tier 3
+        }
       }
+
       if (role === 'ISSUER') {
         fd.append('jobTitle', personal.jobTitle.trim());
       }
@@ -301,7 +481,13 @@ export default function OnboardingPage() {
       await api.post('/auth/complete-onboarding');
 
       setSubmitted(true);
-      localStorage.setItem('user', JSON.stringify({ ...user, onboarding_complete: 1, kyc_status: 'PENDING' }));
+      localStorage.setItem('user', JSON.stringify({
+        ...user,
+        onboarding_complete:  1,
+        kyc_status:           'PENDING',
+        investor_tier:        investorTier || undefined,
+        premium_subscription_status: role === 'INVESTOR' ? 'TRIAL' : undefined,
+      }));
 
       const dest = role === 'ISSUER' ? '/issuer' : role === 'PARTNER' ? '/banking-partner' : '/investor';
       setTimeout(() => router.push(dest), 3000);
@@ -312,6 +498,7 @@ export default function OnboardingPage() {
     }
   };
 
+  // ── Submitted ──────────────────────────────────────────────────────────
   if (submitted) {
     return (
       <div className="min-h-screen bg-[#0D1B2A] flex items-center justify-center">
@@ -328,10 +515,89 @@ export default function OnboardingPage() {
     );
   }
 
-  const pageTitle = role === 'ISSUER'  ? 'Issuer Verification'  :
-                    role === 'PARTNER' ? 'Partner Onboarding'    : 'KYC Verification';
-  const docLabel  = personal.idType === 'passport'        ? 'Passport'          :
-                    personal.idType === 'drivers_licence'  ? "Driver's Licence"  : 'National ID';
+  // ── Tier selection screen (INVESTOR only, before step flow) ────────────
+  if (role === 'INVESTOR' && !tierSelected) {
+    const fmtMin = (key) => {
+      const val = platformSettings[key];
+      return val ? `$${parseFloat(val).toLocaleString()}` : '—';
+    };
+    const tiers = [
+      {
+        tier:     'RETAIL',
+        icon:     '🧑',
+        label:    'Retail Investor',
+        subtitle: 'Tier 1',
+        desc:     'I am investing as an individual',
+        minKey:   'tier1_min_investment_usd',
+      },
+      {
+        tier:     'CORPORATE',
+        icon:     '🏢',
+        label:    'Corporate Investor',
+        subtitle: 'Tier 2',
+        desc:     'I am investing on behalf of a company or business entity',
+        minKey:   'tier2_min_investment_usd',
+      },
+      {
+        tier:     'INSTITUTION',
+        icon:     '🏦',
+        label:    'Investment Institution',
+        subtitle: 'Tier 3',
+        desc:     'I represent an asset manager, pension fund, or investment fund',
+        minKey:   'tier3_min_investment_usd',
+      },
+    ];
+    return (
+      <div className="min-h-screen bg-[#0D1B2A] px-4 py-12">
+        <div className="max-w-xl mx-auto">
+          <div className="text-center mb-8">
+            <div className="text-[#C8972B] font-bold tracking-widest text-sm mb-2">STEP 3 OF 3</div>
+            <h1 className="text-3xl font-bold text-white mb-2">What type of investor are you?</h1>
+            <p className="text-gray-400 text-sm">
+              Select the category that best describes how you are investing. This determines your KYC requirements.
+            </p>
+          </div>
+          <div className="space-y-4">
+            {tiers.map(({ tier, icon, label, subtitle, desc, minKey }) => (
+              <button
+                key={tier}
+                onClick={() => selectTier(tier)}
+                className="w-full text-left bg-[#0D2137] border border-[#1A3C5E] hover:border-[#C8972B] rounded-xl p-5 transition group"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="text-4xl">{icon}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-white font-bold text-base">{label}</span>
+                      <span className="text-xs bg-[#1A3C5E] text-[#C8972B] px-2 py-0.5 rounded-full font-semibold">{subtitle}</span>
+                    </div>
+                    <p className="text-gray-400 text-sm mb-2">{desc}</p>
+                    <p className="text-gray-600 text-xs">
+                      Min investment: <span className="text-gray-400 font-medium">{fmtMin(minKey)}</span>
+                    </p>
+                  </div>
+                  <div className="text-gray-600 group-hover:text-[#C8972B] text-xl transition">→</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step flow ──────────────────────────────────────────────────────────
+  const pageTitle = role === 'ISSUER'            ? 'Issuer Verification'            :
+                    role === 'PARTNER'            ? 'Partner Onboarding'             :
+                    investorTier === 'CORPORATE'  ? 'Corporate Investor Onboarding'  :
+                    investorTier === 'INSTITUTION'? 'Institutional Investor Onboarding' :
+                    'KYC Verification';
+
+  const docLabel = personal.idType === 'passport'        ? 'Passport'         :
+                   personal.idType === 'drivers_licence'  ? "Driver's Licence" : 'National ID';
+
+  const navProps = { step, canAdvance, isLastStep, advance, loading };
+  const backFn   = (role === 'INVESTOR' && step === 0) ? () => { setTierSelected(false); setInvestorTier(null); } : null;
 
   return (
     <div className="min-h-screen bg-[#0D1B2A] px-4 py-12">
@@ -376,18 +642,25 @@ export default function OnboardingPage() {
           {stepId === 'welcome' && (
             <div className="text-center py-4">
               <div className="text-5xl mb-4">
-                {role === 'ISSUER' ? '🏢' : role === 'PARTNER' ? '🤝' : '👋'}
+                {role === 'ISSUER' ? '🏢' : role === 'PARTNER' ? '🤝' :
+                 investorTier === 'CORPORATE' ? '🏢' : investorTier === 'INSTITUTION' ? '🏦' : '👋'}
               </div>
               <h3 className="text-white font-bold text-xl mb-3">
-                {role === 'ISSUER'  ? "Let's set up your issuer profile"  :
-                 role === 'PARTNER' ? 'Banking Partner Onboarding'         :
-                 'Welcome to TokenEquityX'}
+                {role === 'ISSUER'              ? "Let's set up your issuer profile"      :
+                 role === 'PARTNER'             ? 'Banking Partner Onboarding'             :
+                 investorTier === 'CORPORATE'   ? 'Corporate Investor Onboarding'          :
+                 investorTier === 'INSTITUTION' ? 'Institutional Investor Onboarding'      :
+                 'Set up your investor profile'}
               </h3>
               <p className="text-gray-400 text-sm leading-relaxed mb-6 max-w-md mx-auto">
                 {role === 'ISSUER'
                   ? "To list your company on TokenEquityX, we need to verify your identity as an authorised representative. This is required by Zimbabwe's Securities and Exchange Commission (SECZ)."
                   : role === 'PARTNER'
                   ? 'To activate your banking partner integration, we need to verify your identity and institutional credentials. All information is handled in strict confidence.'
+                  : investorTier === 'CORPORATE'
+                  ? 'To onboard your company as a corporate investor, we need to verify the identity of your authorised representative and your company registration details. This complies with AML/CFT requirements.'
+                  : investorTier === 'INSTITUTION'
+                  ? 'Institutional onboarding requires identity verification for your designated officer, entity registration details, and a copy of your investment mandate. This process typically takes 5–10 minutes.'
                   : "To protect investors and comply with Zimbabwe's AML regulations, we need to verify your identity before you can invest. The process takes about 5 minutes."}
               </p>
               <div className="grid grid-cols-3 gap-3 mb-8">
@@ -395,8 +668,7 @@ export default function OnboardingPage() {
                   <div key={t} className="bg-[#1A3C5E]/40 rounded-lg p-3 text-gray-400 text-xs">{t}</div>
                 ))}
               </div>
-              <NavButtons step={step} setStep={setStep} canAdvance={canAdvance}
-                isLastStep={isLastStep} advance={advance} loading={loading} nextLabel="Get Started →" />
+              <NavButtons {...navProps} onBack={backFn} nextLabel="Get Started →" />
             </div>
           )}
 
@@ -405,7 +677,11 @@ export default function OnboardingPage() {
             <div>
               <h3 className="text-white font-bold mb-1">Personal Information</h3>
               <p className="text-gray-400 text-sm mb-5">
-                {role === 'ISSUER'
+                {investorTier === 'CORPORATE'
+                  ? 'Details of the authorised company representative.'
+                  : investorTier === 'INSTITUTION'
+                  ? 'Details of the designated officer.'
+                  : role === 'ISSUER'
                   ? 'Details of the authorised company representative.'
                   : role === 'PARTNER'
                   ? 'Details of the authorised institutional representative.'
@@ -445,16 +721,27 @@ export default function OnboardingPage() {
                       placeholder="ID / Passport number" className={INPUT} />
                   </FormField>
                 </div>
-                {role === 'ISSUER' && (
-                  <FormField label="Your role / title at the company" required>
+                <FormField label="Phone Number" required>
+                  <input type="tel" value={personal.phone}
+                    onChange={e => setPersonal(p => ({...p, phone: e.target.value}))}
+                    placeholder="+263 71 234 5678" className={INPUT} />
+                </FormField>
+                {investorTier === 'RETAIL' && (
+                  <FormField label="Occupation">
+                    <input type="text" value={personal.occupation}
+                      onChange={e => setPersonal(p => ({...p, occupation: e.target.value}))}
+                      placeholder="e.g. Engineer, Teacher, Business Owner" className={INPUT} />
+                  </FormField>
+                )}
+                {(investorTier === 'CORPORATE' || investorTier === 'INSTITUTION' || role === 'ISSUER') && (
+                  <FormField label={investorTier === 'INSTITUTION' ? 'Job Title at Institution' : 'Role / Title at the company'} required>
                     <input type="text" value={personal.jobTitle}
                       onChange={e => setPersonal(p => ({...p, jobTitle: e.target.value}))}
-                      placeholder="e.g. CEO, CFO, Director" className={INPUT} />
+                      placeholder="e.g. CEO, CFO, Director, Fund Manager" className={INPUT} />
                   </FormField>
                 )}
               </div>
-              <NavButtons step={step} setStep={setStep} canAdvance={canAdvance}
-                isLastStep={isLastStep} advance={advance} loading={loading} />
+              <NavButtons {...navProps} onBack={backFn} />
             </div>
           )}
 
@@ -463,7 +750,9 @@ export default function OnboardingPage() {
             <div>
               <h3 className="text-white font-bold mb-1">Address & Contact</h3>
               <p className="text-gray-400 text-sm mb-5">
-                Your residential address as it appears on your proof of address document.
+                {investorTier === 'CORPORATE' || investorTier === 'INSTITUTION'
+                  ? 'Residential address of the authorised representative.'
+                  : 'Your residential address as it appears on your proof of address document.'}
               </p>
               <div className="space-y-4">
                 <FormField label="Address Line 1" required>
@@ -489,35 +778,318 @@ export default function OnboardingPage() {
                   </FormField>
                 </div>
               </div>
-              <NavButtons step={step} setStep={setStep} canAdvance={canAdvance}
-                isLastStep={isLastStep} advance={advance} loading={loading} />
+              <NavButtons {...navProps} />
             </div>
           )}
 
           {/* ── DOCUMENTS ── */}
           {stepId === 'docs' && (
             <div>
-              <h3 className="text-white font-bold mb-1">Identity Document</h3>
+              <h3 className="text-white font-bold mb-1">
+                {investorTier === 'CORPORATE' || investorTier === 'INSTITUTION'
+                  ? 'Identity & Registration Documents'
+                  : 'Identity Document'}
+              </h3>
               <p className="text-gray-400 text-sm mb-5">
-                {role === 'ISSUER'
+                {investorTier === 'CORPORATE'
+                  ? 'Upload your personal ID and your company registration certificate.'
+                  : investorTier === 'INSTITUTION'
+                  ? 'Upload your personal ID and your institution's registration certificate.'
+                  : role === 'ISSUER'
                   ? 'Upload a government-issued ID for the authorised company representative.'
                   : role === 'PARTNER'
                   ? 'Upload a government-issued ID for the institutional representative.'
                   : 'Upload a government-issued photo ID. Must show your full name, photo, and date of birth.'}
               </p>
-              <FileUpload
-                label={`Upload ${docLabel}`}
-                accept=".pdf,.jpg,.jpeg,.png"
-                onChange={setIdDoc}
-                file={idDoc}
-              />
-              <p className="text-gray-600 text-xs mt-3">Accepted: PDF, JPG, PNG — maximum 10 MB</p>
-              <NavButtons step={step} setStep={setStep} canAdvance={canAdvance}
-                isLastStep={isLastStep} advance={advance} loading={loading} />
+              <div className="space-y-4">
+                <div>
+                  {(investorTier === 'CORPORATE' || investorTier === 'INSTITUTION') && (
+                    <p className="text-gray-500 text-xs mb-2">1. Representative ID (national ID or passport)</p>
+                  )}
+                  <FileUpload
+                    label={`Upload ${docLabel}`}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={setIdDoc}
+                    file={idDoc}
+                  />
+                </div>
+                {(investorTier === 'CORPORATE' || investorTier === 'INSTITUTION') && (
+                  <div>
+                    <p className="text-gray-500 text-xs mb-2">
+                      2. {investorTier === 'INSTITUTION' ? 'Institution' : 'Company'} Registration Certificate
+                    </p>
+                    <FileUpload
+                      label="Upload Registration Certificate"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={setCompanyDoc}
+                      file={companyDoc}
+                    />
+                  </div>
+                )}
+              </div>
+              <p className="text-gray-600 text-xs mt-3">Accepted: PDF, JPG, PNG — maximum 10 MB per file</p>
+              <NavButtons {...navProps} />
             </div>
           )}
 
-          {/* ── RISK PROFILE — investor only ── */}
+          {/* ── COMPANY INFO (Tier 2) ── */}
+          {stepId === 'company' && (
+            <div>
+              <h3 className="text-white font-bold mb-1">Company Information</h3>
+              <p className="text-gray-400 text-sm mb-5">
+                Details of the company or business entity making this investment.
+              </p>
+              <div className="space-y-4">
+                <FormField label="Company Name" required>
+                  <input type="text" value={corporate.companyName}
+                    onChange={e => setCorporate(c => ({...c, companyName: e.target.value}))}
+                    placeholder="Registered company name" className={INPUT} />
+                </FormField>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField label="Registration Number" required>
+                    <input type="text" value={corporate.registrationNumber}
+                      onChange={e => setCorporate(c => ({...c, registrationNumber: e.target.value}))}
+                      placeholder="e.g. 12345/2020" className={INPUT} />
+                  </FormField>
+                  <FormField label="Country of Registration" required>
+                    <input type="text" value={corporate.countryOfRegistration}
+                      onChange={e => setCorporate(c => ({...c, countryOfRegistration: e.target.value}))}
+                      placeholder="e.g. Zimbabwe" className={INPUT} />
+                  </FormField>
+                </div>
+                <FormField label="Business Type" required>
+                  <select value={corporate.businessType}
+                    onChange={e => setCorporate(c => ({...c, businessType: e.target.value}))}
+                    className={INPUT}>
+                    <option value="">Select type…</option>
+                    <option value="PRIVATE_LIMITED">Private Limited Company</option>
+                    <option value="PUBLIC_LIMITED">Public Limited Company</option>
+                    <option value="PARTNERSHIP">Partnership</option>
+                    <option value="TRUST">Trust</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                </FormField>
+                <FormField label="Source of Investment Funds" required>
+                  <input type="text" value={corporate.sourceOfFunds}
+                    onChange={e => setCorporate(c => ({...c, sourceOfFunds: e.target.value}))}
+                    placeholder="e.g. Operating profits, retained earnings" className={INPUT} />
+                </FormField>
+                <FormField label="Brief Description of Business">
+                  <textarea value={corporate.businessDescription}
+                    onChange={e => setCorporate(c => ({...c, businessDescription: e.target.value}))}
+                    placeholder="What does the company do?" rows={2} className={TEXTAREA} />
+                </FormField>
+
+                {/* Directors */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-gray-400 text-xs">Directors</label>
+                    <button type="button"
+                      onClick={() => setCorporate(c => ({...c, directors: [...c.directors, {name:'',idNumber:'',email:''}]}))}
+                      className="text-xs text-[#C8972B] hover:underline">+ Add Director</button>
+                  </div>
+                  <div className="space-y-2">
+                    {corporate.directors.map((d, i) => (
+                      <div key={i} className="grid grid-cols-3 gap-2">
+                        <input type="text" value={d.name} placeholder="Full name"
+                          onChange={e => setCorporate(c => {const dirs=[...c.directors];dirs[i]={...dirs[i],name:e.target.value};return{...c,directors:dirs};})}
+                          className={INPUT} />
+                        <input type="text" value={d.idNumber} placeholder="ID number"
+                          onChange={e => setCorporate(c => {const dirs=[...c.directors];dirs[i]={...dirs[i],idNumber:e.target.value};return{...c,directors:dirs};})}
+                          className={INPUT} />
+                        <div className="flex gap-1">
+                          <input type="email" value={d.email} placeholder="Email"
+                            onChange={e => setCorporate(c => {const dirs=[...c.directors];dirs[i]={...dirs[i],email:e.target.value};return{...c,directors:dirs};})}
+                            className={INPUT} />
+                          {corporate.directors.length > 1 && (
+                            <button type="button"
+                              onClick={() => setCorporate(c => ({...c, directors: c.directors.filter((_,j)=>j!==i)}))}
+                              className="text-red-500 hover:text-red-400 px-1 text-sm">✕</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Beneficial Owners */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-gray-400 text-xs">Beneficial Owners ≥10% <span className="text-gray-600">(FATF Rec 24)</span></label>
+                    <button type="button"
+                      onClick={() => setCorporate(c => ({...c, beneficialOwners: [...c.beneficialOwners, {name:'',ownershipPct:'',nationality:''}]}))}
+                      className="text-xs text-[#C8972B] hover:underline">+ Add Owner</button>
+                  </div>
+                  <div className="space-y-2">
+                    {corporate.beneficialOwners.map((b, i) => (
+                      <div key={i} className="grid grid-cols-3 gap-2">
+                        <input type="text" value={b.name} placeholder="Full name"
+                          onChange={e => setCorporate(c => {const bos=[...c.beneficialOwners];bos[i]={...bos[i],name:e.target.value};return{...c,beneficialOwners:bos};})}
+                          className={INPUT} />
+                        <input type="number" value={b.ownershipPct} placeholder="Ownership %"
+                          onChange={e => setCorporate(c => {const bos=[...c.beneficialOwners];bos[i]={...bos[i],ownershipPct:e.target.value};return{...c,beneficialOwners:bos};})}
+                          className={INPUT} />
+                        <div className="flex gap-1">
+                          <input type="text" value={b.nationality} placeholder="Nationality"
+                            onChange={e => setCorporate(c => {const bos=[...c.beneficialOwners];bos[i]={...bos[i],nationality:e.target.value};return{...c,beneficialOwners:bos};})}
+                            className={INPUT} />
+                          {corporate.beneficialOwners.length > 1 && (
+                            <button type="button"
+                              onClick={() => setCorporate(c => ({...c, beneficialOwners: c.beneficialOwners.filter((_,j)=>j!==i)}))}
+                              className="text-red-500 hover:text-red-400 px-1 text-sm">✕</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Declarations */}
+                <div className="space-y-3 pt-2 border-t border-[#1A3C5E]">
+                  {[
+                    ['amlDecl', 'I confirm this company complies with AML/CFT requirements and the source of funds is legitimate'],
+                    ['pepDecl', 'I declare that all directors and beneficial owners have been screened for PEP and sanctions status'],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-start gap-3 cursor-pointer">
+                      <input type="checkbox" checked={corporate[key]}
+                        onChange={e => setCorporate(c => ({...c, [key]: e.target.checked}))}
+                        className="mt-0.5 accent-[#C8972B] w-4 h-4 flex-shrink-0" />
+                      <span className="text-gray-300 text-sm">{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <NavButtons {...navProps} />
+            </div>
+          )}
+
+          {/* ── INSTITUTIONAL INFO (Tier 3) ── */}
+          {stepId === 'institution' && (
+            <div>
+              <h3 className="text-white font-bold mb-1">Institutional Information</h3>
+              <p className="text-gray-400 text-sm mb-5">
+                Details of the investment institution making this application.
+              </p>
+              <div className="space-y-4">
+                <FormField label="Institution Name" required>
+                  <input type="text" value={institutional.institutionName}
+                    onChange={e => setInstitutional(s => ({...s, institutionName: e.target.value}))}
+                    placeholder="Full legal name of the institution" className={INPUT} />
+                </FormField>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField label="Institution Type" required>
+                    <select value={institutional.institutionType}
+                      onChange={e => setInstitutional(s => ({...s, institutionType: e.target.value}))}
+                      className={INPUT}>
+                      <option value="ASSET_MANAGER">Asset Manager</option>
+                      <option value="PENSION_FUND">Pension Fund</option>
+                      <option value="INVESTMENT_FUND">Investment Fund</option>
+                      <option value="INSURANCE_COMPANY">Insurance Company</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </FormField>
+                  <FormField label="Registration Number" required>
+                    <input type="text" value={institutional.registrationNumber}
+                      onChange={e => setInstitutional(s => ({...s, registrationNumber: e.target.value}))}
+                      placeholder="Company / fund reg. number" className={INPUT} />
+                  </FormField>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField label="Country of Registration" required>
+                    <input type="text" value={institutional.countryOfRegistration}
+                      onChange={e => setInstitutional(s => ({...s, countryOfRegistration: e.target.value}))}
+                      placeholder="e.g. Zimbabwe" className={INPUT} />
+                  </FormField>
+                  <FormField label="Assets Under Management (USD)" required>
+                    <input type="number" value={institutional.aumUsd}
+                      onChange={e => setInstitutional(s => ({...s, aumUsd: e.target.value}))}
+                      placeholder="e.g. 50000000" className={INPUT} />
+                  </FormField>
+                </div>
+
+                {/* Regulatory status */}
+                <div>
+                  <label className="block text-gray-400 text-xs mb-2">Regulatory Status</label>
+                  <div className="space-y-2">
+                    {[
+                      ['ipecRegistered', 'IPEC Registered'],
+                      ['seczRegistered', 'SECZ Registered'],
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" checked={institutional[key]}
+                          onChange={e => setInstitutional(s => ({...s, [key]: e.target.checked}))}
+                          className="accent-[#C8972B] w-4 h-4" />
+                        <span className="text-gray-300 text-sm">{label}</span>
+                      </label>
+                    ))}
+                    <FormField label="Other Regulator">
+                      <input type="text" value={institutional.otherRegulator}
+                        onChange={e => setInstitutional(s => ({...s, otherRegulator: e.target.value}))}
+                        placeholder="Name of other regulatory body (if applicable)" className={INPUT} />
+                    </FormField>
+                  </div>
+                </div>
+
+                <FormField label="Investment Mandate Scope" required>
+                  <textarea value={institutional.mandateScope}
+                    onChange={e => setInstitutional(s => ({...s, mandateScope: e.target.value}))}
+                    placeholder="Briefly describe the types of assets your mandate permits you to invest in"
+                    rows={3} className={TEXTAREA} />
+                </FormField>
+                <FormField label="Source of Investment Funds" required>
+                  <input type="text" value={institutional.sourceOfFunds}
+                    onChange={e => setInstitutional(s => ({...s, sourceOfFunds: e.target.value}))}
+                    placeholder="e.g. Member contributions, premium income" className={INPUT} />
+                </FormField>
+
+                <div className="space-y-3 pt-2 border-t border-[#1A3C5E]">
+                  {[
+                    ['amlDecl', 'I confirm this institution complies with AML/CFT requirements'],
+                    ['pepDecl', 'I declare that the institution\'s beneficial owners and key personnel have been screened for PEP and sanctions status'],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-start gap-3 cursor-pointer">
+                      <input type="checkbox" checked={institutional[key]}
+                        onChange={e => setInstitutional(s => ({...s, [key]: e.target.checked}))}
+                        className="mt-0.5 accent-[#C8972B] w-4 h-4 flex-shrink-0" />
+                      <span className="text-gray-300 text-sm">{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <NavButtons {...navProps} />
+            </div>
+          )}
+
+          {/* ── INVESTMENT MANDATE (Tier 3) ── */}
+          {stepId === 'mandate' && (
+            <div>
+              <h3 className="text-white font-bold mb-1">Investment Mandate Document</h3>
+              <p className="text-gray-400 text-sm mb-5">
+                Upload the document that authorises your institution to invest in tokenised securities.
+                This may be your investment policy statement, trust deed investment clause, or board resolution.
+              </p>
+              <FileUpload
+                label="Investment Mandate Document *"
+                accept=".pdf,.jpg,.jpeg,.png"
+                onChange={setMandateDoc}
+                file={mandateDoc}
+              />
+              <p className="text-gray-600 text-xs mt-3">PDF preferred — maximum 10 MB</p>
+              <div className="mt-5 pt-4 border-t border-[#1A3C5E]">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" checked={institutionDecl}
+                    onChange={e => setInstitutionDecl(e.target.checked)}
+                    className="mt-0.5 accent-[#C8972B] w-4 h-4 flex-shrink-0" />
+                  <span className="text-gray-300 text-sm">
+                    I confirm that this institution is authorised to invest in tokenised digital securities under its governing mandate and applicable regulatory framework
+                  </span>
+                </label>
+              </div>
+              <NavButtons {...navProps} nextLabel="Submit Application →" />
+            </div>
+          )}
+
+          {/* ── RISK PROFILE (Tier 1 & 2) ── */}
           {stepId === 'risk' && (
             <div>
               <h3 className="text-white font-bold mb-1">Investor Risk Profile</h3>
@@ -542,6 +1114,7 @@ export default function OnboardingPage() {
                   </div>
                 ))}
               </div>
+
               {riskResult && (
                 <div className="mt-5 bg-[#1A3C5E]/50 rounded p-4">
                   <p className="text-gray-400 text-xs mb-1">Your risk profile</p>
@@ -549,8 +1122,21 @@ export default function OnboardingPage() {
                   <p className="text-gray-400 text-xs mt-1">{PROFILE_DESC[riskResult.profile]}</p>
                 </div>
               )}
-              <NavButtons step={step} setStep={setStep} canAdvance={canAdvance}
-                isLastStep={isLastStep} advance={advance} loading={loading} nextLabel="Submit KYC →" />
+
+              <div className="mt-5 pt-4 border-t border-[#1A3C5E]">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" checked={investorDecl}
+                    onChange={e => setInvestorDecl(e.target.checked)}
+                    className="mt-0.5 accent-[#C8972B] w-4 h-4 flex-shrink-0" />
+                  <span className="text-gray-300 text-sm">
+                    {investorTier === 'CORPORATE'
+                      ? `I confirm I am authorised to invest on behalf of ${corporate.companyName || 'the company'} and that this investment is within the company's mandate`
+                      : 'I understand that investing in tokenised securities carries risk and I may lose some or all of my invested capital'}
+                  </span>
+                </label>
+              </div>
+
+              <NavButtons {...navProps} nextLabel="Submit KYC →" />
             </div>
           )}
 
@@ -576,8 +1162,7 @@ export default function OnboardingPage() {
                   </label>
                 ))}
               </div>
-              <NavButtons step={step} setStep={setStep} canAdvance={canAdvance}
-                isLastStep={isLastStep} advance={advance} loading={loading} nextLabel="Submit →" />
+              <NavButtons {...navProps} nextLabel="Submit →" />
             </div>
           )}
 
@@ -612,13 +1197,10 @@ export default function OnboardingPage() {
                     placeholder="e.g. Head of Digital Assets, CTO" className={INPUT} />
                 </FormField>
               </div>
-              <NavButtons step={step} setStep={setStep} canAdvance={canAdvance}
-                isLastStep={isLastStep} advance={advance} loading={loading} nextLabel="Submit →" />
+              <NavButtons {...navProps} nextLabel="Submit →" />
             </div>
           )}
         </div>
-
-        {/* KYC is mandatory — no skip allowed */}
       </div>
     </div>
   );

@@ -13,16 +13,21 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
     fullName, dateOfBirth, nationality, idType, idNumber,
     addressLine1, addressLine2, city, country,
     investorTier, accreditedInvestor,
-    riskProfile, riskScore, riskAnswers
+    corporateDetails, institutionalDetails,
+    riskProfile, riskScore, riskAnswers,
   } = req.body;
 
   if (!fullName || !country) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  const tier       = investorTier || 'RETAIL';
+  const corpJson   = corporateDetails      ? (typeof corporateDetails      === 'string' ? corporateDetails      : JSON.stringify(corporateDetails))      : null;
+  const instJson   = institutionalDetails  ? (typeof institutionalDetails  === 'string' ? institutionalDetails  : JSON.stringify(institutionalDetails))  : null;
+  const riskJson   = riskAnswers           ? (typeof riskAnswers           === 'string' ? riskAnswers           : JSON.stringify(riskAnswers))           : null;
+
   try {
-    // SELECT then INSERT-or-UPDATE — works even before the unique constraint
-    // migration runs (ON CONFLICT requires the constraint to already exist).
+    // SELECT then INSERT-or-UPDATE (ON CONFLICT requires the unique constraint to exist)
     const [existing] = await db.execute(
       'SELECT id FROM kyc_records WHERE user_id = ?',
       [req.user.userId]
@@ -33,29 +38,31 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
       kycId = existing[0].id;
       await db.execute(`
         UPDATE kyc_records
-        SET full_name           = ?,
-            date_of_birth       = ?,
-            nationality         = ?,
-            id_type             = ?,
-            id_number           = ?,
-            address_line1       = ?,
-            address_line2       = ?,
-            city                = ?,
-            country             = ?,
-            investor_tier       = ?,
-            accredited_investor = ?,
-            status              = 'PENDING',
-            risk_profile        = ?,
-            risk_score          = ?,
-            risk_answers        = ?,
-            updated_at          = NOW()
+        SET full_name              = ?,
+            date_of_birth          = ?,
+            nationality            = ?,
+            id_type                = ?,
+            id_number              = ?,
+            address_line1          = ?,
+            address_line2          = ?,
+            city                   = ?,
+            country                = ?,
+            investor_tier          = ?,
+            accredited_investor    = ?,
+            status                 = 'PENDING',
+            risk_profile           = ?,
+            risk_score             = ?,
+            risk_answers           = ?,
+            corporate_details      = ?,
+            institutional_details  = ?,
+            updated_at             = NOW()
         WHERE user_id = ?
       `, [
         fullName, dateOfBirth, nationality, idType, idNumber,
         addressLine1, addressLine2, city, country,
-        investorTier || 'RETAIL', accreditedInvestor ? true : false,
-        riskProfile || 'BALANCED', parseInt(riskScore) || 0,
-        riskAnswers ? JSON.stringify(riskAnswers) : null,
+        tier, accreditedInvestor ? true : false,
+        riskProfile || null, parseInt(riskScore) || 0, riskJson,
+        corpJson, instJson,
         req.user.userId,
       ]);
     } else {
@@ -65,22 +72,24 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
           (id, user_id, full_name, date_of_birth, nationality,
            id_type, id_number, address_line1, address_line2,
            city, country, investor_tier, accredited_investor, status,
-           risk_profile, risk_score, risk_answers)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
+           risk_profile, risk_score, risk_answers,
+           corporate_details, institutional_details)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
       `, [
         kycId, req.user.userId, fullName, dateOfBirth, nationality,
         idType, idNumber, addressLine1, addressLine2, city, country,
-        investorTier || 'RETAIL', accreditedInvestor ? true : false,
-        riskProfile || 'BALANCED', parseInt(riskScore) || 0,
-        riskAnswers ? JSON.stringify(riskAnswers) : null,
+        tier, accreditedInvestor ? true : false,
+        riskProfile || null, parseInt(riskScore) || 0, riskJson,
+        corpJson, instJson,
       ]);
     }
 
-    // Save uploaded documents to Supabase
+    // Process uploaded files — mandate doc stored separately on kyc_records
+    let investmentMandateUrl = null;
     if (req.files && req.files.length > 0) {
       const supabase = require('../utils/supabase');
       for (const file of req.files) {
-        let fileUrl = null;
+        let fileUrl  = null;
         let filePath = null;
         try {
           filePath = `kyc/${req.user.userId}/${file.fieldname}_${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
@@ -94,25 +103,52 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
         } catch (uploadErr) {
           console.error('[KYC UPLOAD] Failed:', uploadErr.message);
         }
-        await db.execute(
-          'INSERT INTO kyc_documents (id, kyc_id, doc_type, file_path, file_url, file_name, file_size) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
-          [uuidv4(), kycId, file.fieldname || 'document', filePath || file.originalname, fileUrl, file.originalname, file.size]
-        );
+
+        if (file.fieldname === 'investment_mandate') {
+          investmentMandateUrl = fileUrl;
+        } else {
+          await db.execute(
+            'INSERT INTO kyc_documents (id, kyc_id, doc_type, file_path, file_url, file_name, file_size) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+            [uuidv4(), kycId, file.fieldname || 'document', filePath || file.originalname, fileUrl, file.originalname, file.size]
+          );
+        }
       }
     }
 
-    await db.execute(
-      'UPDATE users SET kyc_status = ? WHERE id = ?',
-      ['PENDING', req.user.userId]
-    );
+    if (investmentMandateUrl) {
+      await db.execute(
+        'UPDATE kyc_records SET investment_mandate_url = ? WHERE id = ?',
+        [investmentMandateUrl, kycId]
+      );
+    }
 
-    logger.info('KYC submitted', { userId: req.user.userId });
+    // Fetch premium trial duration from platform settings
+    let trialDays = 30;
+    try {
+      const [settingRows] = await db.execute(
+        `SELECT value FROM platform_settings WHERE key = 'premium_trial_days_new_investors'`
+      );
+      if (settingRows.length > 0) trialDays = parseInt(settingRows[0].value) || 30;
+    } catch {}
+
+    // Update user: kyc_status, investor_tier, premium trial fields
+    await db.execute(`
+      UPDATE users
+      SET kyc_status                   = 'PENDING',
+          investor_tier                = ?,
+          premium_trial_start_date     = NOW(),
+          premium_trial_end_date       = NOW() + (? * INTERVAL '1 day'),
+          premium_subscription_status  = 'TRIAL'
+      WHERE id = ?
+    `, [tier, trialDays, req.user.userId]);
+
+    logger.info('KYC submitted', { userId: req.user.userId, tier });
 
     res.json({
       success: true,
       kycId,
       status:  'PENDING',
-      message: 'KYC submitted. Review takes 24-48 hours.'
+      message: 'KYC submitted. Review takes 24-48 hours.',
     });
   } catch (err) {
     logger.error('KYC submission failed', { error: err.message });
