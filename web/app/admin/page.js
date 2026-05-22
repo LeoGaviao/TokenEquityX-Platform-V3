@@ -3102,6 +3102,11 @@ export default function AdminDashboard() {
                   { key: 'bank_branch',         label: 'Branch',                 type: 'text',   desc: 'Bank branch name.' },
                   { key: 'bank_swift_code',     label: 'SWIFT Code',             type: 'text',   desc: 'SWIFT/BIC code for international payments.' },
                   { key: 'bank_reference_prefix', label: 'Payment Ref Prefix',   type: 'text',   desc: 'Prefix for auto-generated payment references (e.g. TEXZ-APP).' },
+                  { key: 'tier1_min_investment_usd',         label: 'Min Investment — Tier 1 Retail (USD)',       type: 'number', desc: 'Minimum subscription amount for retail investors.' },
+                  { key: 'tier2_min_investment_usd',         label: 'Min Investment — Tier 2 Corporate (USD)',    type: 'number', desc: 'Minimum subscription amount for corporate investors.' },
+                  { key: 'tier3_min_investment_usd',         label: 'Min Investment — Tier 3 Institution (USD)',  type: 'number', desc: 'Minimum subscription amount for institutional investors.' },
+                  { key: 'premium_trial_end_date',           label: 'Premium Trial End Date',                     type: 'date',   desc: 'All investors get full premium dashboard until this date. After this, individual 30-day trials apply.' },
+                  { key: 'premium_trial_days_new_investors', label: 'New Investor Trial Period (days)',            type: 'number', desc: 'Number of days a new investor gets full premium access from their registration date.' },
                 ].map(({ key, label, type, desc }) => {
                   const current = settings[key]?.value ?? '';
                   return (

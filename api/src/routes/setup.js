@@ -952,6 +952,23 @@ router.get('/migrate', async (req, res) => {
        ALTER TABLE kyc_records ADD CONSTRAINT kyc_records_user_id_unique UNIQUE (user_id);
      EXCEPTION WHEN duplicate_object THEN NULL;
      END $$`,
+
+    // ── Investor Tiers & Premium Trial ───────────────────────────────────
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS investor_tier VARCHAR(20) DEFAULT 'RETAIL'`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_trial_start_date TIMESTAMP`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_trial_end_date TIMESTAMP`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_subscription_status VARCHAR(20) DEFAULT 'TRIAL'`,
+    `ALTER TABLE kyc_records ADD COLUMN IF NOT EXISTS investor_tier VARCHAR(20) DEFAULT 'RETAIL'`,
+    `ALTER TABLE kyc_records ADD COLUMN IF NOT EXISTS investment_mandate_url TEXT`,
+    `ALTER TABLE kyc_records ADD COLUMN IF NOT EXISTS institutional_details JSONB`,
+    `ALTER TABLE kyc_records ADD COLUMN IF NOT EXISTS corporate_details JSONB`,
+    `INSERT INTO platform_settings (key, value, description) VALUES
+      ('tier1_min_investment_usd',          '100',        'Minimum investment for Tier 1 Retail investors (USD)'),
+      ('tier2_min_investment_usd',          '500',        'Minimum investment for Tier 2 Corporate investors (USD)'),
+      ('tier3_min_investment_usd',          '10000',      'Minimum investment for Tier 3 Institutional investors (USD)'),
+      ('premium_trial_end_date',            '2027-06-30', 'Global premium trial end date — all investors get full premium dashboard until this date'),
+      ('premium_trial_days_new_investors',  '30',         'Number of days new investors get full premium trial from registration date')
+    ON CONFLICT (key) DO NOTHING`,
   ];
   const results = [];
   for (const sql of migrations) {
