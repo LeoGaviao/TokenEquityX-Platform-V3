@@ -144,6 +144,20 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
 
     logger.info('KYC submitted', { userId: req.user.userId, tier });
 
+    // Confirmation email — non-fatal
+    try {
+      const { notifyInvestorKycSubmitted } = require('../utils/mailer');
+      const [uRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [req.user.userId]);
+      if (uRows.length > 0 && uRows[0].email) {
+        notifyInvestorKycSubmitted({
+          investorEmail: uRows[0].email,
+          investorName:  uRows[0].full_name || 'Investor',
+        }).catch(e => console.error('[MAILER] notifyInvestorKycSubmitted failed:', e.message));
+      }
+    } catch (mailErr) {
+      console.error('[KYC SUBMIT] Email notification error (non-fatal):', mailErr.message);
+    }
+
     res.json({
       success: true,
       kycId,

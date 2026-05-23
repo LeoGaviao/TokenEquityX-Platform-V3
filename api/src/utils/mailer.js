@@ -574,6 +574,21 @@ async function notifyStaffAccountCreated({ userEmail, userName, role, loginUrl }
     `));
 }
 
+async function notifyInvestorKycSubmitted({ investorEmail, investorName }) {
+  return send(investorEmail, `KYC Submitted — Under Review`,
+    baseTemplate('Your KYC Submission Is Under Review', `
+      <p>Dear ${investorName},</p>
+      <p>Thank you for completing your identity verification. Your documents have been received and are now under review by the TokenEquityX compliance team.</p>
+      <div class="detail-row"><span>Status</span><span class="warning">⏳ Under Review</span></div>
+      <div class="detail-row"><span>Estimated Review Time</span><span>24 – 48 business hours</span></div>
+      <p style="margin-top:16px;">You will receive an email notification as soon as a decision has been reached. No further action is required at this time.</p>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;">
+        If you need to provide additional documents or have questions about your submission, contact <a href="mailto:compliance@tokenequityx.co.zw" style="color:#1A3C5E;">compliance@tokenequityx.co.zw</a>.
+      </p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">Go to Your Dashboard &rarr;</a>
+    `));
+}
+
 async function notifyIssuerMarketStateChanged({ issuerEmail, issuerName, tokenSymbol, previousState, newState, effectiveDate, reason }) {
   const dateFmt = effectiveDate ? new Date(effectiveDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Today';
   const stateLabel = s => ({ PRE_LAUNCH: 'Pre-Launch', P2P_ONLY: 'P2P-Only Trading', LIMITED_TRADING: 'Limited Trading', FULL_TRADING: 'Full Trading', HALTED: 'HALTED' }[s] || s);
@@ -736,4 +751,5 @@ module.exports = {
   notifyIssuerApplicationReinstated,
   notifyStaffAccountCreated,
   notifyIssuerMarketStateChanged,
+  notifyInvestorKycSubmitted,
 };

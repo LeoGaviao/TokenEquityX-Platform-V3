@@ -155,18 +155,21 @@ router.post('/role-select', authenticate, async (req, res) => {
     const user   = rows[0];
     const token  = makeToken(user); // re-issue token with new role
 
-    // Send role-specific notifications now that the role is confirmed
+    // Send role-specific notifications now that the role is confirmed.
+    // Each notification is isolated in its own try/catch so one failure
+    // cannot silently prevent the others from running.
+
+    const { sendMessage } = require('../utils/messenger');
+    const { notifyUserWelcome } = require('../utils/mailer');
+
+    const roleMessages = {
+      INVESTOR: '1. Complete your KYC verification\n2. Fund your wallet\n3. Browse available securities in the Market tab',
+      ISSUER:   '1. Submit your Entity KYC & AML verification in your dashboard\n2. Prepare your tokenisation application documents\n3. Submit your application for committee review',
+      PARTNER:  '1. Complete your partner profile\n2. Add your first client lead\n3. Share your referral link with potential investors and issuers',
+    };
+
+    // In-platform role-specific welcome message
     try {
-      const { sendMessage } = require('../utils/messenger');
-      const { notifyUserWelcome } = require('../utils/mailer');
-
-      const roleMessages = {
-        INVESTOR: '1. Complete your KYC verification\n2. Fund your wallet\n3. Browse available securities in the Market tab',
-        ISSUER:   '1. Submit your Entity KYC & AML verification in your dashboard\n2. Prepare your tokenisation application documents\n3. Submit your application for committee review',
-        PARTNER:  '1. Complete your partner profile\n2. Add your first client lead\n3. Share your referral link with potential investors and issuers',
-      };
-
-      // In-platform role-specific welcome message
       await sendMessage({
         recipientId: req.user.userId,
         subject:     `👋 Welcome to TokenEquityX — ${role} Account`,
@@ -174,15 +177,23 @@ router.post('/role-select', authenticate, async (req, res) => {
         type:        'SYSTEM',
         category:    'GENERAL',
       });
+    } catch (e) {
+      console.error('[ROLE-SELECT] sendMessage (in-platform welcome) failed:', e.message);
+    }
 
-      // External welcome email — sent here (not at signup) so the role and dashboard link are correct
+    // External welcome email — isolated so a messenger failure cannot skip it
+    try {
       await notifyUserWelcome({
         userEmail: user.email,
         userName:  user.full_name,
         role,
-      }).catch(e => console.error('[ROLE-SELECT] Welcome email failed:', e.message));
+      });
+    } catch (e) {
+      console.error('[MAILER] notifyUserWelcome investor failed:', e.message);
+    }
 
-      // Notify admin with the confirmed role
+    // Notify admin with the confirmed role
+    try {
       const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' AND is_active = TRUE LIMIT 1");
       if (adminRows.length > 0) {
         await sendMessage({
@@ -193,8 +204,8 @@ router.post('/role-select', authenticate, async (req, res) => {
           category:    'GENERAL',
         });
       }
-    } catch (notifyErr) {
-      console.error('[ROLE-SELECT] Notification failed:', notifyErr.message);
+    } catch (e) {
+      console.error('[ROLE-SELECT] Admin notification failed:', e.message);
     }
 
     res.json({ token, user: { id: user.id, role: user.role, email: user.email, full_name: user.full_name, onboarding_complete: user.onboarding_complete } });
