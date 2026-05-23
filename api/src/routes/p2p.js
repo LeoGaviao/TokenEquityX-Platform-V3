@@ -209,17 +209,36 @@ router.put('/:id/accept', authenticate, async (req, res) => {
       [req.user.userId, req.params.id]
     );
 
-    // Notify seller
+    // Notify seller — platform message
     await sendMessage({
       recipientId: offer.seller_id,
       subject:     `✅ P2P Offer Accepted — ${offer.token_symbol}`,
-      body:        `Your P2P offer of ${qty} ${offer.token_symbol} at $${parseFloat(offer.price_per_token).toFixed(4)} per token has been accepted. $${total.toFixed(2)} USD has been credited to your wallet.`,
+      body:        `Your P2P offer for ${qty} ${offer.token_symbol} tokens has been accepted by a buyer. Settlement will complete within 24 hours. $${total.toFixed(2)} USD has been credited to your wallet.`,
       type:        'SYSTEM',
       category:    'TRADE',
       referenceId: offer.id,
     }).catch(() => {});
 
     await conn.commit();
+
+    // External email to seller
+    try {
+      const { notifyInvestorP2POfferAccepted } = require('../utils/mailer');
+      const [sellerRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [offer.seller_id]);
+      const seller = sellerRows[0];
+      if (seller?.email) {
+        notifyInvestorP2POfferAccepted({
+          sellerEmail:    seller.email,
+          sellerName:     seller.full_name || 'Investor',
+          tokenSymbol:    offer.token_symbol,
+          quantity:       qty,
+          pricePerToken:  offer.price_per_token,
+          proceeds:       total,
+        }).catch(e => console.error('[MAILER] notifyInvestorP2POfferAccepted failed:', e.message));
+      }
+    } catch (mailErr) {
+      console.error('[P2P ACCEPT] Email notification error (non-fatal):', mailErr.message);
+    }
     res.json({
       success:      true,
       message:      `Successfully purchased ${qty} ${offer.token_symbol} for $${total.toFixed(2)} USD.`,

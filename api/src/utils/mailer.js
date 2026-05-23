@@ -698,6 +698,138 @@ async function notifyIssuerEntityKycRejected({ issuerEmail, issuerName, entityNa
     `));
 }
 
+async function notifyInvestorKycApproved({ investorEmail, investorName }) {
+  const approvalDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  return send(investorEmail, `✅ KYC Approved — You Can Now Invest`,
+    baseTemplate('KYC Approved — You Can Now Invest', `
+      <p>Dear ${investorName},</p>
+      <p>Congratulations! Your identity verification (KYC) has been approved by the TokenEquityX compliance team.</p>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Approved</span></div>
+      <div class="detail-row"><span>Approval Date</span><span>${approvalDate}</span></div>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Next Steps</h3>
+      <ol style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li><strong>Deposit Funds</strong> — Add USD to your wallet via bank transfer</li>
+        <li><strong>Browse Listings</strong> — Explore tokenised securities available on the platform</li>
+        <li><strong>Subscribe to Offerings</strong> — Participate in primary offerings to build your portfolio</li>
+      </ol>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;">
+        You now have full access to all investor features including secondary market trading, dividend claims, and governance voting.
+      </p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">Go to Your Dashboard &rarr;</a>
+    `));
+}
+
+async function notifyInvestorKycRejected({ investorEmail, investorName, reason }) {
+  return send(investorEmail, `KYC Review — Additional Information Required`,
+    baseTemplate('KYC Review — Additional Information Required', `
+      <p>Dear ${investorName},</p>
+      <p>Your KYC submission could not be approved at this time. Please review the information below and resubmit your documents.</p>
+      <div class="detail-row"><span>Status</span><span class="danger">✗ Not Approved</span></div>
+      ${reason ? `<div class="detail-row"><span>Reason</span><span class="danger">${reason}</span></div>` : ''}
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">How to Resubmit</h3>
+      <ol style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Review the reason noted above and gather the required documents</li>
+        <li>Ensure all documents are clear, valid, and not expired</li>
+        <li>Log in to your investor dashboard and navigate to the <strong>KYC / Verification</strong> section</li>
+        <li>Resubmit your updated documents for review</li>
+      </ol>
+      <p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;">
+        If you need assistance, contact our compliance team at <a href="mailto:compliance@tokenequityx.co.zw" style="color:#1A3C5E;">compliance@tokenequityx.co.zw</a>.
+      </p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">Resubmit KYC &rarr;</a>
+    `));
+}
+
+async function notifyInvestorDepositInstructions({ investorEmail, investorName, amount, reference, depositId }) {
+  return send(investorEmail, `Deposit Instructions — ${reference}`,
+    baseTemplate('Deposit Instructions', `
+      <p>Dear ${investorName},</p>
+      <p>Your deposit request has been received. Please make your bank transfer using the details below. <strong>You must quote the reference number exactly as shown.</strong></p>
+      <div class="amount">$${parseFloat(amount).toFixed(2)} USD</div>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Bank Transfer Details</h3>
+      <div class="detail-row"><span>Bank</span><span>Stanbic Bank Zimbabwe</span></div>
+      <div class="detail-row"><span>Account Name</span><span>TokenEquityX Ltd</span></div>
+      <div class="detail-row"><span>Payment Reference</span><span style="font-family:monospace;font-weight:bold;color:#C8972B">${reference}</span></div>
+      <div class="detail-row"><span>Amount</span><span style="font-weight:700">$${parseFloat(amount).toFixed(2)} USD</span></div>
+      <div class="detail-row"><span>Payment Deadline</span><span class="warning">Within 48 hours</span></div>
+      <div class="detail-row"><span>Deposit ID</span><span style="font-family:monospace">${depositId}</span></div>
+      <p style="background:#fef3c7;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:13px;margin:20px 0 0;">
+        <strong>Important:</strong> Always quote reference <strong>${reference}</strong> on your transfer. Transfers without the correct reference cannot be matched to your account and will be delayed.<br/><br/>
+        Your funds will reflect in your wallet once our team confirms receipt of the bank credit. This typically takes 1–4 business hours during working hours.
+      </p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">Go to Your Dashboard &rarr;</a>
+    `));
+}
+
+async function notifyInvestorDistributionReceived({ investorEmail, investorName, tokenSymbol, grossAmount, withholdingRate, withholdingTax, netAmount, tokenBalance, distributionDate }) {
+  const dateFmt = distributionDate
+    ? new Date(distributionDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const fmt = n => `$${parseFloat(n || 0).toFixed(4)}`;
+  return send(investorEmail, `Distribution Received — ${tokenSymbol}`,
+    baseTemplate(`Distribution Received — ${tokenSymbol}`, `
+      <p>Dear ${investorName},</p>
+      <p>Your distribution claim for <strong>${tokenSymbol}</strong> has been processed and credited to your wallet.</p>
+      <div class="amount" style="color:#16a34a">${fmt(netAmount)} USD</div>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Token Holdings</span><span style="font-weight:700">${parseFloat(tokenBalance || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} tokens</span></div>
+      <div class="detail-row"><span>Gross Distribution</span><span>${fmt(grossAmount)}</span></div>
+      <div class="detail-row"><span>Withholding Tax (${(parseFloat(withholdingRate || 0) * 100).toFixed(0)}%)</span><span class="danger">−${fmt(withholdingTax)}</span></div>
+      <div class="detail-row"><span>Net Credited to Wallet</span><span style="font-weight:800;color:#16a34a">${fmt(netAmount)}</span></div>
+      <div class="detail-row"><span>Distribution Date</span><span>${dateFmt}</span></div>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Credited</span></div>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:13px;margin-top:16px;">
+        The withholding tax of ${fmt(withholdingTax)} has been remitted to ZIMRA in accordance with the Zimbabwe Income Tax Act.
+      </p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Wallet &rarr;</a>
+    `));
+}
+
+async function notifyInvestorKycExpiring({ investorEmail, investorName, expiryDate }) {
+  const dateFmt = expiryDate
+    ? new Date(expiryDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '—';
+  return send(investorEmail, `Action Required — KYC Expiry in 30 Days`,
+    baseTemplate('Your KYC Verification Is Expiring Soon', `
+      <p>Dear ${investorName},</p>
+      <p>Your identity verification (KYC) on TokenEquityX is due to expire in <strong>30 days</strong>. Please renew your KYC to continue trading uninterrupted.</p>
+      <div class="detail-row"><span>KYC Expiry Date</span><span class="warning">${dateFmt}</span></div>
+      <div class="detail-row"><span>Days Remaining</span><span class="warning">30 days</span></div>
+      <p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;margin:20px 0;">
+        <strong>Important:</strong> If your KYC expires, your trading access will be suspended until you complete a renewal. This includes secondary market trading, new subscriptions, and withdrawals.
+      </p>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">How to Renew</h3>
+      <ol style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Log in to your investor dashboard</li>
+        <li>Navigate to the <strong>KYC / Verification</strong> section</li>
+        <li>Submit your updated identity documents</li>
+        <li>Allow 24–48 hours for our compliance team to review</li>
+      </ol>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">Renew KYC Now &rarr;</a>
+    `));
+}
+
+async function notifyInvestorP2POfferAccepted({ sellerEmail, sellerName, tokenSymbol, quantity, pricePerToken, proceeds }) {
+  const fmt      = n => `$${parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtPrice = n => `$${parseFloat(n || 0).toFixed(4)}`;
+  return send(sellerEmail, `P2P Offer Accepted — ${tokenSymbol}`,
+    baseTemplate(`P2P Offer Accepted — ${tokenSymbol}`, `
+      <p>Dear ${sellerName},</p>
+      <p>Your P2P sell offer for <strong>${tokenSymbol}</strong> has been accepted by a buyer. The proceeds have been credited to your wallet.</p>
+      <div class="amount" style="color:#16a34a">${fmt(proceeds)}</div>
+      <div class="detail-row"><span>Token Symbol</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Quantity Sold</span><span style="font-weight:700">${parseFloat(quantity || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} tokens</span></div>
+      <div class="detail-row"><span>Price Per Token</span><span>${fmtPrice(pricePerToken)}</span></div>
+      <div class="detail-row"><span>Gross Proceeds</span><span style="font-weight:800;color:#16a34a">${fmt(proceeds)}</span></div>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Credited to Wallet</span></div>
+      <div class="detail-row"><span>Settlement</span><span>Within 24 hours</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        The sale proceeds are now available in your wallet for withdrawal or reinvestment.
+      </p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Wallet &rarr;</a>
+    `));
+}
+
 async function notifyIssuerAuditorAccepted({ issuerEmail, issuerName, tokenSymbol, entityName, referenceNumber }) {
   return send(issuerEmail, `🔍 Auditor Accepted Assignment — ${tokenSymbol}`,
     baseTemplate('Auditor Has Accepted Your Assignment', `
@@ -752,4 +884,10 @@ module.exports = {
   notifyStaffAccountCreated,
   notifyIssuerMarketStateChanged,
   notifyInvestorKycSubmitted,
+  notifyInvestorKycApproved,
+  notifyInvestorKycRejected,
+  notifyInvestorDepositInstructions,
+  notifyInvestorDistributionReceived,
+  notifyInvestorKycExpiring,
+  notifyInvestorP2POfferAccepted,
 };

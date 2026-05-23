@@ -170,6 +170,36 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
   }
 });
 
+// GET /api/kyc/my-record — full kyc_record for the current user (including corporate/institutional details)
+router.get('/my-record', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.execute(`
+      SELECT k.*, u.kyc_status as user_kyc_status,
+             u.investor_tier, u.premium_subscription_status,
+             u.premium_trial_end_date
+      FROM kyc_records k
+      JOIN users u ON u.id = k.user_id
+      WHERE k.user_id = ?
+      ORDER BY k.submitted_at DESC
+      LIMIT 1
+    `, [req.user.userId]);
+
+    if (rows.length === 0) return res.json({ exists: false });
+
+    const record = rows[0];
+    if (typeof record.corporate_details === 'string') {
+      try { record.corporate_details = JSON.parse(record.corporate_details); } catch {}
+    }
+    if (typeof record.institutional_details === 'string') {
+      try { record.institutional_details = JSON.parse(record.institutional_details); } catch {}
+    }
+    res.json({ exists: true, ...record });
+  } catch (err) {
+    logger.error('KYC my-record failed', { error: err.message });
+    res.status(500).json({ error: 'Could not fetch KYC record' });
+  }
+});
+
 // GET /api/kyc/status — get own KYC status
 router.get('/status', authenticate, async (req, res) => {
   try {
@@ -276,38 +306,24 @@ router.put('/approve/:kycId',
         ['APPROVED', records[0].user_id]
       );
 
-      const { send } = require('../utils/mailer');
+      const { notifyInvestorKycApproved } = require('../utils/mailer');
       const [userRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [records[0].user_id]);
       const approvedUser = userRows[0];
 
       await sendMessage({
         recipientId: records[0].user_id,
         subject:     '✅ KYC Approved — You can now invest',
-        body:        `Your identity verification (KYC) has been approved.\n\nYou now have full access to all platform features including investing and trading.\n\nLog in to your dashboard to start exploring available securities.`,
+        body:        `Your KYC has been approved. You can now deposit funds and start investing.`,
         type:        'SYSTEM',
         category:    'KYC',
         referenceId: req.params.kycId,
-        sendEmail:   true,
-        recipientEmail: approvedUser?.email,
-        recipientName:  approvedUser?.full_name,
       }).catch(() => {});
 
-      // Also send external email
       if (approvedUser?.email) {
-        send(approvedUser.email, '✅ KYC Approved — TokenEquityX',
-          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-            <div style="background:#1A3C5E;padding:28px 32px">
-              <h1 style="color:#C8972B;margin:0;font-size:22px">⬡ TokenEquityX</h1>
-            </div>
-            <div style="padding:28px 32px;background:#fff">
-              <h2 style="color:#16a34a">✅ KYC Approved</h2>
-              <p style="color:#374151">Dear ${approvedUser.full_name},</p>
-              <p style="color:#374151">Your identity verification has been approved. You now have full access to the TokenEquityX platform.</p>
-              <a href="${process.env.PLATFORM_URL || 'https://tokenequityx.co.zw'}/investor" style="display:inline-block;background:#C8972B;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;margin-top:16px">Go to Dashboard →</a>
-            </div>
-            <div style="background:#f9fafb;padding:16px 32px;text-align:center;font-size:12px;color:#9ca3af">TokenEquityX (Private) Limited · Harare, Zimbabwe</div>
-          </div>`
-        ).catch(() => {});
+        notifyInvestorKycApproved({
+          investorEmail: approvedUser.email,
+          investorName:  approvedUser.full_name || 'Investor',
+        }).catch(e => console.error('[MAILER] notifyInvestorKycApproved failed:', e.message));
       }
 
       logger.info('KYC approved', {
@@ -351,11 +367,26 @@ router.put('/reject/:kycId',
         await sendMessage({
           recipientId: records[0].user_id,
           subject:     `❌ KYC Not Approved`,
-          body:        `Your identity verification submission could not be approved at this time. Reason: ${reviewerNotes || 'Please resubmit with clearer documents'}. Please resubmit your KYC documents.`,
+          body:        `Your identity verification submission could not be approved at this time. Reason: ${reviewerNotes || 'Please resubmit with clearer documents'}. Please resubmit your KYC documents through your investor dashboard.`,
           type:        'SYSTEM',
           category:    'KYC',
           referenceId: req.params.kycId,
         }).catch(() => {});
+
+        try {
+          const { notifyInvestorKycRejected } = require('../utils/mailer');
+          const [rejectedUserRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [records[0].user_id]);
+          const rejectedUser = rejectedUserRows[0];
+          if (rejectedUser?.email) {
+            notifyInvestorKycRejected({
+              investorEmail: rejectedUser.email,
+              investorName:  rejectedUser.full_name || 'Investor',
+              reason:        reviewerNotes || null,
+            }).catch(e => console.error('[MAILER] notifyInvestorKycRejected failed:', e.message));
+          }
+        } catch (mailErr) {
+          console.error('[KYC REJECT] Email notification error (non-fatal):', mailErr.message);
+        }
       }
 
       res.json({ success: true, message: 'KYC rejected' });

@@ -70,6 +70,7 @@ app.use('/api/admin',      require('./src/routes/admin'));
 app.use('/api/pipeline',   require('./src/routes/pipeline'));
 app.use('/api/submissions', require('./src/routes/submissions'));
 app.use('/api/setup',      require('./src/routes/setup'));
+app.use('/api/investor',   require('./src/routes/investor'));
 
 app.use('/api/bourse', require('./src/routes/bourse'));
 app.use('/api/partner', require('./src/routes/partner'));
@@ -222,6 +223,47 @@ cron.schedule('0 9 * * *', async () => {
     console.error('[CRON] Annual SPV fee check failed:', err.message);
   }
 });
+// KYC expiry warning — daily at 09:00, 30 days before expiry
+cron.schedule('30 9 * * *', async () => {
+  console.log('[CRON] Checking KYC expiry warnings (30-day notice)...');
+  try {
+    const db = require('./src/db/pool');
+    const { sendMessage }            = require('./src/utils/messenger');
+    const { notifyInvestorKycExpiring } = require('./src/utils/mailer');
+
+    const [rows] = await db.execute(`
+      SELECT u.id, u.email, u.full_name, k.expires_at
+      FROM users u
+      JOIN kyc_records k ON k.user_id = u.id AND k.status = 'APPROVED'
+      WHERE u.kyc_status = 'APPROVED'
+        AND k.expires_at IS NOT NULL
+        AND k.expires_at::date = CURRENT_DATE + INTERVAL '30 days'
+    `);
+
+    console.log(`[CRON] KYC expiry check: ${rows.length} investor(s) expiring in 30 days`);
+
+    for (const investor of rows) {
+      await sendMessage({
+        recipientId: investor.id,
+        subject:     '⚠️ KYC Expiry in 30 Days — Action Required',
+        body:        `Your KYC verification expires in 30 days (${new Date(investor.expires_at).toLocaleDateString('en-GB')}). Please log in and renew your KYC to continue trading.`,
+        type:        'SYSTEM',
+        category:    'KYC',
+      }).catch(() => {});
+
+      if (investor.email) {
+        notifyInvestorKycExpiring({
+          investorEmail: investor.email,
+          investorName:  investor.full_name || 'Investor',
+          expiryDate:    investor.expires_at,
+        }).catch(e => console.error('[MAILER] notifyInvestorKycExpiring failed for', investor.email, e.message));
+      }
+    }
+  } catch (err) {
+    console.error('[CRON] KYC expiry check failed:', err.message);
+  }
+});
+
 // ─── 404 HANDLER ──────────────────────────────────────────────────
 
 // Handle multer/upload errors cleanly

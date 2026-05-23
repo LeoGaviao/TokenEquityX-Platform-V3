@@ -231,7 +231,7 @@ router.post('/claim', authenticate, requireKYC, async (req, res) => {
 
     // Get investor wallet address
     const [userRows] = await conn.execute(
-      'SELECT wallet_address FROM users WHERE id = ?', [req.user.userId]
+      'SELECT wallet_address, email, full_name FROM users WHERE id = ?', [req.user.userId]
     );
     if (userRows.length === 0) {
       await conn.rollback();
@@ -354,11 +354,26 @@ router.post('/claim', authenticate, requireKYC, async (req, res) => {
 
     await sendMessage({
       recipientId: req.user.userId,
-      subject:     `✅ Dividend Claimed — $${netAmount.toFixed(2)} USD`,
-      body:        `Your dividend claim has been processed. Gross amount: $${grossAmount.toFixed(2)}, Withholding tax (${(whtRate*100).toFixed(0)}%): $${withholding.toFixed(2)}, Net credited to wallet: $${netAmount.toFixed(2)} USD.`,
+      subject:     `✅ Distribution Received — $${netAmount.toFixed(2)} USD — ${round.token_symbol}`,
+      body:        `You have received a distribution of $${grossAmount.toFixed(2)} for your ${round.token_symbol} holding. Net amount after WHT (${(whtRate*100).toFixed(0)}%): $${netAmount.toFixed(2)} USD credited to your wallet.`,
       type:        'SYSTEM',
       category:    'DIVIDEND',
     }).catch(() => {});
+
+    if (userRows[0]?.email) {
+      const { notifyInvestorDistributionReceived } = require('../utils/mailer');
+      notifyInvestorDistributionReceived({
+        investorEmail:   userRows[0].email,
+        investorName:    userRows[0].full_name || 'Investor',
+        tokenSymbol:     round.token_symbol,
+        grossAmount,
+        withholdingRate: whtRate,
+        withholdingTax:  withholding,
+        netAmount,
+        tokenBalance,
+        distributionDate: new Date(),
+      }).catch(e => console.error('[MAILER] notifyInvestorDistributionReceived failed:', e.message));
+    }
 
     logger.info('Dividend claimed', {
       userId: req.user.userId, roundId,

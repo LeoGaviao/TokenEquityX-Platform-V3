@@ -89,6 +89,17 @@ router.post('/deposit', authenticate, async (req, res) => {
       depositId,
     }).catch(e => console.error('[MAILER] notifyAdminDepositSubmitted failed:', e.message));
 
+    // Email investor with bank transfer instructions
+    if (investor.email) {
+      mailer.notifyInvestorDepositInstructions({
+        investorEmail: investor.email,
+        investorName:  investor.full_name || 'Investor',
+        amount:        amount_usd,
+        reference:     reference.trim().toUpperCase(),
+        depositId,
+      }).catch(e => console.error('[MAILER] notifyInvestorDepositInstructions failed:', e.message));
+    }
+
     // FIX 3.3 — platform message to investor confirming submission received
     sendMessage({
       recipientId: req.user.userId,
