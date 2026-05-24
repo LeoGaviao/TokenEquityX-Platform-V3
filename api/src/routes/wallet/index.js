@@ -5,11 +5,12 @@
 
 const router  = require('express').Router();
 const db      = require('../../db/pool');
-const { authenticate } = require('../../middleware/auth');
-const { requireRole }  = require('../../middleware/roles');
-const { v4: uuidv4 }   = require('uuid');
-const mailer           = require('../../utils/mailer');
-const { sendMessage }  = require('../../utils/messenger');
+const { authenticate }      = require('../../middleware/auth');
+const { requireRole }       = require('../../middleware/roles');
+const { v4: uuidv4 }        = require('uuid');
+const mailer                = require('../../utils/mailer');
+const { sendMessage }       = require('../../utils/messenger');
+const { getNumericSetting } = require('../../utils/platformSettings');
 
 // ════════════════════════════════════════════════════════
 // INVESTOR — BALANCE
@@ -148,11 +149,15 @@ router.post('/withdraw', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'Minimum withdrawal is USD 50' });
   }
 
+  const imttRate      = await getNumericSetting('imtt_rate', 0.02);
+  const imttAmount    = parseFloat((parseFloat(amount_usd) * imttRate).toFixed(2));
+  const totalRequired = parseFloat((parseFloat(amount_usd) + imttAmount).toFixed(2));
+
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
-    // Check available balance
+    // Check available balance (must cover withdrawal + IMTT)
     const [wallets] = await conn.execute(
       'SELECT * FROM investor_wallets WHERE user_id = ?', [req.user.userId]
     );
@@ -162,25 +167,42 @@ router.post('/withdraw', authenticate, async (req, res) => {
     }
     const wallet = wallets[0];
     const available = parseFloat(wallet.balance_usd) - parseFloat(wallet.reserved_usd);
-    if (available < parseFloat(amount_usd)) {
+    if (available < totalRequired) {
       await conn.rollback();
       return res.status(400).json({
-        error: `Insufficient available balance. Available: $${available.toFixed(2)}, Requested: $${parseFloat(amount_usd).toFixed(2)}`
+        error: `Insufficient available balance. Available: $${available.toFixed(2)}, Required: $${totalRequired.toFixed(2)} (withdrawal $${parseFloat(amount_usd).toFixed(2)} + IMTT $${imttAmount.toFixed(2)})`
       });
     }
 
-    // Reserve the withdrawal amount
+    const withdrawalId = uuidv4();
+
+    // Deduct IMTT immediately; reserve withdrawal amount for pending processing
     await conn.execute(
-      'UPDATE investor_wallets SET reserved_usd = reserved_usd + ?, updated_at = NOW() WHERE user_id = ?',
-      [amount_usd, req.user.userId]
+      'UPDATE investor_wallets SET balance_usd = balance_usd - ?, reserved_usd = reserved_usd + ?, updated_at = NOW() WHERE user_id = ?',
+      [imttAmount, amount_usd, req.user.userId]
     );
 
-    const withdrawalId = uuidv4();
+    await conn.execute(`
+      INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+      VALUES (gen_random_uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
+    `, [
+      req.user.userId, -imttAmount,
+      parseFloat(wallet.balance_usd),
+      parseFloat((parseFloat(wallet.balance_usd) - imttAmount).toFixed(2)),
+      withdrawalId,
+      `IMTT 2% on $${parseFloat(amount_usd).toFixed(2)} withdrawal`,
+    ]);
+
     await conn.execute(
       `INSERT INTO withdrawal_requests
          (id, user_id, amount_usd, bank_name, account_name, account_number, branch_code, notes, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
       [withdrawalId, req.user.userId, amount_usd, bank_name, account_name, account_number, branch_code || null, notes || null]
+    );
+
+    await conn.execute(
+      'UPDATE platform_treasury SET usd_liability = usd_liability + ?, updated_at = NOW() WHERE id = 1',
+      [imttAmount]
     );
 
     await conn.commit();

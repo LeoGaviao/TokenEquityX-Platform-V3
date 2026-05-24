@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const db     = require('../db/pool');
-const { authenticate } = require('../middleware/auth');
-const { sendMessage }  = require('../utils/messenger');
+const { authenticate }      = require('../middleware/auth');
+const { sendMessage }       = require('../utils/messenger');
+const { getNumericSetting } = require('../utils/platformSettings');
 
 // ── GET /api/p2p — list open offers, optionally filter by symbol
 router.get('/', authenticate, async (req, res) => {
@@ -116,6 +117,8 @@ router.post('/', authenticate, async (req, res) => {
 
 // ── PUT /api/p2p/:id/accept — buyer accepts an offer
 router.put('/:id/accept', authenticate, async (req, res) => {
+  const cgtRate  = await getNumericSetting('cgt_rate',  0.20);
+  const imttRate = await getNumericSetting('imtt_rate', 0.02);
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -139,7 +142,19 @@ router.put('/:id/accept', authenticate, async (req, res) => {
     const qty   = parseFloat(offer.quantity);
     const total = parseFloat(offer.total_value);
 
-    // Check buyer wallet balance
+    // Load seller holdings for CGT calculation (average_cost_usd is WACC basis)
+    const [sellerHoldings] = await conn.execute(
+      'SELECT average_cost_usd FROM token_holdings WHERE user_id = ? AND token_id = ?',
+      [offer.seller_id, offer.token_id]
+    );
+    const sellerAvgCost = parseFloat(sellerHoldings[0]?.average_cost_usd || 0);
+    const capitalGain   = Math.max(0, (parseFloat(offer.price_per_token) - sellerAvgCost) * qty);
+    const cgtAmount     = parseFloat((capitalGain * cgtRate).toFixed(2));
+    const imttAmount    = parseFloat((total * imttRate).toFixed(2));
+    const buyerDebit    = parseFloat((total + imttAmount).toFixed(2));
+    const sellerCredit  = parseFloat((total - cgtAmount).toFixed(2));
+
+    // Check buyer wallet balance (must cover trade + IMTT)
     const [wallets] = await conn.execute(
       'SELECT * FROM investor_wallets WHERE user_id = ?', [req.user.userId]
     );
@@ -149,30 +164,30 @@ router.put('/:id/accept', authenticate, async (req, res) => {
     }
     const wallet    = wallets[0];
     const available = parseFloat(wallet.balance_usd) - parseFloat(wallet.reserved_usd || 0);
-    if (available < total) {
+    if (available < buyerDebit) {
       await conn.rollback();
-      return res.status(400).json({ error: `Insufficient balance. You need $${total.toFixed(2)} but have $${available.toFixed(2)} available.` });
+      return res.status(400).json({ error: `Insufficient balance. You need $${buyerDebit.toFixed(2)} (incl. 2% IMTT) but have $${available.toFixed(2)} available.` });
     }
 
-    // Debit buyer wallet
+    // Debit buyer wallet (trade value + IMTT)
     await conn.execute(
       'UPDATE investor_wallets SET balance_usd = balance_usd - ?, updated_at = NOW() WHERE user_id = ?',
-      [total, req.user.userId]
+      [buyerDebit, req.user.userId]
     );
 
-    // Credit seller wallet (create if not exists)
+    // Credit seller wallet net of CGT (create if not exists)
     const [sellerWallets] = await conn.execute(
       'SELECT * FROM investor_wallets WHERE user_id = ?', [offer.seller_id]
     );
     if (sellerWallets.length === 0) {
       await conn.execute(
         'INSERT INTO investor_wallets (id, user_id, balance_usd, balance_usdc, reserved_usd) VALUES (gen_random_uuid(), ?, ?, 0, 0)',
-        [offer.seller_id, total]
+        [offer.seller_id, sellerCredit]
       );
     } else {
       await conn.execute(
         'UPDATE investor_wallets SET balance_usd = balance_usd + ?, updated_at = NOW() WHERE user_id = ?',
-        [total, offer.seller_id]
+        [sellerCredit, offer.seller_id]
       );
     }
 
@@ -209,11 +224,17 @@ router.put('/:id/accept', authenticate, async (req, res) => {
       [req.user.userId, req.params.id]
     );
 
+    // Credit platform treasury (CGT + IMTT)
+    await conn.execute(
+      'UPDATE platform_treasury SET usd_liability = usd_liability + ?, updated_at = NOW() WHERE id = 1',
+      [parseFloat((cgtAmount + imttAmount).toFixed(2))]
+    );
+
     // Notify seller — platform message
     await sendMessage({
       recipientId: offer.seller_id,
       subject:     `✅ P2P Offer Accepted — ${offer.token_symbol}`,
-      body:        `Your P2P offer for ${qty} ${offer.token_symbol} tokens has been accepted by a buyer. Settlement will complete within 24 hours. $${total.toFixed(2)} USD has been credited to your wallet.`,
+      body:        `Your P2P offer for ${qty} ${offer.token_symbol} tokens has been accepted. $${sellerCredit.toFixed(2)} USD credited to your wallet (gross $${total.toFixed(2)} less CGT $${cgtAmount.toFixed(2)}).`,
       type:        'SYSTEM',
       category:    'TRADE',
       referenceId: offer.id,
@@ -233,7 +254,7 @@ router.put('/:id/accept', authenticate, async (req, res) => {
           tokenSymbol:    offer.token_symbol,
           quantity:       qty,
           pricePerToken:  offer.price_per_token,
-          proceeds:       total,
+          proceeds:       sellerCredit,
         }).catch(e => console.error('[MAILER] notifyInvestorP2POfferAccepted failed:', e.message));
       }
     } catch (mailErr) {

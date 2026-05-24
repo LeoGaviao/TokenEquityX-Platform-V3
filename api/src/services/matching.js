@@ -1,22 +1,7 @@
-const { v4: uuidv4 }  = require('uuid');
-const logger          = require('../utils/logger');
-const ws              = require('./websocket');
-
-/**
- * TokenEquityX V3 — Matching Engine with Full Settlement
- *
- * Trades table uses: buyer_wallet, seller_wallet, total_value, no status column
- * Settlement:
- *  - FIAT rail:  balance_usd moves in investor_wallets
- *  - USDC rail:  balance_usdc moves in investor_wallets
- *  - Token holdings updated in token_holdings table
- *  - Fees: 0.50% platform + 0.32% SECZ levy deducted from seller
- *  - platform_treasury credited with fees
- *  - All wrapped in DB transaction — atomic or nothing
- */
-
-const PLATFORM_FEE_RATE = 0.0050; // 0.50%
-const SECZ_LEVY_RATE    = 0.0032; // 0.32%
+const { v4: uuidv4 }        = require('uuid');
+const logger                = require('../utils/logger');
+const ws                    = require('./websocket');
+const { getNumericSetting } = require('../utils/platformSettings');
 
 async function matchOrders(tokenId, db) {
   try {
@@ -60,6 +45,13 @@ async function matchOrders(tokenId, db) {
         limit_price ASC, created_at ASC
     `, [tokenId]);
 
+    // Fetch all rate settings before the transaction loop (pool reads, not connection)
+    const platformFeeRate = await getNumericSetting('platform_fee_rate', 0.005);
+    const seczLevyRate    = await getNumericSetting('secz_levy_rate', 0.0032);
+    const vatRate         = await getNumericSetting('vat_rate', 0.155);
+    const cgtRate         = await getNumericSetting('cgt_rate', 0.20);
+    const imttRate        = await getNumericSetting('imtt_rate', 0.02);
+
     const trades = [];
 
     for (const buy of buys) {
@@ -88,12 +80,18 @@ async function matchOrders(tokenId, db) {
         const sellRemaining = Number(sell.quantity) - Number(sell.filled_qty);
         if (buyRemaining <= 0 || sellRemaining <= 0) continue;
 
-        const fillQty     = Math.min(buyRemaining, sellRemaining);
-        const totalValue  = parseFloat((fillQty * tradePrice).toFixed(2));
-        const platformFee = parseFloat((totalValue * PLATFORM_FEE_RATE).toFixed(2));
-        const seczLevy    = parseFloat((totalValue * SECZ_LEVY_RATE).toFixed(2));
-        const totalFees   = parseFloat((platformFee + seczLevy).toFixed(2));
-        const sellerNet   = parseFloat((totalValue - totalFees).toFixed(2));
+        const fillQty          = Math.min(buyRemaining, sellRemaining);
+        const totalValue       = parseFloat((fillQty * tradePrice).toFixed(2));
+        const platformFee      = parseFloat((totalValue * platformFeeRate).toFixed(2));
+        const seczLevy         = parseFloat((totalValue * seczLevyRate).toFixed(2));
+        const vatOnPlatformFee = parseFloat((platformFee * vatRate).toFixed(2));
+        const totalFees        = parseFloat((platformFee + seczLevy + vatOnPlatformFee).toFixed(2));
+        const imttAmount       = parseFloat((totalValue * imttRate).toFixed(2));
+        const buyerDebit       = parseFloat((totalValue + imttAmount).toFixed(2));
+        // CGT and sellerNet are computed after seller holdings load below
+        let capitalGain = 0;
+        let cgtAmount   = 0;
+        let sellerNet   = 0;
 
         // ── Volume cap check
         if (controls.length > 0 && controls[0].daily_volume_cap_usd > 0) {
@@ -141,8 +139,8 @@ async function matchOrders(tokenId, db) {
           ? parseFloat(buyerWallet.balance_usdc)
           : parseFloat(buyerWallet.balance_usd);
 
-        if (buyerBalance < totalValue) {
-          logger.warn('Buyer insufficient balance', { userId: buy.user_id, rail, required: totalValue, available: buyerBalance });
+        if (buyerBalance < buyerDebit) {
+          logger.warn('Buyer insufficient balance', { userId: buy.user_id, rail, required: buyerDebit, available: buyerBalance });
           continue;
         }
 
@@ -190,6 +188,12 @@ async function matchOrders(tokenId, db) {
           continue;
         }
 
+        // CGT on seller's capital gain (requires seller holdings average cost)
+        const sellerAvgCost = parseFloat(sellerHoldings[0].average_cost_usd || 0);
+        capitalGain = Math.max(0, (tradePrice - sellerAvgCost) * fillQty);
+        cgtAmount   = parseFloat((capitalGain * cgtRate).toFixed(2));
+        sellerNet   = parseFloat((totalValue - totalFees - cgtAmount).toFixed(2));
+
         // ══ ATOMIC SETTLEMENT ══
         const conn = await db.getConnection();
         try {
@@ -214,7 +218,7 @@ async function matchOrders(tokenId, db) {
 
           // 2. FIAT rail settlement
           if (rail === 'FIAT') {
-            const newBuyerUSD  = parseFloat((buyerBalance  - totalValue).toFixed(2));
+            const newBuyerUSD  = parseFloat((buyerBalance  - buyerDebit).toFixed(2));
             const newBuyerRes  = parseFloat(Math.max(0, parseFloat(buyerWallet.reserved_usd) - totalValue).toFixed(2));
             const newSellerUSD = parseFloat((sellerBalance + sellerNet).toFixed(2));
 
@@ -225,8 +229,13 @@ async function matchOrders(tokenId, db) {
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (uuid(), ?, 'TRADE_BUY', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -totalValue, buyerBalance, newBuyerUSD, buy.id,
+            `, [buy.user_id, -totalValue, buyerBalance, parseFloat((buyerBalance - totalValue).toFixed(2)), buy.id,
                `Buy ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)}`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
+            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(2)), newBuyerUSD, buy.id,
+               `IMTT 2% on $${totalValue.toFixed(2)} trade`]);
 
             await conn.execute(
               'UPDATE investor_wallets SET balance_usd = ?, updated_at = NOW() WHERE user_id = ?',
@@ -236,22 +245,26 @@ async function matchOrders(tokenId, db) {
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (uuid(), ?, 'TRADE_SELL', ?, ?, ?, ?, ?)
             `, [sell.user_id, sellerNet, sellerBalance, newSellerUSD, sell.id,
-               `Sell ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} (net of fees)`]);
-
+               `Sell ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} (net of fees & CGT)`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (uuid(), ?, 'FEE', ?, ?, ?, ?, ?)
-            `, [sell.user_id, -totalFees, sellerBalance + totalValue, newSellerUSD, sell.id,
-               `Fees: platform $${platformFee.toFixed(2)} + SECZ levy $${seczLevy.toFixed(2)}`]);
+            `, [sell.user_id, -totalFees, parseFloat((sellerBalance + totalValue).toFixed(2)), newSellerUSD, sell.id,
+               `Fees: platform $${platformFee.toFixed(2)} + SECZ $${seczLevy.toFixed(2)} + VAT $${vatOnPlatformFee.toFixed(2)}`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'CGT', ?, ?, ?, ?, ?)
+            `, [sell.user_id, -cgtAmount, parseFloat((sellerBalance + totalValue).toFixed(2)), newSellerUSD, sell.id,
+               `CGT 20% on $${capitalGain.toFixed(2)} capital gain`]);
 
             await conn.execute(
               'UPDATE platform_treasury SET usd_liability = usd_liability + ?, updated_at = NOW() WHERE id = 1',
-              [totalFees]
+              [parseFloat((totalFees + cgtAmount + imttAmount).toFixed(2))]
             );
 
           // 3. USDC rail settlement
           } else {
-            const newBuyerUSDC  = parseFloat((buyerBalance  - totalValue).toFixed(8));
+            const newBuyerUSDC  = parseFloat((buyerBalance  - buyerDebit).toFixed(8));
             const newSellerUSDC = parseFloat((sellerBalance + sellerNet).toFixed(8));
 
             await conn.execute(
@@ -261,8 +274,13 @@ async function matchOrders(tokenId, db) {
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (uuid(), ?, 'TRADE_BUY', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -totalValue, buyerBalance, newBuyerUSDC, buy.id,
+            `, [buy.user_id, -totalValue, buyerBalance, parseFloat((buyerBalance - totalValue).toFixed(8)), buy.id,
                `Buy ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} [USDC]`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
+            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(8)), newBuyerUSDC, buy.id,
+               `IMTT 2% on $${totalValue.toFixed(2)} trade [USDC]`]);
 
             await conn.execute(
               'UPDATE investor_wallets SET balance_usdc = ?, updated_at = NOW() WHERE user_id = ?',
@@ -272,17 +290,21 @@ async function matchOrders(tokenId, db) {
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (uuid(), ?, 'TRADE_SELL', ?, ?, ?, ?, ?)
             `, [sell.user_id, sellerNet, sellerBalance, newSellerUSDC, sell.id,
-               `Sell ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} [USDC, net of fees]`]);
-
+               `Sell ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} [USDC, net of fees & CGT]`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (uuid(), ?, 'FEE', ?, ?, ?, ?, ?)
-            `, [sell.user_id, -totalFees, sellerBalance + totalValue, newSellerUSDC, sell.id,
-               `Fees [USDC]: platform $${platformFee.toFixed(2)} + SECZ levy $${seczLevy.toFixed(2)}`]);
+            `, [sell.user_id, -totalFees, parseFloat((sellerBalance + totalValue).toFixed(8)), newSellerUSDC, sell.id,
+               `Fees [USDC]: platform $${platformFee.toFixed(2)} + SECZ $${seczLevy.toFixed(2)} + VAT $${vatOnPlatformFee.toFixed(2)}`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'CGT', ?, ?, ?, ?, ?)
+            `, [sell.user_id, -cgtAmount, parseFloat((sellerBalance + totalValue).toFixed(8)), newSellerUSDC, sell.id,
+               `CGT 20% on $${capitalGain.toFixed(2)} capital gain [USDC]`]);
 
             await conn.execute(
               'UPDATE platform_treasury SET usdc_balance = usdc_balance + ?, updated_at = NOW() WHERE id = 1',
-              [totalFees]
+              [parseFloat((totalFees + cgtAmount + imttAmount).toFixed(2))]
             );
           }
 
@@ -335,7 +357,8 @@ async function matchOrders(tokenId, db) {
 
           const tradeData = {
             id: `trade-${Date.now()}`, quantity: fillQty, price: tradePrice,
-            totalValue, platformFee, seczLevy, sellerNet, rail,
+            totalValue, platformFee, seczLevy, vatOnPlatformFee, totalFees,
+            imttAmount, cgtAmount, capitalGain, sellerNet, rail,
             matchedAt: new Date().toISOString()
           };
           trades.push(tradeData);
@@ -343,7 +366,8 @@ async function matchOrders(tokenId, db) {
 
           logger.info('Trade settled', {
             symbol: tokenSymbol, qty: fillQty, price: tradePrice,
-            totalValue, platformFee, seczLevy, sellerNet, rail,
+            totalValue, platformFee, seczLevy, vatOnPlatformFee,
+            imttAmount, cgtAmount, sellerNet, rail,
             buyerTokenBal: newBuyerTokenBal, sellerTokenBal: newSellerTokenBal,
           });
 

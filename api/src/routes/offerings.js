@@ -600,14 +600,11 @@ router.post('/:id/close',
       const token = tokens[0];
 
       const totalRaised = parseFloat(offering.total_raised_usd);
-      const platformFeeRate = await getNumericSetting('platform_fee_rate', 0.005);
-      const seczLevyRate    = await getNumericSetting('secz_levy_rate', 0.0032);
-      const vatRate         = await getNumericSetting('vat_rate', 0.155);
-      const feeRate = parseFloat(offering.issuance_fee_rate) || platformFeeRate;
-      const issuanceFee  = parseFloat((totalRaised * feeRate).toFixed(2));
-      const seczLevy     = parseFloat((totalRaised * seczLevyRate).toFixed(2));
-      const vatOnFees    = parseFloat((issuanceFee * vatRate).toFixed(2));
-      const netProceeds = parseFloat((totalRaised - issuanceFee).toFixed(2));
+      const vatRate     = await getNumericSetting('vat_rate', 0.155);
+      const feeRate     = parseFloat(offering.issuance_fee_rate) || await getNumericSetting('platform_fee_rate', 0.005);
+      const issuanceFee      = parseFloat((totalRaised * feeRate).toFixed(2));
+      const vatOnIssuanceFee = parseFloat((issuanceFee * vatRate).toFixed(2));
+      const netProceeds      = parseFloat((totalRaised - issuanceFee - vatOnIssuanceFee).toFixed(2));
 
       const [subscriptions] = await conn.execute(
         "SELECT * FROM offering_subscriptions WHERE offering_id = ? AND status = 'CONFIRMED'",
@@ -680,14 +677,14 @@ router.post('/:id/close',
         `, [
           offering.issuer_id, netProceeds, issuerCurrentBal, issuerNewBal,
           String(offering.id),
-          `Primary offering proceeds — ${token.symbol}. Gross: $${totalRaised.toFixed(2)}, Fee (2%): $${issuanceFee.toFixed(2)}, Net: $${netProceeds.toFixed(2)}`
+          `Primary offering proceeds — ${token.symbol}. Gross: $${totalRaised.toFixed(2)}, Fee: $${issuanceFee.toFixed(2)}, VAT: $${vatOnIssuanceFee.toFixed(2)}, Net: $${netProceeds.toFixed(2)}`
         ]);
       }
 
-      // Credit platform treasury
+      // Credit platform treasury (issuance fee + VAT)
       await conn.execute(
         'UPDATE platform_treasury SET usd_liability = usd_liability + ?, updated_at = NOW() WHERE id = 1',
-        [issuanceFee]
+        [parseFloat((issuanceFee + vatOnIssuanceFee).toFixed(2))]
       );
 
       // Determine post-offering trading mode from the token's listing_type
@@ -710,7 +707,7 @@ router.post('/:id/close',
         `INSERT INTO audit_logs (action, performed_by, target_entity, details)
          VALUES ('OFFERING_CLOSED_DISBURSED', ?, ?, ?)`,
         [req.user.userId, `offering:${offering.id}`,
-         `Closed. Raised: $${totalRaised}, Fee: $${issuanceFee}, Net to issuer: $${netProceeds}. ${subscriptions.length} investors. Token → ${newTradingMode}`]
+         `Closed. Raised: $${totalRaised}, Fee: $${issuanceFee}, VAT: $${vatOnIssuanceFee}, Net to issuer: $${netProceeds}. ${subscriptions.length} investors. Token → ${newTradingMode}`]
       );
 
       await conn.commit();

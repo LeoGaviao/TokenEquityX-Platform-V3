@@ -19,18 +19,18 @@ const { requireRole, requireKYC } = require('../middleware/roles');
 const { sendMessage }              = require('../utils/messenger');
 const { getNumericSetting }        = require('../utils/platformSettings');
 
-// ── Determine withholding rate from KYC country (reads rates dynamically from platform_settings)
+// ── Determine withholding rate from KYC nationality (reads rates dynamically from platform_settings)
 async function getWithholdingRate(db, userId) {
   const whtResidentRate    = await getNumericSetting('wht_resident_rate', 0.10);
   const whtNonResidentRate = await getNumericSetting('wht_non_resident_rate', 0.15);
   try {
     const [rows] = await db.execute(
-      'SELECT country FROM kyc_records WHERE user_id = ? AND status = ? ORDER BY submitted_at DESC LIMIT 1',
+      'SELECT nationality FROM kyc_records WHERE user_id = ? AND status = ? ORDER BY submitted_at DESC LIMIT 1',
       [userId, 'APPROVED']
     );
-    if (rows.length === 0) return whtNonResidentRate; // default to higher rate if no KYC
-    const country = (rows[0].country || '').toLowerCase().trim();
-    const isZimbabwe = ['zimbabwe', 'zw', 'zimbabwe (zw)', 'zimbabwe'].includes(country);
+    if (rows.length === 0) return whtNonResidentRate;
+    const nationality = (rows[0].nationality || '').toLowerCase().trim();
+    const isZimbabwe = nationality.includes('zimbabwe') || nationality.includes('zimbabwean');
     return isZimbabwe ? whtResidentRate : whtNonResidentRate;
   } catch {
     return whtNonResidentRate;
