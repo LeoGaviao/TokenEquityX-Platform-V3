@@ -10,7 +10,8 @@ const { requireRole }       = require('../../middleware/roles');
 const { v4: uuidv4 }        = require('uuid');
 const mailer                = require('../../utils/mailer');
 const { sendMessage }       = require('../../utils/messenger');
-const { getNumericSetting } = require('../../utils/platformSettings');
+const { getNumericSetting }           = require('../../utils/platformSettings');
+const { createSettlementInstruction } = require('../../utils/settlement');
 
 // ════════════════════════════════════════════════════════
 // INVESTOR — BALANCE
@@ -368,6 +369,18 @@ router.put('/deposit/:id/confirm',
         [req.user.userId, admin_notes || dep.notes, req.params.id]
       );
 
+      // F-03: settlement instruction so banking partner can reconcile incoming RTGS/EFT
+      await createSettlementInstruction(conn, {
+        type:            'DEPOSIT',
+        from_user_id:    null,
+        to_user_id:      dep.user_id,
+        gross_amount:    dep.amount_usd,
+        fee_amount:      0,
+        net_amount:      dep.amount_usd,
+        settlement_rail: 'FIAT',
+        reference:       dep.reference || dep.id,
+      });
+
       await conn.commit();
 
       // Email investor
@@ -544,6 +557,20 @@ router.put('/withdraw/:id/complete',
          WHERE id = ?`,
         [req.user.userId, tx_reference, admin_notes || wr.notes, req.params.id]
       );
+
+      // F-03: settlement instruction for banking partner records
+      const imttRate = await getNumericSetting('imtt_rate', 0.02);
+      const imttAmt  = parseFloat((parseFloat(wr.amount_usd) * imttRate).toFixed(2));
+      await createSettlementInstruction(conn, {
+        type:            'WITHDRAWAL',
+        from_user_id:    wr.user_id,
+        to_user_id:      null,
+        gross_amount:    wr.amount_usd,
+        fee_amount:      imttAmt,
+        net_amount:      parseFloat(wr.amount_usd) - imttAmt,
+        settlement_rail: 'FIAT',
+        reference:       tx_reference,
+      });
 
       await conn.commit();
 

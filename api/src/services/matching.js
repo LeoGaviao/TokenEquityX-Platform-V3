@@ -1,7 +1,8 @@
 const { v4: uuidv4 }        = require('uuid');
 const logger                = require('../utils/logger');
 const ws                    = require('./websocket');
-const { getNumericSetting } = require('../utils/platformSettings');
+const { getNumericSetting }           = require('../utils/platformSettings');
+const { createSettlementInstruction } = require('../utils/settlement');
 
 async function matchOrders(tokenId, db) {
   try {
@@ -133,14 +134,14 @@ async function matchOrders(tokenId, db) {
         );
         if (buyerWallets.length === 0) { logger.warn('Buyer wallet not found', { userId: buy.user_id }); continue; }
         const buyerWallet = buyerWallets[0];
-        const rail = buyerWallet.settlement_rail || 'FIAT';
+        const buyerRail = buyerWallet.settlement_rail || 'FIAT';
 
-        const buyerBalance = rail === 'USDC'
+        const buyerBalance = buyerRail === 'USDC'
           ? parseFloat(buyerWallet.balance_usdc)
           : parseFloat(buyerWallet.balance_usd);
 
         if (buyerBalance < buyerDebit) {
-          logger.warn('Buyer insufficient balance', { userId: buy.user_id, rail, required: buyerDebit, available: buyerBalance });
+          logger.warn('Buyer insufficient balance', { userId: buy.user_id, rail: buyerRail, required: buyerDebit, available: buyerBalance });
           continue;
         }
 
@@ -150,7 +151,8 @@ async function matchOrders(tokenId, db) {
         );
         if (sellerWallets.length === 0) { logger.warn('Seller wallet not found', { userId: sell.user_id }); continue; }
         const sellerWallet = sellerWallets[0];
-        const sellerBalance = rail === 'USDC'
+        const sellerRail = sellerWallet.settlement_rail || 'FIAT';
+        const sellerBalance = sellerRail === 'USDC'
           ? parseFloat(sellerWallet.balance_usdc)
           : parseFloat(sellerWallet.balance_usd);
 
@@ -205,23 +207,23 @@ async function matchOrders(tokenId, db) {
               (token_symbol, buy_order_id, sell_order_id,
                buyer_wallet, seller_wallet,
                quantity, price, total_value, total_usdc,
-               platform_fee, token_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               platform_fee, token_id,
+               secz_levy, vat_amount, cgt_amount, imtt_amount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `, [
             tokenSymbol,
             buy.id, sell.id,
             buyerUser.wallet_address  || '',
             sellerUser.wallet_address || '',
             fillQty, tradePrice, totalValue, totalValue,
-            platformFee, tokenId
+            platformFee, tokenId,
+            seczLevy, vatOnPlatformFee, cgtAmount, imttAmount
           ]);
 
-          // 2. FIAT rail settlement
-          if (rail === 'FIAT') {
-            const newBuyerUSD  = parseFloat((buyerBalance  - buyerDebit).toFixed(2));
-            const newBuyerRes  = parseFloat(Math.max(0, parseFloat(buyerWallet.reserved_usd) - totalValue).toFixed(2));
-            const newSellerUSD = parseFloat((sellerBalance + sellerNet).toFixed(2));
-
+          // 2. Buyer debit (in buyer's settlement rail)
+          if (buyerRail === 'FIAT') {
+            const newBuyerUSD = parseFloat((buyerBalance - buyerDebit).toFixed(2));
+            const newBuyerRes = parseFloat(Math.max(0, parseFloat(buyerWallet.reserved_usd) - totalValue).toFixed(2));
             await conn.execute(
               'UPDATE investor_wallets SET balance_usd = ?, reserved_usd = ?, updated_at = NOW() WHERE user_id = ?',
               [newBuyerUSD, newBuyerRes, buy.user_id]
@@ -236,7 +238,27 @@ async function matchOrders(tokenId, db) {
               VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
             `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(2)), newBuyerUSD, buy.id,
                `IMTT 2% on $${totalValue.toFixed(2)} trade`]);
+          } else {
+            const newBuyerUSDC = parseFloat((buyerBalance - buyerDebit).toFixed(8));
+            await conn.execute(
+              'UPDATE investor_wallets SET balance_usdc = ?, updated_at = NOW() WHERE user_id = ?',
+              [newBuyerUSDC, buy.user_id]
+            );
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'TRADE_BUY', ?, ?, ?, ?, ?)
+            `, [buy.user_id, -totalValue, buyerBalance, parseFloat((buyerBalance - totalValue).toFixed(8)), buy.id,
+               `Buy ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} [USDC]`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
+            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(8)), newBuyerUSDC, buy.id,
+               `IMTT 2% on $${totalValue.toFixed(2)} trade [USDC]`]);
+          }
 
+          // 3. Seller credit (in seller's settlement rail)
+          if (sellerRail === 'FIAT') {
+            const newSellerUSD = parseFloat((sellerBalance + sellerNet).toFixed(2));
             await conn.execute(
               'UPDATE investor_wallets SET balance_usd = ?, updated_at = NOW() WHERE user_id = ?',
               [newSellerUSD, sell.user_id]
@@ -256,32 +278,8 @@ async function matchOrders(tokenId, db) {
               VALUES (uuid(), ?, 'CGT', ?, ?, ?, ?, ?)
             `, [sell.user_id, -cgtAmount, parseFloat((sellerBalance + totalValue).toFixed(2)), newSellerUSD, sell.id,
                `CGT 20% on $${capitalGain.toFixed(2)} capital gain`]);
-
-            await conn.execute(
-              'UPDATE platform_treasury SET usd_liability = usd_liability + ?, updated_at = NOW() WHERE id = 1',
-              [parseFloat((totalFees + cgtAmount + imttAmount).toFixed(2))]
-            );
-
-          // 3. USDC rail settlement
           } else {
-            const newBuyerUSDC  = parseFloat((buyerBalance  - buyerDebit).toFixed(8));
             const newSellerUSDC = parseFloat((sellerBalance + sellerNet).toFixed(8));
-
-            await conn.execute(
-              'UPDATE investor_wallets SET balance_usdc = ?, updated_at = NOW() WHERE user_id = ?',
-              [newBuyerUSDC, buy.user_id]
-            );
-            await conn.execute(`
-              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'TRADE_BUY', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -totalValue, buyerBalance, parseFloat((buyerBalance - totalValue).toFixed(8)), buy.id,
-               `Buy ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} [USDC]`]);
-            await conn.execute(`
-              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(8)), newBuyerUSDC, buy.id,
-               `IMTT 2% on $${totalValue.toFixed(2)} trade [USDC]`]);
-
             await conn.execute(
               'UPDATE investor_wallets SET balance_usdc = ?, updated_at = NOW() WHERE user_id = ?',
               [newSellerUSDC, sell.user_id]
@@ -301,10 +299,24 @@ async function matchOrders(tokenId, db) {
               VALUES (uuid(), ?, 'CGT', ?, ?, ?, ?, ?)
             `, [sell.user_id, -cgtAmount, parseFloat((sellerBalance + totalValue).toFixed(8)), newSellerUSDC, sell.id,
                `CGT 20% on $${capitalGain.toFixed(2)} capital gain [USDC]`]);
+          }
 
+          // 4. Treasury credit — IMTT in buyer's rail, fees+CGT in seller's rail
+          const buyerTreasuryCol  = buyerRail  === 'FIAT' ? 'usd_liability' : 'usdc_balance';
+          const sellerTreasuryCol = sellerRail === 'FIAT' ? 'usd_liability' : 'usdc_balance';
+          if (buyerTreasuryCol === sellerTreasuryCol) {
             await conn.execute(
-              'UPDATE platform_treasury SET usdc_balance = usdc_balance + ?, updated_at = NOW() WHERE id = 1',
+              `UPDATE platform_treasury SET ${buyerTreasuryCol} = ${buyerTreasuryCol} + ?, updated_at = NOW() WHERE id = 1`,
               [parseFloat((totalFees + cgtAmount + imttAmount).toFixed(2))]
+            );
+          } else {
+            await conn.execute(
+              `UPDATE platform_treasury SET ${buyerTreasuryCol} = ${buyerTreasuryCol} + ?, updated_at = NOW() WHERE id = 1`,
+              [parseFloat(imttAmount.toFixed(2))]
+            );
+            await conn.execute(
+              `UPDATE platform_treasury SET ${sellerTreasuryCol} = ${sellerTreasuryCol} + ?, updated_at = NOW() WHERE id = 1`,
+              [parseFloat((totalFees + cgtAmount).toFixed(2))]
             );
           }
 
@@ -347,6 +359,22 @@ async function matchOrders(tokenId, db) {
             [tradePrice, tokenId]
           );
 
+          // F-03: settlement instruction for banking partner records
+          await createSettlementInstruction(conn, {
+            type:            'TRADE',
+            token_symbol:    tokenSymbol,
+            from_user_id:    buy.user_id,
+            to_user_id:      sell.user_id,
+            gross_amount:    totalValue,
+            fee_amount:      totalFees + cgtAmount + imttAmount,
+            net_amount:      sellerNet,
+            settlement_rail: buyerRail,
+            reference:       `TRADE-${buy.id.slice(0,8)}-${sell.id.slice(0,8)}-${Date.now()}`,
+            metadata:        buyerRail !== sellerRail
+              ? { cross_rail: true, buyer_rail: buyerRail, seller_rail: sellerRail }
+              : null,
+          });
+
           await conn.commit();
 
           // Update in-memory state for next iteration
@@ -358,7 +386,8 @@ async function matchOrders(tokenId, db) {
           const tradeData = {
             id: `trade-${Date.now()}`, quantity: fillQty, price: tradePrice,
             totalValue, platformFee, seczLevy, vatOnPlatformFee, totalFees,
-            imttAmount, cgtAmount, capitalGain, sellerNet, rail,
+            imttAmount, cgtAmount, capitalGain, sellerNet,
+            buyerRail, sellerRail,
             matchedAt: new Date().toISOString()
           };
           trades.push(tradeData);
@@ -367,7 +396,7 @@ async function matchOrders(tokenId, db) {
           logger.info('Trade settled', {
             symbol: tokenSymbol, qty: fillQty, price: tradePrice,
             totalValue, platformFee, seczLevy, vatOnPlatformFee,
-            imttAmount, cgtAmount, sellerNet, rail,
+            imttAmount, cgtAmount, sellerNet, buyerRail, sellerRail,
             buyerTokenBal: newBuyerTokenBal, sellerTokenBal: newSellerTokenBal,
           });
 

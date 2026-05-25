@@ -969,6 +969,25 @@ router.get('/migrate', async (req, res) => {
       ('premium_trial_end_date',            '2027-06-30', 'Global premium trial end date — all investors get full premium dashboard until this date'),
       ('premium_trial_days_new_investors',  '30',         'Number of days new investors get full premium trial from registration date')
     ON CONFLICT (key) DO NOTHING`,
+
+    // ── F-15: Trades table fee-component columns ─────────────────────────
+    `ALTER TABLE trades ADD COLUMN IF NOT EXISTS secz_levy   NUMERIC(20,8) DEFAULT 0`,
+    `ALTER TABLE trades ADD COLUMN IF NOT EXISTS vat_amount  NUMERIC(20,8) DEFAULT 0`,
+    `ALTER TABLE trades ADD COLUMN IF NOT EXISTS cgt_amount  NUMERIC(20,8) DEFAULT 0`,
+    `ALTER TABLE trades ADD COLUMN IF NOT EXISTS imtt_amount NUMERIC(20,8) DEFAULT 0`,
+
+    // ── F-03: Settlement instruction extra columns ────────────────────────
+    `ALTER TABLE settlement_instructions ADD COLUMN IF NOT EXISTS settlement_rail VARCHAR(10) DEFAULT 'FIAT'`,
+    `ALTER TABLE settlement_instructions ADD COLUMN IF NOT EXISTS metadata        JSONB`,
+    `ALTER TABLE settlement_instructions ADD COLUMN IF NOT EXISTS from_user_id    UUID`,
+    `ALTER TABLE settlement_instructions ADD COLUMN IF NOT EXISTS to_user_id      UUID`,
+
+    // ── F-02: Disbursement queue reference column ─────────────────────────
+    `ALTER TABLE disbursement_queue ADD COLUMN IF NOT EXISTS reference VARCHAR(100)`,
+    `ALTER TABLE disbursement_queue ADD COLUMN IF NOT EXISTS offering_id_int INTEGER`,
+
+    // ── F-10: Reconciliation logs currency column ─────────────────────────
+    `ALTER TABLE reconciliation_logs ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'USDC'`,
   ];
   const results = [];
   for (const sql of migrations) {

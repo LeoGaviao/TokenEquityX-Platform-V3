@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const db     = require('../db/pool');
-const { authenticate }      = require('../middleware/auth');
-const { sendMessage }       = require('../utils/messenger');
-const { getNumericSetting } = require('../utils/platformSettings');
+const { authenticate }              = require('../middleware/auth');
+const { sendMessage }               = require('../utils/messenger');
+const { getNumericSetting }         = require('../utils/platformSettings');
+const { createSettlementInstruction } = require('../utils/settlement');
 
 // ── GET /api/p2p — list open offers, optionally filter by symbol
 router.get('/', authenticate, async (req, res) => {
@@ -116,6 +117,11 @@ router.post('/', authenticate, async (req, res) => {
 });
 
 // ── PUT /api/p2p/:id/accept — buyer accepts an offer
+// P2P Transfer Fee Structure:
+// Platform fee: 0% (no platform fee on P2P transfers — by design to incentivise P2P liquidity)
+// CGT:  20% on seller capital gain (withheld at source, paid to ZIMRA)
+// IMTT:  2% on transfer value (charged to buyer, paid to ZIMRA)
+// WHT: not applicable (capital transfer, not income)
 router.put('/:id/accept', authenticate, async (req, res) => {
   const cgtRate  = await getNumericSetting('cgt_rate',  0.20);
   const imttRate = await getNumericSetting('imtt_rate', 0.02);
@@ -170,15 +176,31 @@ router.put('/:id/accept', authenticate, async (req, res) => {
     }
 
     // Debit buyer wallet (trade value + IMTT)
+    const buyerBalanceBefore = parseFloat(wallet.balance_usd);
+    const buyerBalanceAfter  = parseFloat((buyerBalanceBefore - buyerDebit).toFixed(2));
     await conn.execute(
       'UPDATE investor_wallets SET balance_usd = balance_usd - ?, updated_at = NOW() WHERE user_id = ?',
       [buyerDebit, req.user.userId]
     );
+    // F-08: buyer ledger entry
+    await conn.execute(`
+      INSERT INTO wallet_transactions
+        (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+      VALUES (gen_random_uuid(), ?, 'P2P_BUY', ?, ?, ?, ?, ?)
+    `, [
+      req.user.userId,
+      -buyerDebit,
+      buyerBalanceBefore, buyerBalanceAfter,
+      offer.id,
+      `P2P purchase: ${qty} ${offer.token_symbol} @ $${parseFloat(offer.price_per_token).toFixed(4)} | IMTT: $${imttAmount.toFixed(2)}`,
+    ]);
 
     // Credit seller wallet net of CGT (create if not exists)
     const [sellerWallets] = await conn.execute(
       'SELECT * FROM investor_wallets WHERE user_id = ?', [offer.seller_id]
     );
+    const sellerBalanceBefore = sellerWallets.length > 0 ? parseFloat(sellerWallets[0].balance_usd) : 0;
+    const sellerBalanceAfter  = parseFloat((sellerBalanceBefore + sellerCredit).toFixed(2));
     if (sellerWallets.length === 0) {
       await conn.execute(
         'INSERT INTO investor_wallets (id, user_id, balance_usd, balance_usdc, reserved_usd) VALUES (gen_random_uuid(), ?, ?, 0, 0)',
@@ -190,6 +212,18 @@ router.put('/:id/accept', authenticate, async (req, res) => {
         [sellerCredit, offer.seller_id]
       );
     }
+    // F-08: seller ledger entry
+    await conn.execute(`
+      INSERT INTO wallet_transactions
+        (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+      VALUES (gen_random_uuid(), ?, 'P2P_SELL', ?, ?, ?, ?, ?)
+    `, [
+      offer.seller_id,
+      sellerCredit,
+      sellerBalanceBefore, sellerBalanceAfter,
+      offer.id,
+      `P2P sale: ${qty} ${offer.token_symbol} @ $${parseFloat(offer.price_per_token).toFixed(4)} | CGT: $${cgtAmount.toFixed(2)}`,
+    ]);
 
     // Transfer tokens: deduct from seller holding
     await conn.execute(
@@ -229,6 +263,20 @@ router.put('/:id/accept', authenticate, async (req, res) => {
       'UPDATE platform_treasury SET usd_liability = usd_liability + ?, updated_at = NOW() WHERE id = 1',
       [parseFloat((cgtAmount + imttAmount).toFixed(2))]
     );
+
+    // F-03: settlement instruction for banking partner records
+    await createSettlementInstruction(conn, {
+      type:            'P2P',
+      token_symbol:    offer.token_symbol,
+      from_user_id:    req.user.userId,
+      to_user_id:      offer.seller_id,
+      gross_amount:    total,
+      fee_amount:      cgtAmount + imttAmount,
+      net_amount:      total - cgtAmount - imttAmount,
+      settlement_rail: 'FIAT',
+      reference:       `P2P-${offer.id}`,
+      metadata:        { cgt_amount: cgtAmount, imtt_amount: imttAmount, capital_gain: capitalGain },
+    });
 
     // Notify seller — platform message
     await sendMessage({

@@ -9,8 +9,9 @@ const router = require('express').Router();
 const db     = require('../db/pool');
 const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roles');
-const { sendMessage }      = require('../utils/messenger');
-const { getNumericSetting } = require('../utils/platformSettings');
+const { sendMessage }               = require('../utils/messenger');
+const { getNumericSetting }         = require('../utils/platformSettings');
+const { createSettlementInstruction } = require('../utils/settlement');
 
 const ISSUANCE_FEE_RATE = 0.02; // 2% — fallback if platform_fee_rate not set
 
@@ -488,6 +489,8 @@ router.post('/:id/subscribe',
 
       const tokensAllocated = Math.floor(subscribeAmount / parseFloat(offering.offering_price_usd));
 
+      const reservedBefore = parseFloat(wallet.reserved_usd || 0);
+
       // Reserve funds
       if (rail === 'USDC') {
         await conn.execute(
@@ -501,11 +504,12 @@ router.post('/:id/subscribe',
         );
       }
 
-      await conn.execute(`
+      const [subResult] = await conn.execute(`
         INSERT INTO offering_subscriptions
           (offering_id, investor_id, amount_usd, tokens_allocated, settlement_rail, status)
         VALUES (?, ?, ?, ?, ?, 'CONFIRMED')
       `, [req.params.id, req.user.userId, subscribeAmount, tokensAllocated, rail]);
+      const subscriptionId = subResult.insertId;
 
       await conn.execute(`
         UPDATE primary_offerings
@@ -515,13 +519,15 @@ router.post('/:id/subscribe',
         WHERE id = ?
       `, [tokensAllocated, subscribeAmount, req.params.id]);
 
+      // F-12: type = SUBSCRIPTION_RESERVE; balance_before/after = reserved_usd for FIAT
       await conn.execute(`
         INSERT INTO wallet_transactions
           (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-        VALUES (gen_random_uuid(), ?, 'ADJUSTMENT', ?, ?, ?, ?, ?)
+        VALUES (gen_random_uuid(), ?, 'SUBSCRIPTION_RESERVE', ?, ?, ?, ?, ?)
       `, [
         req.user.userId, -subscribeAmount,
-        availableBalance, availableBalance - subscribeAmount,
+        rail === 'USDC' ? availableBalance           : reservedBefore,
+        rail === 'USDC' ? availableBalance - subscribeAmount : reservedBefore + subscribeAmount,
         null,
         `Primary offering subscription — ${tokensAllocated} tokens @ $${offering.offering_price_usd}`
       ]);
@@ -566,7 +572,7 @@ router.post('/:id/subscribe',
 
       res.json({
         success: true,
-        subscription_id: null,
+        subscription_id: subscriptionId,
         tokens_allocated: tokensAllocated,
         amount_usd: subscribeAmount,
         message: `Subscribed successfully. ${tokensAllocated} tokens reserved for you.`
@@ -638,12 +644,25 @@ router.post('/:id/close',
         if (sub.settlement_rail === 'FIAT') {
           const [iw] = await conn.execute('SELECT * FROM investor_wallets WHERE user_id = ?', [sub.investor_id]);
           if (iw.length > 0) {
-            const newBal = parseFloat((parseFloat(iw[0].balance_usd) - sub.amount_usd).toFixed(2));
-            const newRes = parseFloat(Math.max(0, parseFloat(iw[0].reserved_usd) - sub.amount_usd).toFixed(2));
+            const balBefore = parseFloat(iw[0].balance_usd);
+            const newBal    = parseFloat((balBefore - parseFloat(sub.amount_usd)).toFixed(2));
+            const newRes    = parseFloat(Math.max(0, parseFloat(iw[0].reserved_usd) - parseFloat(sub.amount_usd)).toFixed(2));
             await conn.execute(
               'UPDATE investor_wallets SET balance_usd = ?, reserved_usd = ?, updated_at = NOW() WHERE user_id = ?',
               [newBal, newRes, sub.investor_id]
             );
+            // F-13: ledger entry for the debit at close
+            await conn.execute(`
+              INSERT INTO wallet_transactions
+                (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (gen_random_uuid(), ?, 'SUBSCRIPTION_DEBIT', ?, ?, ?, ?, ?)
+            `, [
+              sub.investor_id,
+              -parseFloat(sub.amount_usd),
+              balBefore, newBal,
+              null,
+              `Primary offering debit — ${sub.tokens_allocated} ${token.token_symbol || token.symbol} tokens`,
+            ]);
           }
         }
 
@@ -677,7 +696,7 @@ router.post('/:id/close',
         `, [
           offering.issuer_id, netProceeds, issuerCurrentBal, issuerNewBal,
           String(offering.id),
-          `Primary offering proceeds — ${token.symbol}. Gross: $${totalRaised.toFixed(2)}, Fee: $${issuanceFee.toFixed(2)}, VAT: $${vatOnIssuanceFee.toFixed(2)}, Net: $${netProceeds.toFixed(2)}`
+          `Primary offering proceeds — ${tokenSym}. Gross: $${totalRaised.toFixed(2)}, Fee: $${issuanceFee.toFixed(2)}, VAT: $${vatOnIssuanceFee.toFixed(2)}, Net: $${netProceeds.toFixed(2)}`
         ]);
       }
 
@@ -686,6 +705,39 @@ router.post('/:id/close',
         'UPDATE platform_treasury SET usd_liability = usd_liability + ?, updated_at = NOW() WHERE id = 1',
         [parseFloat((issuanceFee + vatOnIssuanceFee).toFixed(2))]
       );
+
+      const tokenSym = token.token_symbol || token.symbol;
+
+      // F-02: Queue disbursement for banking partner to process EFT to issuer
+      await conn.execute(`
+        INSERT INTO disbursement_queue
+          (id, token_symbol, issuer_id, entity_name,
+           gross_amount, platform_fee, secz_levy, vat_on_fees,
+           net_amount, status, reference)
+        VALUES (gen_random_uuid(), ?, ?, ?, ?, ?, 0, ?, ?, 'PENDING', ?)
+      `, [
+        tokenSym,
+        offering.issuer_id,
+        token.company_name || token.token_name || token.name || null,
+        totalRaised.toFixed(6),
+        issuanceFee.toFixed(6),
+        vatOnIssuanceFee.toFixed(6),
+        netProceeds.toFixed(6),
+        `DISB-${tokenSym.toUpperCase()}-${Date.now()}`,
+      ]);
+
+      // F-03: Create settlement instruction for banking partner dashboard
+      await createSettlementInstruction(conn, {
+        type:            'OFFERING_CLOSE',
+        token_symbol:    tokenSym,
+        from_user_id:    null,
+        to_user_id:      offering.issuer_id,
+        gross_amount:    totalRaised,
+        fee_amount:      issuanceFee + vatOnIssuanceFee,
+        net_amount:      netProceeds,
+        settlement_rail: 'FIAT',
+        reference:       `SETTLE-${tokenSym.toUpperCase()}-${Date.now()}`,
+      });
 
       // Determine post-offering trading mode from the token's listing_type
       const newTradingMode = token.listing_type === 'BROWNFIELD_BOURSE' ? 'FULL_TRADING' : 'P2P_ONLY';
