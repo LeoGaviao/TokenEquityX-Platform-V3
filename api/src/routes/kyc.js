@@ -244,6 +244,29 @@ router.get('/status/:walletAddress', async (req, res) => {
   }
 });
 
+// GET /api/kyc/approved — recently approved KYC records (admin view)
+router.get('/approved',
+  authenticate,
+  requireRole('ADMIN', 'AUDITOR', 'COMPLIANCE_OFFICER'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute(`
+        SELECT k.id, k.full_name, k.investor_tier, k.reviewed_at, k.expires_at,
+               k.reviewer_notes, k.kyc_reference,
+               u.email, u.wallet_address
+        FROM kyc_records k
+        JOIN users u ON u.id = k.user_id
+        WHERE k.status = 'APPROVED'
+        ORDER BY k.reviewed_at DESC
+        LIMIT 50
+      `);
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: 'Could not fetch approved KYC records' });
+    }
+  }
+);
+
 // GET /api/kyc/pending — list pending KYC (auditor/admin only)
 router.get('/pending',
   authenticate,
@@ -275,16 +298,20 @@ router.put('/approve/:kycId',
   requireRole('ADMIN', 'AUDITOR', 'COMPLIANCE_OFFICER'),
   async (req, res) => {
     const { reviewerNotes, investorTier, kycReference } = req.body;
+    const conn = await db.getConnection();
     try {
-      const [records] = await db.execute(
+      await conn.beginTransaction();
+
+      const [records] = await conn.execute(
         'SELECT * FROM kyc_records WHERE id = ?',
         [req.params.kycId]
       );
       if (records.length === 0) {
+        await conn.rollback();
         return res.status(404).json({ error: 'KYC record not found' });
       }
 
-      await db.execute(`
+      await conn.execute(`
         UPDATE kyc_records
         SET status          = 'APPROVED',
             reviewed_at     = NOW(),
@@ -301,10 +328,12 @@ router.put('/approve/:kycId',
         req.params.kycId
       ]);
 
-      await db.execute(
+      await conn.execute(
         'UPDATE users SET kyc_status = ? WHERE id = ?',
         ['APPROVED', records[0].user_id]
       );
+
+      await conn.commit();
 
       const { notifyInvestorKycApproved } = require('../utils/mailer');
       const [userRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [records[0].user_id]);
@@ -333,8 +362,11 @@ router.put('/approve/:kycId',
 
       res.json({ success: true, message: 'KYC approved' });
     } catch (err) {
+      await conn.rollback();
       logger.error('KYC approval failed', { error: err.message });
       res.status(500).json({ error: 'Could not approve KYC' });
+    } finally {
+      conn.release();
     }
   }
 );

@@ -219,9 +219,33 @@ export default function InvestorDashboard() {
     const _u = JSON.parse(localStorage.getItem('user') || '{}');
     if (!_u?.role) return;
     if (!['INVESTOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; return; }
-    if (!(_u?.onboarding_complete === true || _u?.onboarding_complete === 1 || _u?.onboarding_complete === 'true')) {
-      router.push('/onboarding'); return;
+
+    const isOnboarded = _u?.onboarding_complete === true || _u?.onboarding_complete === 1 || _u?.onboarding_complete === 'true' || _u?.kyc_status === 'APPROVED';
+    if (!isOnboarded) {
+      // Verify with API before redirecting — localStorage may be stale
+      const token = localStorage.getItem('token');
+      if (!token) { router.push('/onboarding'); return; }
+      fetch(`${API}/kyc/status`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => {
+          if (d?.user_kyc_status === 'APPROVED') {
+            const updated = { ..._u, onboarding_complete: true, kyc_status: 'APPROVED' };
+            if (d.investor_tier) updated.investor_tier = d.investor_tier;
+            localStorage.setItem('user', JSON.stringify(updated));
+            localStorage.removeItem('onboarding_step');
+            const tier = d.investor_tier || _u?.investor_tier;
+            if (tier === 'CORPORATE')   { router.push('/investor/corporate');     return; }
+            if (tier === 'INSTITUTION') { router.push('/investor/institutional'); return; }
+            loadAll(); connectWS();
+          } else {
+            router.push('/onboarding');
+          }
+        })
+        .catch(() => router.push('/onboarding'));
+      return;
     }
+
+    localStorage.removeItem('onboarding_step');
     // Redirect to tier-specific dashboard
     const tier = _u?.investor_tier;
     if (tier === 'CORPORATE')    { router.push('/investor/corporate');     return; }
@@ -879,7 +903,10 @@ export default function InvestorDashboard() {
                     </div>
                   ))}
                 </div>
-                <p className="text-xs text-gray-600 mt-2">Click an offering card to subscribe on the Market tab.</p>
+                {kycData?.user_kyc_status==='APPROVED'
+                  ? <p className="text-xs text-gray-600 mt-2">Click an offering card to subscribe on the Market tab.</p>
+                  : <p className="text-xs text-amber-500 mt-2">⚠️ Complete KYC verification to unlock subscriptions.</p>
+                }
               </div>
             )}
 
@@ -1180,8 +1207,10 @@ export default function InvestorDashboard() {
                           </div>
                         </div>
                       )}
-                      <button onClick={()=>subscribeToOffering(selOffering.id)} disabled={subLoading||!subAmount}
-                        className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50 flex-shrink-0">
+                      <button onClick={()=>subscribeToOffering(selOffering.id)}
+                        disabled={subLoading||!subAmount||kycData?.user_kyc_status!=='APPROVED'}
+                        className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50 flex-shrink-0"
+                        title={kycData?.user_kyc_status!=='APPROVED'?'Complete KYC verification to unlock subscriptions':undefined}>
                         {subLoading?'…':'✅ Subscribe'}
                       </button>
                     </div>

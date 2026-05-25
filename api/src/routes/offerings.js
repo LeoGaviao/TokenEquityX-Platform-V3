@@ -439,6 +439,18 @@ router.post('/:id/subscribe',
       if (offerings.length === 0) { await conn.rollback(); return res.status(404).json({ error: 'Offering not found' }); }
       const offering = offerings[0];
 
+      // KYC gate — investor must be approved before subscribing
+      const [kycCheck] = await conn.execute(
+        'SELECT kyc_status FROM users WHERE id = ?',
+        [req.user.userId]
+      );
+      if (!kycCheck.length || kycCheck[0].kyc_status !== 'APPROVED') {
+        await conn.rollback();
+        return res.status(403).json({
+          error: 'Your KYC verification must be approved before you can subscribe to offerings. Please complete your KYC and wait for admin approval.',
+        });
+      }
+
       if (offering.status !== 'OPEN') {
         await conn.rollback();
         return res.status(400).json({ error: 'This offering is not open for subscriptions' });

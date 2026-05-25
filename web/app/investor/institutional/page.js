@@ -75,6 +75,7 @@ export default function InstitutionalDashboard() {
   const [subLoading,   setSubLoading]   = useState(false);
   const [claiming,     setClaiming]     = useState(null);
   const [voting,       setVoting]       = useState(null);
+  const [kycApproved,  setKycApproved]  = useState(false);
 
   const wsRef = useRef(null);
   const notify = (type, text) => { setActionMsg({type,text}); setTimeout(()=>setActionMsg(null),3500); };
@@ -83,9 +84,34 @@ export default function InstitutionalDashboard() {
     const _u = JSON.parse(localStorage.getItem('user') || '{}');
     if (!_u?.role) return;
     if (!['INVESTOR','ADMIN'].includes(_u?.role)) { window.location.href = '/'; return; }
-    if (!(_u?.onboarding_complete === true || _u?.onboarding_complete === 1 || _u?.onboarding_complete === 'true')) {
-      router.push('/onboarding'); return;
+
+    const isOnboarded = _u?.onboarding_complete === true || _u?.onboarding_complete === 1 || _u?.onboarding_complete === 'true' || _u?.kyc_status === 'APPROVED';
+    if (!isOnboarded) {
+      const token = localStorage.getItem('token');
+      if (!token) { router.push('/onboarding'); return; }
+      fetch(`${API}/kyc/status`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => {
+          if (d?.user_kyc_status === 'APPROVED') {
+            const updated = { ..._u, onboarding_complete: true, kyc_status: 'APPROVED' };
+            if (d.investor_tier) updated.investor_tier = d.investor_tier;
+            localStorage.setItem('user', JSON.stringify(updated));
+            localStorage.removeItem('onboarding_step');
+            setKycApproved(true);
+            const tier = d.investor_tier || _u?.investor_tier;
+            if (tier === 'CORPORATE') { router.push('/investor/corporate'); return; }
+            if (!tier || tier === 'RETAIL') { router.push('/investor'); return; }
+            loadAll(); connectWS();
+          } else {
+            router.push('/onboarding');
+          }
+        })
+        .catch(() => router.push('/onboarding'));
+      return;
     }
+
+    localStorage.removeItem('onboarding_step');
+    setKycApproved(_u?.kyc_status === 'APPROVED');
     // Tier guard — redirect away if not INSTITUTION
     const tier = _u?.investor_tier;
     if (tier === 'CORPORATE') { router.push('/investor/corporate'); return; }
@@ -508,7 +534,12 @@ export default function InstitutionalDashboard() {
                   <p className="text-sm font-semibold mb-2">Subscribe to {selOffering.token_symbol}</p>
                   <div className="flex gap-2 items-end">
                     <div className="flex-1"><label className="text-xs text-gray-400 block mb-1">Amount (USD)</label><input type="number" value={subAmount} onChange={e=>setSubAmount(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"/></div>
-                    <button onClick={()=>subscribeToOffering(selOffering.id)} disabled={subLoading||!subAmount} className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50">{subLoading?'…':'✅ Subscribe'}</button>
+                    <button onClick={()=>subscribeToOffering(selOffering.id)}
+                      disabled={subLoading||!subAmount||!kycApproved}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-600 text-white disabled:opacity-50"
+                      title={!kycApproved?'Complete KYC verification to unlock subscriptions':undefined}>
+                      {subLoading?'…':'✅ Subscribe'}
+                    </button>
                   </div>
                 </div>
               )}

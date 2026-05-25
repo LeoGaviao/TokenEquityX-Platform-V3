@@ -1489,6 +1489,7 @@ export default function AdminDashboard() {
   const [assignNote,setAssignNote]=useState('');
   const [auditorList,setAuditorList]=useState([]);
   const [kycItems,setKycItems]=useState([]);
+  const [approvedKycItems,setApprovedKycItems]=useState([]);
   const [entityKycList, setEntityKycList] = useState([]);
   const [expandedKyc, setExpandedKyc] = useState(null);
   const [expandedKycInvestor, setExpandedKycInvestor] = useState(null);
@@ -1775,14 +1776,22 @@ export default function AdminDashboard() {
       fetch(`${API}/kyc/pending`, { headers: { Authorization: `Bearer ${token2}` } })
         .then(r => r.json()).then(data => {
           if (!Array.isArray(data)) return;
-          setKycItems(data.map(k => ({
+          const pending = data.filter(k => k.status === 'PENDING');
+          setKycItems(pending.map(k => ({
             id:                    k.id,
             name:                  k.full_name || 'Unknown',
             wallet:                k.wallet_address || '—',
             email:                 k.email || '—',
             type:                  k.id_type || '—',
+            nationality:           k.nationality || null,
+            id_number:             k.id_number || null,
+            date_of_birth:         k.date_of_birth || null,
+            city:                  k.city || null,
+            country:               k.country || null,
             docs:                  Array.isArray(k.documents) ? k.documents.length : 0,
+            documents:             Array.isArray(k.documents) ? k.documents : [],
             submitted:             k.submitted_at,
+            status:                k.status || 'PENDING',
             risk:                  (k.risk_score||0) > 15 ? 'HIGH' : (k.risk_score||0) > 8 ? 'MEDIUM' : 'LOW',
             risk_profile:          k.risk_profile || null,
             investor_tier:         k.investor_tier || 'RETAIL',
@@ -1790,6 +1799,10 @@ export default function AdminDashboard() {
             institutional_details: k.institutional_details || null,
             investment_mandate_url:k.investment_mandate_url || null,
           })));
+        }).catch(()=>{});
+      fetch(`${API}/kyc/approved`, { headers: { Authorization: `Bearer ${token2}` } })
+        .then(r => r.json()).then(data => {
+          if (Array.isArray(data)) setApprovedKycItems(data);
         }).catch(()=>{});
     } catch(e){console.error(e);}
     finally{setLoading(false);}
@@ -1903,8 +1916,12 @@ export default function AdminDashboard() {
     const token = localStorage.getItem('token');
     if (action === 'approve') {
       const res = await fetch(`${API}/kyc/approve/${id}`, { method:'PUT', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' } });
-      if (res.ok) { setKycItems(k=>k.filter(i=>i.id!==id)); notify('success','✅ KYC approved. Investor notified.'); }
-      else { const d=await res.json(); notify('error', d.error||'Approval failed'); }
+      if (res.ok) {
+        const approved = kycItems.find(i => i.id === id);
+        setKycItems(k => k.filter(i => i.id !== id));
+        if (approved) setApprovedKycItems(prev => [{ ...approved, reviewed_at: new Date().toISOString() }, ...prev]);
+        notify('success','✅ KYC approved. Investor notified.');
+      } else { const d=await res.json(); notify('error', d.error||'Approval failed'); }
     } else if (action === 'reject') {
       const reason = window.prompt('Rejection reason (shown to investor):');
       if (!reason) return;
@@ -1912,7 +1929,8 @@ export default function AdminDashboard() {
       if (res.ok) { setKycItems(k=>k.filter(i=>i.id!==id)); notify('error','❌ KYC rejected. Investor notified.'); }
       else { const d=await res.json(); notify('error', d.error||'Rejection failed'); }
     } else {
-      notify('info','📋 Info requested.');
+      // Open the full detail view for this investor
+      setExpandedKycInvestor(prev => prev === id ? null : id);
     }
   };
   const handleFlag=(id,action)=>{setFlaggedTxns(f=>f.filter(i=>i.id!==id));notify(action==='dismiss'?'info':'warning',action==='dismiss'?'Flag dismissed.':'🚫 Wallet suspended.');};
@@ -2627,18 +2645,17 @@ export default function AdminDashboard() {
             )}
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h3 className="font-semibold mb-4">KYC Review Queue</h3>
+              <h3 className="font-semibold mb-4">KYC Review Queue <span className="text-xs text-amber-400 ml-2">{kycItems.length} pending</span></h3>
               {kycItems.length===0&&<p className="text-gray-500 text-sm text-center py-6">✅ No pending KYC applications</p>}
               <div className="space-y-3">
                 {kycItems.map((k,i)=>{
                 const tierColor = k.investor_tier==='INSTITUTION'?'bg-purple-900/50 text-purple-300':k.investor_tier==='CORPORATE'?'bg-blue-900/50 text-blue-300':'bg-gray-700/50 text-gray-300';
                 const isExpanded = expandedKycInvestor === k.id;
-                const showExpand = k.investor_tier==='CORPORATE'||k.investor_tier==='INSTITUTION';
                 return (
                   <div key={i} className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-blue-900 flex items-center justify-center text-sm font-bold flex-shrink-0">{k.name[0]}</div>
+                        <div className="w-9 h-9 rounded-full bg-blue-900 flex items-center justify-center text-sm font-bold flex-shrink-0">{(k.name||'?')[0]}</div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-sm">{k.name}</p>
@@ -2651,65 +2668,123 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
                         <span className={`text-xs font-bold px-2 py-1 rounded-full ${k.risk==='LOW'?'bg-green-900/50 text-green-300':k.risk==='MEDIUM'?'bg-amber-900/50 text-amber-300':'bg-red-900/50 text-red-300'}`}>{k.risk} RISK</span>
-                        {showExpand&&<button onClick={()=>setExpandedKycInvestor(isExpanded?null:k.id)} className="text-xs text-blue-400 hover:text-blue-300">{isExpanded?'▲ Hide':'▼ Details'}</button>}
+                        <button onClick={()=>handleKYC(k.id,'review')} className="text-xs text-blue-400 hover:text-blue-300">{isExpanded?'▲ Hide':'▼ Details'}</button>
                         <button onClick={()=>handleKYC(k.id,'approve')} className="bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg">✅ Approve</button>
-                        <button onClick={()=>handleKYC(k.id,'review')} className="bg-amber-800 hover:bg-amber-700 text-white text-xs px-3 py-1.5 rounded-lg">🔍 Info</button>
                         <button onClick={()=>handleKYC(k.id,'reject')} className="bg-red-900/50 hover:bg-red-900 text-red-400 text-xs px-3 py-1.5 rounded-lg border border-red-800">❌ Reject</button>
                       </div>
                     </div>
-                    {/* Tier 2 expanded details */}
-                    {isExpanded&&k.investor_tier==='CORPORATE'&&(()=>{
-                      const cd=typeof k.corporate_details==='string'?JSON.parse(k.corporate_details||'{}'):(k.corporate_details||{});
-                      return(
-                        <div className="bg-gray-900/60 rounded-xl p-4 space-y-3 text-xs">
+                    {/* Expanded KYC detail view — all tiers */}
+                    {isExpanded&&(
+                      <div className="bg-gray-900/60 rounded-xl p-4 space-y-4 text-xs">
+                        {/* Personal details */}
+                        <div>
+                          <p className="text-gray-400 font-semibold mb-2">Personal Details</p>
                           <div className="grid grid-cols-2 gap-2">
-                            {[['Company',cd.companyName],['Reg. Number',cd.registrationNumber],['Country',cd.countryOfRegistration],['Business Type',cd.businessType],['Source of Funds',cd.sourceOfFunds]].map(([l,v])=>(
-                              <div key={l} className="bg-gray-800/60 rounded-lg p-2"><p className="text-gray-500">{l}</p><p className="text-white font-medium">{v||'—'}</p></div>
+                            {[['Full Name',k.name],['Nationality',k.nationality],['Date of Birth',k.date_of_birth?dt(k.date_of_birth):null],['ID Type',k.type],['ID Number',k.id_number],['City',k.city],['Country',k.country],['Email',k.email],['Wallet',k.wallet]].map(([l,v])=>(
+                              <div key={l} className="bg-gray-800/60 rounded-lg p-2"><p className="text-gray-500">{l}</p><p className="text-white font-medium break-all">{v||'—'}</p></div>
                             ))}
                           </div>
-                          {Array.isArray(cd.directors)&&cd.directors.length>0&&(
-                            <div><p className="text-gray-400 font-semibold mb-2">Directors ({cd.directors.length})</p>
-                              <div className="space-y-1">{cd.directors.map((d,di)=><div key={di} className="bg-gray-800/60 rounded-lg p-2"><p className="text-white font-medium">{d.name}</p><p className="text-gray-500">{d.idNumber}{d.email&&` · ${d.email}`}</p></div>)}</div>
-                            </div>
-                          )}
-                          {Array.isArray(cd.beneficialOwners)&&cd.beneficialOwners.length>0&&(
-                            <div><p className="text-gray-400 font-semibold mb-2">Beneficial Owners ≥10%</p>
-                              <div className="space-y-1">{cd.beneficialOwners.map((b,bi)=><div key={bi} className="bg-gray-800/60 rounded-lg p-2"><p className="text-white font-medium">{b.name} — {b.ownershipPct}%</p><p className="text-gray-500">{b.nationality}</p></div>)}</div>
-                            </div>
-                          )}
+                          {k.risk_profile&&<div className="mt-2 bg-gray-800/60 rounded-lg p-2"><p className="text-gray-500">Risk Profile</p><p className="text-white font-medium">{k.risk_profile} — <span className={k.risk==='HIGH'?'text-red-400':k.risk==='MEDIUM'?'text-amber-400':'text-green-400'}>{k.risk} RISK</span></p></div>}
                         </div>
-                      );
-                    })()}
-                    {/* Tier 3 expanded details */}
-                    {isExpanded&&k.investor_tier==='INSTITUTION'&&(()=>{
-                      const id=typeof k.institutional_details==='string'?JSON.parse(k.institutional_details||'{}'):(k.institutional_details||{});
-                      return(
-                        <div className="bg-gray-900/60 rounded-xl p-4 space-y-3 text-xs">
-                          <div className="grid grid-cols-2 gap-2">
-                            {[['Institution',id.institutionName],['Type',id.institutionType],['Reg. Number',id.registrationNumber],['Country',id.countryOfRegistration],['AUM (USD)',id.aumUsd?`$${parseFloat(id.aumUsd).toLocaleString()}`:'—'],['Source of Funds',id.sourceOfFunds]].map(([l,v])=>(
-                              <div key={l} className="bg-gray-800/60 rounded-lg p-2"><p className="text-gray-500">{l}</p><p className="text-white font-medium">{v||'—'}</p></div>
-                            ))}
+                        {/* Uploaded documents */}
+                        {k.documents.length>0&&(
+                          <div>
+                            <p className="text-gray-400 font-semibold mb-2">Uploaded Documents ({k.documents.length})</p>
+                            <div className="space-y-1">
+                              {k.documents.map((doc,di)=>(
+                                <div key={di} className="flex items-center justify-between bg-gray-800/60 rounded-lg p-2">
+                                  <div><p className="text-white font-medium capitalize">{(doc.doc_type||'document').replace(/_/g,' ')}</p><p className="text-gray-500">{doc.file_name||'—'}{doc.file_size?` · ${Math.round(doc.file_size/1024)}KB`:''}</p></div>
+                                  {doc.file_url&&<a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 ml-3 flex-shrink-0">View ↗</a>}
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div className="flex gap-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${id.ipecRegistered?'bg-green-900/50 text-green-300':'bg-gray-700/50 text-gray-500'}`}>{id.ipecRegistered?'✅':'—'} IPEC</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${id.seczRegistered?'bg-green-900/50 text-green-300':'bg-gray-700/50 text-gray-500'}`}>{id.seczRegistered?'✅':'—'} SECZ</span>
-                            {id.otherRegulator&&<span className="text-xs text-gray-400">{id.otherRegulator}</span>}
-                          </div>
-                          {id.mandateScope&&<div className="bg-gray-800/60 rounded-lg p-2"><p className="text-gray-500 mb-1">Mandate Scope</p><p className="text-gray-300">{id.mandateScope}</p></div>}
-                          {k.investment_mandate_url&&(
-                            <a href={k.investment_mandate_url} target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-2 bg-blue-900/30 border border-blue-800/50 rounded-lg px-3 py-2 text-blue-300 hover:bg-blue-900/50 text-xs">
-                              📋 Investment Mandate Document ↗
-                            </a>
-                          )}
+                        )}
+                        {/* Tier 2: Corporate details */}
+                        {k.investor_tier==='CORPORATE'&&(()=>{
+                          const cd=typeof k.corporate_details==='string'?JSON.parse(k.corporate_details||'{}'):(k.corporate_details||{});
+                          return(
+                            <div className="space-y-3">
+                              <p className="text-gray-400 font-semibold">Corporate Details</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {[['Company',cd.companyName],['Reg. Number',cd.registrationNumber],['Country',cd.countryOfRegistration],['Business Type',cd.businessType],['Source of Funds',cd.sourceOfFunds]].map(([l,v])=>(
+                                  <div key={l} className="bg-gray-800/60 rounded-lg p-2"><p className="text-gray-500">{l}</p><p className="text-white font-medium">{v||'—'}</p></div>
+                                ))}
+                              </div>
+                              {Array.isArray(cd.directors)&&cd.directors.length>0&&(
+                                <div><p className="text-gray-400 font-semibold mb-2">Directors ({cd.directors.length})</p>
+                                  <div className="space-y-1">{cd.directors.map((d,di)=><div key={di} className="bg-gray-800/60 rounded-lg p-2"><p className="text-white font-medium">{d.name}</p><p className="text-gray-500">{d.idNumber}{d.email&&` · ${d.email}`}</p></div>)}</div>
+                                </div>
+                              )}
+                              {Array.isArray(cd.beneficialOwners)&&cd.beneficialOwners.length>0&&(
+                                <div><p className="text-gray-400 font-semibold mb-2">Beneficial Owners ≥10%</p>
+                                  <div className="space-y-1">{cd.beneficialOwners.map((b,bi)=><div key={bi} className="bg-gray-800/60 rounded-lg p-2"><p className="text-white font-medium">{b.name} — {b.ownershipPct}%</p><p className="text-gray-500">{b.nationality}</p></div>)}</div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {/* Tier 3: Institutional details */}
+                        {k.investor_tier==='INSTITUTION'&&(()=>{
+                          const id=typeof k.institutional_details==='string'?JSON.parse(k.institutional_details||'{}'):(k.institutional_details||{});
+                          return(
+                            <div className="space-y-3">
+                              <p className="text-gray-400 font-semibold">Institutional Details</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {[['Institution',id.institutionName],['Type',id.institutionType],['Reg. Number',id.registrationNumber],['Country',id.countryOfRegistration],['AUM (USD)',id.aumUsd?`$${parseFloat(id.aumUsd).toLocaleString()}`:'—'],['Source of Funds',id.sourceOfFunds]].map(([l,v])=>(
+                                  <div key={l} className="bg-gray-800/60 rounded-lg p-2"><p className="text-gray-500">{l}</p><p className="text-white font-medium">{v||'—'}</p></div>
+                                ))}
+                              </div>
+                              <div className="flex gap-3">
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${id.ipecRegistered?'bg-green-900/50 text-green-300':'bg-gray-700/50 text-gray-500'}`}>{id.ipecRegistered?'✅':'—'} IPEC</span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${id.seczRegistered?'bg-green-900/50 text-green-300':'bg-gray-700/50 text-gray-500'}`}>{id.seczRegistered?'✅':'—'} SECZ</span>
+                                {id.otherRegulator&&<span className="text-xs text-gray-400">{id.otherRegulator}</span>}
+                              </div>
+                              {id.mandateScope&&<div className="bg-gray-800/60 rounded-lg p-2"><p className="text-gray-500 mb-1">Mandate Scope</p><p className="text-gray-300">{id.mandateScope}</p></div>}
+                              {k.investment_mandate_url&&(
+                                <a href={k.investment_mandate_url} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 bg-blue-900/30 border border-blue-800/50 rounded-lg px-3 py-2 text-blue-300 hover:bg-blue-900/50">
+                                  📋 Investment Mandate Document ↗
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {/* Approve / Reject inline */}
+                        <div className="flex gap-2 pt-2 border-t border-gray-700/50">
+                          <button onClick={()=>handleKYC(k.id,'approve')} className="flex-1 py-2 rounded-lg text-xs font-bold bg-green-700 hover:bg-green-600 text-white">✅ Approve KYC</button>
+                          <button onClick={()=>handleKYC(k.id,'reject')} className="flex-1 py-2 rounded-lg text-xs font-bold bg-red-900/50 hover:bg-red-900 text-red-300 border border-red-800">❌ Reject KYC</button>
                         </div>
-                      );
-                    })()}
+                      </div>
+                    )}
                   </div>
                 );
               })}
               </div>
             </div>
+            {/* Recently Approved KYC */}
+            {approvedKycItems.length>0&&(
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h3 className="font-semibold mb-4 text-green-400">✅ Recently Approved KYC <span className="text-xs text-gray-500 ml-2">({approvedKycItems.length})</span></h3>
+                <div className="space-y-2">
+                  {approvedKycItems.slice(0,10).map((k,i)=>(
+                    <div key={i} className="flex items-center justify-between bg-gray-800/30 rounded-xl px-4 py-3 text-xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-full bg-green-900 flex items-center justify-center text-xs font-bold">{(k.full_name||k.name||'?')[0]}</div>
+                        <div>
+                          <p className="font-medium text-white">{k.full_name||k.name||'—'}</p>
+                          <p className="text-gray-500">{k.email||'—'} · <span className={`font-semibold ${k.investor_tier==='INSTITUTION'?'text-purple-300':k.investor_tier==='CORPORATE'?'text-blue-300':'text-gray-300'}`}>{k.investor_tier||'RETAIL'}</span></p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-green-400 font-semibold">APPROVED</p>
+                        <p className="text-gray-500">{k.reviewed_at?dt(k.reviewed_at):'—'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="font-semibold mb-4">Flagged Transactions</h3>
               {flaggedTxns.length===0&&<p className="text-gray-500 text-sm text-center py-6">✅ No active compliance flags</p>}

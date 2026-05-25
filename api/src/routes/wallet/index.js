@@ -102,7 +102,7 @@ router.post('/deposit', authenticate, async (req, res) => {
       }).catch(e => console.error('[MAILER] notifyInvestorDepositInstructions failed:', e.message));
     }
 
-    // FIX 3.3 — platform message to investor confirming submission received
+    // Platform message to investor confirming submission received
     sendMessage({
       recipientId: req.user.userId,
       subject:     `💰 Deposit Request Received — $${parseFloat(amount_usd).toFixed(2)} USD`,
@@ -111,6 +111,16 @@ router.post('/deposit', authenticate, async (req, res) => {
       category:    'WALLET',
       referenceId: depositId,
     }).catch(e => console.error('[MESSENGER] deposit POST sendMessage (investor) failed:', e.message));
+
+    // Platform message to admin system inbox
+    sendMessage({
+      recipientId: '00000000-0000-0000-0000-000000000001',
+      subject:     `💰 New Deposit Request — $${parseFloat(amount_usd).toFixed(2)} from ${investor.full_name || 'Investor'}`,
+      body:        `New deposit request submitted.\n\nAmount: $${parseFloat(amount_usd).toFixed(2)} USD\nInvestor: ${investor.full_name || 'Unknown'} (${investor.email || ''})\nReference: ${reference.trim().toUpperCase()}\nDeposit ID: ${depositId}\n\nVerify the credit on Stanbic before confirming.`,
+      type:        'SYSTEM',
+      category:    'WALLET',
+      referenceId: depositId,
+    }).catch(e => console.error('[MESSENGER] deposit POST sendMessage (admin) failed:', e.message));
 
     res.json({
       success:   true,
