@@ -809,6 +809,138 @@ async function notifyInvestorKycExpiring({ investorEmail, investorName, expiryDa
     `));
 }
 
+async function notifyIssuerKycApproved({ issuerEmail, issuerName }) {
+  const approvalDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  return send(issuerEmail, `✅ KYC Approved — You Can Now Submit Your Tokenisation Application`,
+    baseTemplate('KYC Approved — Next Step: Entity KYC & Tokenisation Application', `
+      <p>Dear ${issuerName},</p>
+      <p>Congratulations! Your personal identity verification (KYC) has been approved by the TokenEquityX compliance team.</p>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Approved</span></div>
+      <div class="detail-row"><span>Approval Date</span><span>${approvalDate}</span></div>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Your Next Steps</h3>
+      <ol style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Log in to your <strong>Issuer Portal</strong></li>
+        <li>Complete the <strong>Entity KYC</strong> for your company (corporate identity verification)</li>
+        <li>Once Entity KYC is approved, proceed to the <strong>Tokenisation Application</strong> journey</li>
+        <li>Upload your financial statements, valuation model, and supporting documents</li>
+      </ol>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;">
+        Your personal KYC is now complete. The Entity KYC step verifies your company's identity and is required before your tokenisation application can proceed to audit.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">Go to Issuer Portal &rarr;</a>
+    `));
+}
+
+async function notifyIssuerKycRejected({ issuerEmail, issuerName, reason }) {
+  return send(issuerEmail, `KYC Review — Action Required`,
+    baseTemplate('KYC Review — Action Required', `
+      <p>Dear ${issuerName},</p>
+      <p>Your KYC submission could not be approved at this time. Please review the information below and resubmit your documents through the Issuer Portal.</p>
+      <div class="detail-row"><span>Status</span><span class="danger">✗ Not Approved</span></div>
+      ${reason ? `<div class="detail-row"><span>Reason</span><span class="danger">${reason}</span></div>` : ''}
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">What to Correct</h3>
+      <ol style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Review the reason noted above and gather the required documents</li>
+        <li>Ensure all identity documents are clear, valid, and not expired</li>
+        <li>Log in to the Issuer Portal and navigate to <strong>My KYC</strong></li>
+        <li>Resubmit your updated documents for review</li>
+      </ol>
+      <p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;">
+        If you need assistance, contact our compliance team at <a href="mailto:compliance@tokenequityx.co.zw" style="color:#1A3C5E;">compliance@tokenequityx.co.zw</a>.
+      </p>
+      <a href="${PLATFORM}/issuer" class="btn btn-gold">Resubmit via Issuer Portal &rarr;</a>
+    `));
+}
+
+async function notifyAuditorKycApproved({ auditorEmail, auditorName }) {
+  const approvalDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  return send(auditorEmail, `✅ KYC Approved — Your Auditor Account is Ready`,
+    baseTemplate('KYC Approved — Your Auditor Account is Ready', `
+      <p>Dear ${auditorName},</p>
+      <p>Your identity verification (KYC) has been approved. Your auditor account on TokenEquityX is now fully active.</p>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Approved</span></div>
+      <div class="detail-row"><span>Approval Date</span><span>${approvalDate}</span></div>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">What You Can Do Now</h3>
+      <ul style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Receive and accept tokenisation audit assignments</li>
+        <li>Submit valuation models and audit reports</li>
+        <li>Access issuer financial data packages for assigned tokens</li>
+        <li>Communicate with issuers via the secure messaging system</li>
+      </ul>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;">
+        Audit assignments will be sent to you by the platform administrator. You will receive a notification when a new assignment is ready for acceptance.
+      </p>
+      <a href="${PLATFORM}/auditor" class="btn btn-gold">Go to Auditor Dashboard &rarr;</a>
+    `));
+}
+
+async function notifyPartnerKycApproved({ partnerEmail, partnerName }) {
+  const approvalDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  return send(partnerEmail, `✅ KYC Approved — Your Partner Account is Active`,
+    baseTemplate('KYC Approved — Your Partner Account is Active', `
+      <p>Dear ${partnerName},</p>
+      <p>Your identity verification (KYC) has been approved. Your partner account on TokenEquityX is now active.</p>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Approved</span></div>
+      <div class="detail-row"><span>Approval Date</span><span>${approvalDate}</span></div>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Your Partner Dashboard is Live</h3>
+      <ul style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Begin referring investors and issuers to the platform</li>
+        <li>Track referral activity and commissions in your dashboard</li>
+        <li>Access partner resources and marketing materials</li>
+        <li>View your referral codes and performance analytics</li>
+      </ul>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;">
+        Contact your partner manager at <a href="mailto:partners@tokenequityx.co.zw" style="color:#1A3C5E;">partners@tokenequityx.co.zw</a> if you have questions about your partnership agreement.
+      </p>
+      <a href="${PLATFORM}/partner" class="btn btn-gold">Go to Partner Dashboard &rarr;</a>
+    `));
+}
+
+async function notifyBankingPartnerKycApproved({ bankingPartnerEmail, bankingPartnerName }) {
+  const approvalDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  return send(bankingPartnerEmail, `✅ KYC Approved — Banking Partner Portal Active`,
+    baseTemplate('KYC Approved — Banking Partner Portal Active', `
+      <p>Dear ${bankingPartnerName},</p>
+      <p>Your identity verification (KYC) has been approved. Your banking partner portal on TokenEquityX is now active.</p>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Approved</span></div>
+      <div class="detail-row"><span>Approval Date</span><span>${approvalDate}</span></div>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">Your Banking Partner Portal</h3>
+      <ul style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Monitor deposit and withdrawal settlement queues</li>
+        <li>View and process disbursement instructions</li>
+        <li>Access settlement reconciliation reports</li>
+        <li>Review WHT batch submissions pending remittance</li>
+      </ul>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;">
+        Contact the platform administrator at <a href="mailto:admin@tokenequityx.co.zw" style="color:#1A3C5E;">admin@tokenequityx.co.zw</a> for any operational queries.
+      </p>
+      <a href="${PLATFORM}/banking" class="btn btn-gold">Go to Banking Partner Portal &rarr;</a>
+    `));
+}
+
+async function notifyStaffKycRejected({ userEmail, userName, role, reason }) {
+  const portalPath = role === 'AUDITOR' ? '/auditor' : role === 'PARTNER' ? '/partner' : '/banking';
+  const portalLabel = role === 'AUDITOR' ? 'Auditor Dashboard' : role === 'PARTNER' ? 'Partner Dashboard' : 'Banking Partner Portal';
+  return send(userEmail, `KYC Review — Action Required`,
+    baseTemplate('KYC Review — Action Required', `
+      <p>Dear ${userName},</p>
+      <p>Your KYC submission could not be approved at this time. Please review the information below and resubmit your documents.</p>
+      <div class="detail-row"><span>Status</span><span class="danger">✗ Not Approved</span></div>
+      ${reason ? `<div class="detail-row"><span>Reason</span><span class="danger">${reason}</span></div>` : ''}
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">How to Resubmit</h3>
+      <ol style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Review the reason noted above and gather the required documents</li>
+        <li>Ensure all documents are clear, valid, and not expired</li>
+        <li>Log in to your ${portalLabel} and navigate to the <strong>KYC / Verification</strong> section</li>
+        <li>Resubmit your updated documents for review</li>
+      </ol>
+      <p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;font-size:14px;">
+        If you need assistance, contact our compliance team at <a href="mailto:compliance@tokenequityx.co.zw" style="color:#1A3C5E;">compliance@tokenequityx.co.zw</a>.
+      </p>
+      <a href="${PLATFORM}${portalPath}" class="btn btn-gold">Resubmit KYC &rarr;</a>
+    `));
+}
+
 async function notifyInvestorP2POfferAccepted({ sellerEmail, sellerName, tokenSymbol, quantity, pricePerToken, proceeds }) {
   const fmt      = n => `$${parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtPrice = n => `$${parseFloat(n || 0).toFixed(4)}`;
@@ -890,4 +1022,10 @@ module.exports = {
   notifyInvestorDistributionReceived,
   notifyInvestorKycExpiring,
   notifyInvestorP2POfferAccepted,
+  notifyIssuerKycApproved,
+  notifyIssuerKycRejected,
+  notifyAuditorKycApproved,
+  notifyPartnerKycApproved,
+  notifyBankingPartnerKycApproved,
+  notifyStaffKycRejected,
 };

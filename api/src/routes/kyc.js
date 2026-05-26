@@ -335,24 +335,54 @@ router.put('/approve/:kycId',
 
       await conn.commit();
 
-      const { notifyInvestorKycApproved } = require('../utils/mailer');
-      const [userRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [records[0].user_id]);
+      const [userRows] = await db.execute('SELECT email, full_name, role FROM users WHERE id = ?', [records[0].user_id]);
       const approvedUser = userRows[0];
+      const userRole = approvedUser?.role || 'INVESTOR';
+
+      const platformMessages = {
+        INVESTOR:        'Your KYC has been approved. You can now deposit funds and start investing.',
+        ISSUER:          'Your KYC has been approved. Please proceed to submit your Entity KYC to continue your tokenisation application.',
+        AUDITOR:         'Your KYC has been approved. You can now receive audit assignments.',
+        PARTNER:         'Your KYC has been approved. Your partner dashboard is now active.',
+        BANKING_PARTNER: 'Your KYC has been approved. Your banking partner portal is now active.',
+      };
 
       await sendMessage({
         recipientId: records[0].user_id,
-        subject:     '✅ KYC Approved — You can now invest',
-        body:        `Your KYC has been approved. You can now deposit funds and start investing.`,
+        subject:     '✅ KYC Approved',
+        body:        platformMessages[userRole] || platformMessages.INVESTOR,
         type:        'SYSTEM',
         category:    'KYC',
         referenceId: req.params.kycId,
       }).catch(() => {});
 
       if (approvedUser?.email) {
-        notifyInvestorKycApproved({
-          investorEmail: approvedUser.email,
-          investorName:  approvedUser.full_name || 'Investor',
-        }).catch(e => console.error('[MAILER] notifyInvestorKycApproved failed:', e.message));
+        const {
+          notifyInvestorKycApproved,
+          notifyIssuerKycApproved,
+          notifyAuditorKycApproved,
+          notifyPartnerKycApproved,
+          notifyBankingPartnerKycApproved,
+        } = require('../utils/mailer');
+
+        const name = approvedUser.full_name || userRole.charAt(0) + userRole.slice(1).toLowerCase();
+
+        if (userRole === 'ISSUER') {
+          notifyIssuerKycApproved({ issuerEmail: approvedUser.email, issuerName: name })
+            .catch(e => console.error('[MAILER] notifyIssuerKycApproved failed:', e.message));
+        } else if (userRole === 'AUDITOR') {
+          notifyAuditorKycApproved({ auditorEmail: approvedUser.email, auditorName: name })
+            .catch(e => console.error('[MAILER] notifyAuditorKycApproved failed:', e.message));
+        } else if (userRole === 'PARTNER') {
+          notifyPartnerKycApproved({ partnerEmail: approvedUser.email, partnerName: name })
+            .catch(e => console.error('[MAILER] notifyPartnerKycApproved failed:', e.message));
+        } else if (userRole === 'BANKING_PARTNER') {
+          notifyBankingPartnerKycApproved({ bankingPartnerEmail: approvedUser.email, bankingPartnerName: name })
+            .catch(e => console.error('[MAILER] notifyBankingPartnerKycApproved failed:', e.message));
+        } else {
+          notifyInvestorKycApproved({ investorEmail: approvedUser.email, investorName: name })
+            .catch(e => console.error('[MAILER] notifyInvestorKycApproved failed:', e.message));
+        }
       }
 
       logger.info('KYC approved', {
@@ -377,8 +407,20 @@ router.put('/reject/:kycId',
   requireRole('ADMIN', 'AUDITOR', 'COMPLIANCE_OFFICER'),
   async (req, res) => {
     const { reviewerNotes } = req.body;
+    const conn = await db.getConnection();
     try {
-      await db.execute(`
+      await conn.beginTransaction();
+
+      const [records] = await conn.execute(
+        'SELECT user_id FROM kyc_records WHERE id = ?',
+        [req.params.kycId]
+      );
+      if (records.length === 0) {
+        await conn.rollback();
+        return res.status(404).json({ error: 'KYC record not found' });
+      }
+
+      await conn.execute(`
         UPDATE kyc_records
         SET status         = 'REJECTED',
             reviewed_at    = NOW(),
@@ -387,32 +429,60 @@ router.put('/reject/:kycId',
         WHERE id = ?
       `, [req.user.userId, reviewerNotes || '', req.params.kycId]);
 
-      const [records] = await db.execute(
-        'SELECT user_id FROM kyc_records WHERE id = ?',
-        [req.params.kycId]
+      await conn.execute(
+        'UPDATE users SET kyc_status = ? WHERE id = ?',
+        ['REJECTED', records[0].user_id]
       );
-      if (records.length > 0) {
-        await db.execute(
-          'UPDATE users SET kyc_status = ? WHERE id = ?',
-          ['REJECTED', records[0].user_id]
-        );
-        await sendMessage({
-          recipientId: records[0].user_id,
-          subject:     `❌ KYC Not Approved`,
-          body:        `Your identity verification submission could not be approved at this time. Reason: ${reviewerNotes || 'Please resubmit with clearer documents'}. Please resubmit your KYC documents through your investor dashboard.`,
-          type:        'SYSTEM',
-          category:    'KYC',
-          referenceId: req.params.kycId,
-        }).catch(() => {});
 
+      await conn.commit();
+
+      const [rejectedUserRows] = await db.execute('SELECT email, full_name, role FROM users WHERE id = ?', [records[0].user_id]);
+      const rejectedUser = rejectedUserRows[0];
+      const userRole = rejectedUser?.role || 'INVESTOR';
+
+      const portalDashboard = {
+        INVESTOR:        'investor dashboard',
+        ISSUER:          'Issuer Portal',
+        AUDITOR:         'Auditor Dashboard',
+        PARTNER:         'Partner Dashboard',
+        BANKING_PARTNER: 'Banking Partner Portal',
+      };
+
+      await sendMessage({
+        recipientId: records[0].user_id,
+        subject:     '❌ KYC Not Approved',
+        body:        `Your identity verification submission could not be approved at this time. Reason: ${reviewerNotes || 'Please resubmit with clearer documents'}. Please resubmit your KYC documents through your ${portalDashboard[userRole] || 'dashboard'}.`,
+        type:        'SYSTEM',
+        category:    'KYC',
+        referenceId: req.params.kycId,
+      }).catch(() => {});
+
+      if (rejectedUser?.email) {
         try {
-          const { notifyInvestorKycRejected } = require('../utils/mailer');
-          const [rejectedUserRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [records[0].user_id]);
-          const rejectedUser = rejectedUserRows[0];
-          if (rejectedUser?.email) {
+          const {
+            notifyInvestorKycRejected,
+            notifyIssuerKycRejected,
+            notifyStaffKycRejected,
+          } = require('../utils/mailer');
+          const name = rejectedUser.full_name || userRole.charAt(0) + userRole.slice(1).toLowerCase();
+
+          if (userRole === 'ISSUER') {
+            notifyIssuerKycRejected({
+              issuerEmail: rejectedUser.email,
+              issuerName:  name,
+              reason:      reviewerNotes || null,
+            }).catch(e => console.error('[MAILER] notifyIssuerKycRejected failed:', e.message));
+          } else if (['AUDITOR', 'PARTNER', 'BANKING_PARTNER'].includes(userRole)) {
+            notifyStaffKycRejected({
+              userEmail: rejectedUser.email,
+              userName:  name,
+              role:      userRole,
+              reason:    reviewerNotes || null,
+            }).catch(e => console.error('[MAILER] notifyStaffKycRejected failed:', e.message));
+          } else {
             notifyInvestorKycRejected({
               investorEmail: rejectedUser.email,
-              investorName:  rejectedUser.full_name || 'Investor',
+              investorName:  name,
               reason:        reviewerNotes || null,
             }).catch(e => console.error('[MAILER] notifyInvestorKycRejected failed:', e.message));
           }
@@ -421,9 +491,14 @@ router.put('/reject/:kycId',
         }
       }
 
+      logger.info('KYC rejected', { kycId: req.params.kycId, reviewerId: req.user.userId });
       res.json({ success: true, message: 'KYC rejected' });
     } catch (err) {
+      await conn.rollback();
+      logger.error('KYC rejection failed', { error: err.message });
       res.status(500).json({ error: 'Could not reject KYC' });
+    } finally {
+      conn.release();
     }
   }
 );
