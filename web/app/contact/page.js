@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 const GOLD = '#C8972B';
-const NAVY = '#1A3C5E';
+
 
 const CONTACT_CARDS = [
   {
@@ -160,7 +160,7 @@ export default function ContactPage() {
                   style={{background:GOLD}}>
                   {sending ? '⏳ Sending…' : 'Send Message →'}
                 </button>
-                <p className="text-gray-600 text-xs">We respond to all enquiries within 2 business days. For urgent matters call +263 77 XXX XXXX.</p>
+                <p className="text-gray-600 text-xs">We respond to all enquiries within 2 business days.</p>
               </form>
             )}
           </div>

@@ -1,42 +1,41 @@
-'use client';
-import { Geist } from "next/font/google";
-import "./globals.css";
-import Navigation from "../components/ui/Navigation";
-import Ticker from "../components/ui/Ticker";
-import PublicNav from "../components/ui/PublicNav";
-import PublicFooter from "../components/ui/PublicFooter";
-import Equita from "../components/ui/Equita";
-import { usePathname } from "next/navigation";
+import { Geist } from 'next/font/google';
+import './globals.css';
+import ClientShell from '../components/ui/ClientShell';
 
-const geist = Geist({ subsets: ["latin"] });
+const geist = Geist({ subsets: ['latin'] });
+
+export const metadata = {
+  metadataBase: new URL('https://tokenequityx.co.zw'),
+  title: {
+    default:  'TokenEquityX',
+    template: '%s | TokenEquityX',
+  },
+  description: "Africa's regulated blockchain capital markets platform — tokenize equity, real estate, mining rights and bonds on the SECZ Innovation Hub Sandbox.",
+  keywords: ['tokenization', 'Zimbabwe', 'capital markets', 'blockchain', 'SECZ', 'digital assets', 'Africa', 'tokenised equity'],
+  openGraph: {
+    type:        'website',
+    locale:      'en_ZW',
+    url:         'https://tokenequityx.co.zw',
+    siteName:    'TokenEquityX',
+    title:       "TokenEquityX — Africa's Digital Capital Market",
+    description: "Africa's regulated blockchain capital markets platform — tokenize equity, real estate, mining rights and bonds.",
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'TokenEquityX' }],
+  },
+  twitter: {
+    card:        'summary_large_image',
+    title:       'TokenEquityX',
+    description: "Africa's regulated blockchain capital markets platform",
+    images:      ['/og-image.png'],
+  },
+  robots: { index: true, follow: true },
+};
 
 export default function RootLayout({ children }) {
-  const pathname = usePathname();
-  const isSetup  = pathname === '/setup';
-
-  // Pages that use the authenticated nav (not the public nav)
-  const isAuthPage = ['/admin','/investor','/issuer','/auditor','/partner','/defi']
-    .some(p => pathname.startsWith(p));
-
   return (
     <html lang="en">
       <body className={`${geist.className} bg-gray-950 min-h-screen text-white`}>
-        {/* Authenticated pages: show ticker + auth nav */}
-        {!isSetup && <Ticker />}
-        {!isSetup && isAuthPage && <Navigation />}
-
-        {/* Public nav — home page only */}
-        {!isSetup && !isAuthPage && <PublicNav />}
-
-        {children}
-
-        {/* Footer on public pages only */}
-        {!isSetup && !isAuthPage && <PublicFooter />}
-
-        {/* Equita AI assistant on all pages except setup */}
-        {!isSetup && <Equita />}
+        <ClientShell>{children}</ClientShell>
       </body>
     </html>
   );
 }
- 
