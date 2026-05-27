@@ -782,6 +782,7 @@ router.get('/migrate', async (req, res) => {
       ('usdc_omnibus_wallet', '', 'USDC custodial omnibus wallet address (super admin only)'),
       ('reconciliation_mode', 'DAILY', 'Reconciliation frequency: REALTIME, HOURLY, or DAILY'),
       ('reconciliation_cutoff', '18:00', 'Daily reconciliation cutoff time (HH:MM)'),
+      ('reconciliation_variance_threshold_usd', '1.00', 'USD reconciliation variance tolerance in dollars before CRITICAL alert fires (default: $1.00)'),
       ('paynow_integration_id', '', 'Paynow Zimbabwe integration ID'),
       ('paynow_integration_key', '', 'Paynow Zimbabwe integration key'),
       ('stripe_publishable_key', '', 'Stripe publishable key (diaspora investors)'),

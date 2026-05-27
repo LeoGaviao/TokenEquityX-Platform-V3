@@ -2,7 +2,6 @@ const db = require('../db/pool');
 const { sendMessage } = require('../utils/messenger');
 
 const TOLERANCE = 0.01;
-const TREASURY_ID = 1;
 
 async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
   try {
@@ -30,25 +29,40 @@ async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
     );
 
     // ── USD reconciliation ────────────────────────────────────────────────
-    // Compare sum of all investor USD wallet balances against treasury
-    // usd_liability (what the platform owes investors + ZIMRA + issuers).
-    // These should balance: every dollar credited to an investor wallet
-    // creates an equal liability on the platform.
-    const [usdLedgerRows]  = await db.execute('SELECT COALESCE(SUM(balance_usd), 0) as total FROM investor_wallets');
-    const usdLedgerTotal   = parseFloat(usdLedgerRows[0]?.total || 0);
-    const [treasuryRows]   = await db.execute('SELECT usd_liability FROM platform_treasury WHERE id = ?', [TREASURY_ID]);
-    const usdLiability     = parseFloat(treasuryRows[0]?.usd_liability || 0);
-    const usdVariance      = Math.abs(usdLedgerTotal - usdLiability);
+    // Expected balance = total confirmed deposits − total completed withdrawals.
+    // Actual balance   = sum of all investor wallet USD balances.
+    // These must agree; any gap means money entered or left the system without
+    // a matching wallet credit/debit.
+    const [thresholdRows]  = await db.execute("SELECT value FROM platform_settings WHERE key = 'reconciliation_variance_threshold_usd'");
+    const usdThreshold     = parseFloat(thresholdRows[0]?.value || '1.00');
+
+    const [depositRows]    = await db.execute("SELECT COALESCE(SUM(amount_usd), 0) AS total FROM deposit_requests WHERE status = 'CONFIRMED'");
+    const usdDeposits      = parseFloat(depositRows[0]?.total || 0);
+
+    const [withdrawalRows] = await db.execute("SELECT COALESCE(SUM(amount_usd), 0) AS total FROM withdrawal_requests WHERE status = 'COMPLETED'");
+    const usdWithdrawals   = parseFloat(withdrawalRows[0]?.total || 0);
+
+    const usdExpected      = usdDeposits - usdWithdrawals;
+
+    const [usdActualRows]  = await db.execute('SELECT COALESCE(SUM(balance_usd), 0) AS total FROM investor_wallets');
+    const usdActual        = parseFloat(usdActualRows[0]?.total || 0);
+
+    const usdVariance      = Math.abs(usdActual - usdExpected);
 
     let usdStatus = 'OK';
-    if (usdVariance > 100)       usdStatus = 'CRITICAL';
-    else if (usdVariance > TOLERANCE) usdStatus = 'WARNING';
+    if (usdVariance > usdThreshold) usdStatus = 'CRITICAL';
 
-    const usdNotes = `USD ledger: $${usdLedgerTotal.toFixed(2)} | Treasury liability: $${usdLiability.toFixed(2)} | Variance: $${usdVariance.toFixed(2)}`;
+    const usdNotes = [
+      `Confirmed deposits:     $${usdDeposits.toFixed(2)}`,
+      `Completed withdrawals:  $${usdWithdrawals.toFixed(2)}`,
+      `Expected balance:       $${usdExpected.toFixed(2)}`,
+      `Actual ledger balance:  $${usdActual.toFixed(2)}`,
+      `Variance:               $${usdVariance.toFixed(2)} (threshold: $${usdThreshold.toFixed(2)})`,
+    ].join(' | ');
 
     await db.execute(
       'INSERT INTO reconciliation_logs (trigger, on_chain_balance, ledger_total, variance, status, notes, performed_by, currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [trigger, usdLiability, usdLedgerTotal, usdVariance, usdStatus, usdNotes, performedBy, 'USD']
+      [trigger, usdExpected, usdActual, usdVariance, usdStatus, usdNotes, performedBy, 'USD']
     );
 
     // Alert admin on any CRITICAL status
@@ -59,7 +73,23 @@ async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
         await sendMessage({
           recipientId: adminRows[0].id,
           subject: '🚨 CRITICAL: Reconciliation Failure',
-          body: `Critical discrepancy detected.\n\nUSCD — On-chain: $${usdcOnChain.toFixed(2)}, Ledger: $${usdcLedgerTotal.toFixed(2)}, Variance: $${usdcVariance.toFixed(2)}\n\nUSD — Ledger: $${usdLedgerTotal.toFixed(2)}, Treasury liability: $${usdLiability.toFixed(2)}, Variance: $${usdVariance.toFixed(2)}\n\nInvestigate immediately.`,
+          body: [
+            'Critical discrepancy detected during reconciliation.',
+            '',
+            `USDC`,
+            `  On-chain balance:  $${usdcOnChain.toFixed(2)}`,
+            `  Ledger total:      $${usdcLedgerTotal.toFixed(2)}`,
+            `  Variance:          $${Math.abs(usdcVariance).toFixed(2)}`,
+            '',
+            `USD`,
+            `  Confirmed deposits:    $${usdDeposits.toFixed(2)}`,
+            `  Completed withdrawals: $${usdWithdrawals.toFixed(2)}`,
+            `  Expected balance:      $${usdExpected.toFixed(2)}`,
+            `  Actual ledger balance: $${usdActual.toFixed(2)}`,
+            `  Variance:              $${usdVariance.toFixed(2)} (threshold: $${usdThreshold.toFixed(2)})`,
+            '',
+            'Investigate immediately.',
+          ].join('\n'),
           type: 'SYSTEM', category: 'WALLET',
         }).catch(() => {});
       }
@@ -67,7 +97,7 @@ async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
 
     return {
       usdc: { status: usdcStatus, onChain: usdcOnChain, ledger: usdcLedgerTotal, variance: usdcVariance },
-      usd:  { status: usdStatus,  ledger: usdLedgerTotal, liability: usdLiability, variance: usdVariance },
+      usd:  { status: usdStatus, actual: usdActual, expected: usdExpected, deposits: usdDeposits, withdrawals: usdWithdrawals, variance: usdVariance, threshold: usdThreshold },
       trigger,
     };
   } catch (err) {
