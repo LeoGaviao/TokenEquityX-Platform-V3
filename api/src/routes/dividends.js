@@ -326,6 +326,45 @@ router.post('/claim', authenticate, requireKYC, async (req, res) => {
       );
     }
 
+    // Upsert monthly WHT batch (banking partner remits to ZIMRA monthly)
+    if (withholding > 0) {
+      const [batchRows] = await conn.execute(`
+        SELECT id FROM wht_batches
+        WHERE status = 'OPEN'
+        AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+        AND wht_type = 'DIVIDEND'
+        LIMIT 1
+      `);
+      if (batchRows.length > 0) {
+        await conn.execute(`
+          UPDATE wht_batches
+          SET total_amount_usd    = total_amount_usd    + ?,
+              transaction_count   = transaction_count   + 1,
+              resident_amount     = resident_amount     + ?,
+              non_resident_amount = non_resident_amount + ?
+          WHERE id = ?
+        `, [
+          withholding,
+          whtRate <= 0.10 ? withholding : 0,
+          whtRate >  0.10 ? withholding : 0,
+          batchRows[0].id,
+        ]);
+      } else {
+        const periodLabel = new Date().toISOString().slice(0, 7); // YYYY-MM
+        await conn.execute(`
+          INSERT INTO wht_batches
+            (id, period, wht_type, total_amount_usd,
+             resident_amount, non_resident_amount,
+             transaction_count, status)
+          VALUES (gen_random_uuid(), ?, 'DIVIDEND', ?, ?, ?, 1, 'OPEN')
+        `, [
+          periodLabel, withholding,
+          whtRate <= 0.10 ? withholding : 0,
+          whtRate >  0.10 ? withholding : 0,
+        ]);
+      }
+    }
+
     // Insert claim record
     await conn.execute(`
       INSERT INTO dividend_claims

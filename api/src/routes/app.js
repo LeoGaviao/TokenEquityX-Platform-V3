@@ -51,6 +51,7 @@ app.use('/api/auditor',    require('./src/routes/auditor'));
 app.use('/api/admin',      require('./src/routes/admin'));
 app.use('/api/pipeline',   require('./src/routes/pipeline'));
 app.use('/api/setup',      require('./src/routes/setup'));
+app.use('/api/investor',   require('./src/routes/investor'));
 
 // ─── 404 HANDLER ──────────────────────────────────────────────────
 app.use((req, res) => {
