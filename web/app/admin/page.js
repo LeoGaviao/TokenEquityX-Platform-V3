@@ -278,25 +278,54 @@ function SubmissionDetailPanel({ item }) {
       {(() => {
         try {
           const d = typeof sub.data_json === 'string' ? JSON.parse(sub.data_json) : (sub.data_json || {});
-          const docs = d.documents || {};
-          const docEntries = Object.entries(docs);
-          if (docEntries.length === 0) return (
+          const rawDocs = d.documents;
+          // Normalise old (array) and new (object) formats to a flat list
+          let docList = [];
+          if (Array.isArray(rawDocs)) {
+            docList = rawDocs.map((doc, i) => ({
+              key:   String(i),
+              name:  doc.name || doc.originalName || `Document ${i + 1}`,
+              label: doc.name || doc.originalName || `Document ${i + 1}`,
+              url:   doc.url || null,
+            }));
+          } else if (rawDocs && typeof rawDocs === 'object') {
+            docList = Object.entries(rawDocs).map(([key, doc]) => ({
+              key,
+              name:  doc.name || key,
+              label: key.replace(/_/g, ' '),
+              url:   doc.url || null,
+            }));
+          }
+          if (docList.length === 0) return (
             <p className="text-xs text-gray-500 mt-2">No documents uploaded yet.</p>
           );
+          const apiRoot = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
           return (
             <div className="mt-3 space-y-1">
               <p className="text-xs text-gray-400 font-semibold mb-2">📎 Uploaded Documents</p>
-              {docEntries.map(([key, doc]) => (
-                <a key={key} href={doc.url} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-2 hover:bg-gray-700/50 transition-colors">
-                  <span className="text-blue-400 text-xs">📄</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-white truncate">{doc.name}</p>
-                    <p className="text-xs text-gray-500 capitalize">{key.replace('_', ' ')}</p>
+              {docList.map(({ key, name, label, url }) => {
+                const href = url?.startsWith('/uploads/') ? `${apiRoot}${url}` : (url || null);
+                return href ? (
+                  <a key={key} href={href} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-2 hover:bg-gray-700/50 transition-colors">
+                    <span className="text-blue-400 text-xs">📄</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-white truncate">{name}</p>
+                      <p className="text-xs text-gray-500 capitalize">{label}</p>
+                    </div>
+                    <span className="text-xs text-blue-400">↗</span>
+                  </a>
+                ) : (
+                  <div key={key} className="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-2">
+                    <span className="text-gray-600 text-xs">📄</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-400 truncate">{name}</p>
+                      <p className="text-xs text-gray-600 capitalize">{label}</p>
+                    </div>
+                    <span className="text-xs text-gray-600">unavailable</span>
                   </div>
-                  <span className="text-xs text-blue-400">↗</span>
-                </a>
-              ))}
+                );
+              })}
             </div>
           );
         } catch { return null; }
