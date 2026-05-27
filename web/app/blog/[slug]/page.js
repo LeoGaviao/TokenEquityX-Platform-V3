@@ -33,7 +33,8 @@ async function getAllPosts() {
 }
 
 export async function generateMetadata({ params }) {
-  const post = await getPost(params.slug);
+  const { slug } = await params;
+  const post = await getPost(slug);
   if (!post) return { title: 'Post Not Found' };
   return {
     title:       post.title,
@@ -59,8 +60,9 @@ export async function generateMetadata({ params }) {
 const fmt = d => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
 
 export default async function BlogPostPage({ params }) {
+  const { slug } = await params;
   const [post, allPosts] = await Promise.all([
-    getPost(params.slug),
+    getPost(slug),
     getAllPosts(),
   ]);
 
