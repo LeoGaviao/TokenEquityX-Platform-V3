@@ -325,12 +325,14 @@ router.delete('/listings/:tokenSymbol',
 // ── Reconciliation audit & fix ────────────────────────────────────────────────
 
 // GET /api/admin/reconciliation-audit
-// Returns orphaned confirmed deposits + current reconciliation state.
+// Returns orphaned confirmed deposits, current reconciliation state, and
+// variance breakdown diagnostics (transaction type analysis, duplicates, etc.)
 router.get('/reconciliation-audit',
   authenticate,
   requireRole('ADMIN'),
   async (req, res) => {
     try {
+      // ── Orphaned deposits (confirmed, user deleted) ──────────────────────
       const [orphans] = await db.execute(`
         SELECT dr.id, dr.user_id, dr.amount_usd, dr.created_at, dr.notes
         FROM deposit_requests dr
@@ -339,13 +341,17 @@ router.get('/reconciliation-audit',
         ORDER BY dr.created_at ASC
       `);
 
-      const [depRows] = await db.execute(`
+      // ── Core balance figures ─────────────────────────────────────────────
+      const [depActiveRows] = await db.execute(`
         SELECT COALESCE(SUM(dr.amount_usd), 0) AS total
         FROM deposit_requests dr
         JOIN users u ON u.id = dr.user_id
         WHERE dr.status = 'CONFIRMED'
       `);
-      const [wdRows]  = await db.execute(
+      const [depAllRows] = await db.execute(
+        "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM deposit_requests WHERE status = 'CONFIRMED'"
+      );
+      const [wdRows] = await db.execute(
         "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM withdrawal_requests WHERE status = 'COMPLETED'"
       );
       const [walRows] = await db.execute(
@@ -354,27 +360,108 @@ router.get('/reconciliation-audit',
       const [ledRows] = await db.execute(
         'SELECT COALESCE(SUM(amount_usd), 0) AS total FROM wallet_transactions'
       );
+      const [treasuryRows] = await db.execute(
+        'SELECT COALESCE(SUM(usd_liability), 0) AS total FROM platform_treasury'
+      );
+      const [voidedRows] = await db.execute(
+        "SELECT COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count FROM deposit_requests WHERE status = 'VOIDED'"
+      );
 
-      const confirmedDeposits    = parseFloat(depRows[0].total);
+      // ── Wallet transaction type breakdown ────────────────────────────────
+      const [txTypeRows] = await db.execute(`
+        SELECT
+          type,
+          COUNT(*)           AS count,
+          COALESCE(SUM(amount_usd), 0) AS total
+        FROM wallet_transactions
+        GROUP BY type
+        ORDER BY ABS(COALESCE(SUM(amount_usd), 0)) DESC
+      `);
+
+      // ── IMTT refunds specifically ────────────────────────────────────────
+      const [imttRefundRows] = await db.execute(`
+        SELECT COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count
+        FROM wallet_transactions
+        WHERE type = 'REFUND' AND description ILIKE '%IMTT%'
+      `);
+
+      // ── Credits from non-standard sources (not DEPOSIT or matching deposit) ──
+      // Standard inflows: DEPOSIT type transactions
+      // Non-standard inflows: DIVIDEND, REFUND, ADJUSTMENT with positive amount
+      const [nonDepositCredits] = await db.execute(`
+        SELECT type, COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count
+        FROM wallet_transactions
+        WHERE amount_usd > 0
+          AND type NOT IN ('DEPOSIT', 'TRADE_SELL')
+        GROUP BY type
+        ORDER BY total DESC
+      `);
+
+      // ── Duplicate transactions (same reference_id + type more than once) ─
+      const [dupeRows] = await db.execute(`
+        SELECT reference_id, type, COUNT(*) AS count, COALESCE(SUM(amount_usd), 0) AS total
+        FROM wallet_transactions
+        WHERE reference_id IS NOT NULL
+        GROUP BY reference_id, type
+        HAVING COUNT(*) > 1
+        ORDER BY count DESC
+        LIMIT 20
+      `);
+
+      // ── Compute variance direction and amounts ───────────────────────────
+      const confirmedDeposits    = parseFloat(depActiveRows[0].total);
+      const confirmedDepositsAll = parseFloat(depAllRows[0].total);
       const completedWithdrawals = parseFloat(wdRows[0].total);
       const expectedBalance      = confirmedDeposits - completedWithdrawals;
       const actualBalance        = parseFloat(walRows[0].total);
       const ledgerNet            = parseFloat(ledRows[0].total);
-      const variance             = Math.abs(actualBalance - expectedBalance);
+      const treasuryLiability    = parseFloat(treasuryRows[0].total);
+      const variance             = actualBalance - expectedBalance; // signed: positive = actual excess, negative = expected excess
       const ledgerGap            = Math.abs(ledgerNet - actualBalance);
       const orphanedTotal        = orphans.reduce((s, r) => s + parseFloat(r.amount_usd), 0);
+      const imttRefundTotal      = parseFloat(imttRefundRows[0].total);
+      const imttRefundCount      = parseInt(imttRefundRows[0].count);
+      const voidedTotal          = parseFloat(voidedRows[0].total);
+      const voidedCount          = parseInt(voidedRows[0].count);
+
+      // Non-deposit credits excluding IMTT refunds (unexplained credits)
+      const unexplainedCredits   = nonDepositCredits
+        .filter(r => !(r.type === 'REFUND'))  // IMTT refunds are expected post-fix
+        .reduce((s, r) => s + parseFloat(r.total), 0);
 
       res.json({
+        // Orphan state
         orphans,
-        orphanedCount:         orphans.length,
+        orphanedCount:          orphans.length,
         orphanedTotal,
+
+        // Core figures (what the variance formula uses)
         confirmedDeposits,
+        confirmedDepositsAll,
         completedWithdrawals,
         expectedBalance,
         actualBalance,
         ledgerNet,
+        treasuryLiability,
+
+        // Variance — signed so UI can show direction
         variance,
+        varianceAbs:            Math.abs(variance),
+        varianceDirection:      variance > 0.01 ? 'EXCESS' : variance < -0.01 ? 'SHORTFALL' : 'OK',
         ledgerGap,
+
+        // What was fixed
+        voidedTotal,
+        voidedCount,
+
+        // Diagnostic breakdown
+        txTypeBreakdown:        txTypeRows.map(r => ({ type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
+        imttRefundTotal,
+        imttRefundCount,
+        nonDepositCredits:      nonDepositCredits.map(r => ({ type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
+        unexplainedCredits,
+        duplicates:             dupeRows.map(r => ({ referenceId: r.reference_id, type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
+        duplicateCount:         dupeRows.length,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
