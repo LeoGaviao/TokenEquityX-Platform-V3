@@ -2,79 +2,273 @@
 pragma solidity ^0.8.22;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "./ComplianceRegistry.sol";
+import "./ComplianceManager.sol";
+import "./PriceOracle.sol";
 
-contract AssetToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
+/**
+ * @title AssetToken
+ * @notice UUPS Upgradeable ERC-20 representing a tokenized asset on TokenEquityX V2.
+ *         Supports: equity, real estate, mining rights, infrastructure, bonds.
+ *         Every transfer is validated by ComplianceManager.
+ *         Includes ticker symbol, asset type, market state machine.
+ */
+contract AssetToken is
+    Initializable,
+    ERC20Upgradeable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable
+{
+    // ─── ROLES ────────────────────────────────────────────────────
+    bytes32 public constant ISSUER_ROLE       = keccak256("ISSUER_ROLE");
+    bytes32 public constant OPERATOR_ROLE     = keccak256("OPERATOR_ROLE");
+    bytes32 public constant MARKET_MAKER_ROLE = keccak256("MARKET_MAKER_ROLE");
 
-    ComplianceRegistry public complianceRegistry;
+    // ─── ENUMS ────────────────────────────────────────────────────
+    enum AssetType {
+        EQUITY,
+        REAL_ESTATE,
+        MINING,
+        INFRASTRUCTURE,
+        REIT,
+        BOND,
+        OTHER
+    }
 
-    string  public assetSymbol;
-    string  public assetName;
-    string  public assetClass;
-    string  public spvId;
-    uint256 public totalTokenSupply;
-    uint256 public referencePriceUSD;
-    bool    public tradingEnabled;
-    address public issuer;
+    enum MarketState {
+        PRE_LAUNCH,
+        P2P_ONLY,
+        LIMITED_TRADING,
+        FULL_TRADING,
+        HALTED
+    }
 
-    event TradingEnabled(uint256 timestamp);
-    event TradingDisabled(uint256 timestamp);
-    event ReferencePriceUpdated(uint256 newPrice, uint256 timestamp);
+    // ─── STRUCTS ──────────────────────────────────────────────────
+    struct AssetMetadata {
+        string    ticker;
+        AssetType assetType;
+        string    jurisdiction;
+        string    spvRegistrationNo;
+        string    ipfsDocHash;
+        uint256   authorisedSupply;
+        uint256   nominalValueCents;
+        uint256   issuanceDate;
+    }
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() { _disableInitializers(); }
+    // ─── STATE ────────────────────────────────────────────────────
+    ComplianceManager public compliance;
+    PriceOracle       public oracle;
 
+    AssetMetadata public metadata;
+    MarketState   public marketState;
+
+    mapping(address => uint256) public lockupExpiry;
+    address[]                   private _holders;
+    mapping(address => bool)    private _isHolder;
+
+    bool public transfersLocked;
+
+    // ─── EVENTS ───────────────────────────────────────────────────
+    event TokensIssued(address indexed to, uint256 amount, string reason);
+    event TokensBurned(address indexed from, uint256 amount, string reason);
+    event ForcedTransfer(address indexed from, address indexed to, uint256 amount, string reason);
+    event LockupSet(address indexed holder, uint256 expiry);
+    event MarketStateChanged(MarketState oldState, MarketState newState);
+    event TransferLockToggled(bool locked);
+    event MetadataUpdated(string ipfsDocHash);
+
+    // ─── INITIALIZER ──────────────────────────────────────────────
     function initialize(
-        address initialOwner,
-        address _complianceRegistry,
-        string memory _symbol,
-        string memory _name,
-        string memory _assetClass,
-        string memory _spvId,
-        uint256 _totalSupply,
-        uint256 _referencePriceUSD,
-        address _issuer
+        string memory name_,
+        string memory symbol_,
+        string memory ticker_,
+        AssetType     assetType_,
+        string memory jurisdiction_,
+        string memory spvRegNo_,
+        string memory ipfsDocHash_,
+        uint256       authorisedSupply_,
+        uint256       nominalValueCents_,
+        address       complianceAddress_,
+        address       oracleAddress_,
+        address       issuer_
     ) public initializer {
-        __ERC20_init(_name, _symbol);
-        __Ownable_init(initialOwner);
-        complianceRegistry = ComplianceRegistry(_complianceRegistry);
-        assetSymbol        = _symbol;
-        assetName          = _name;
-        assetClass         = _assetClass;
-        spvId              = _spvId;
-        totalTokenSupply   = _totalSupply;
-        referencePriceUSD  = _referencePriceUSD;
-        tradingEnabled     = false;
-        issuer             = _issuer;
-        _mint(_issuer, _totalSupply);
+        __ERC20_init(name_, symbol_);
+        __AccessControl_init();
+        __Pausable_init();
+
+        require(complianceAddress_ != address(0), "Invalid compliance address");
+        require(oracleAddress_     != address(0), "Invalid oracle address");
+        require(issuer_            != address(0), "Invalid issuer address");
+
+        compliance = ComplianceManager(complianceAddress_);
+        oracle     = PriceOracle(oracleAddress_);
+
+        metadata = AssetMetadata({
+            ticker:            ticker_,
+            assetType:         assetType_,
+            jurisdiction:      jurisdiction_,
+            spvRegistrationNo: spvRegNo_,
+            ipfsDocHash:       ipfsDocHash_,
+            authorisedSupply:  authorisedSupply_,
+            nominalValueCents: nominalValueCents_,
+            issuanceDate:      block.timestamp
+        });
+
+        marketState     = MarketState.PRE_LAUNCH;
+        transfersLocked = false;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, issuer_);
+        _grantRole(ISSUER_ROLE,        issuer_);
+        _grantRole(OPERATOR_ROLE,      msg.sender);
     }
 
-    function _update(address from, address to, uint256 value) internal override {
+    // ─── ISSUANCE ─────────────────────────────────────────────────
+
+    function issueTokens(
+        address to,
+        uint256 amount,
+        string calldata reason
+    ) external onlyRole(ISSUER_ROLE) whenNotPaused {
+        require(
+            totalSupply() + amount <= metadata.authorisedSupply,
+            "Exceeds authorised supply"
+        );
+        require(compliance.isApproved(to), "Recipient not KYC approved");
+
+        _addHolder(to);
+        _mint(to, amount);
+        emit TokensIssued(to, amount, reason);
+    }
+
+    function burnTokens(
+        address from,
+        uint256 amount,
+        string calldata reason
+    ) external onlyRole(ISSUER_ROLE) {
+        _burn(from, amount);
+        emit TokensBurned(from, amount, reason);
+    }
+
+    // ─── FORCED TRANSFER ──────────────────────────────────────────
+
+    function forcedTransfer(
+        address from,
+        address to,
+        uint256 amount,
+        string calldata reason
+    ) external onlyRole(OPERATOR_ROLE) {
+        _transfer(from, to, amount);
+        _addHolder(to);
+        emit ForcedTransfer(from, to, amount, reason);
+    }
+
+    // ─── LOCKUP ───────────────────────────────────────────────────
+
+    function setLockup(address holder, uint256 expiryTimestamp)
+        external onlyRole(ISSUER_ROLE)
+    {
+        lockupExpiry[holder] = expiryTimestamp;
+        emit LockupSet(holder, expiryTimestamp);
+    }
+
+    // ─── MARKET STATE MACHINE ─────────────────────────────────────
+
+    function setMarketState(MarketState newState)
+        external onlyRole(OPERATOR_ROLE)
+    {
+        emit MarketStateChanged(marketState, newState);
+        marketState = newState;
+    }
+
+    function setTransferLock(bool locked)
+        external onlyRole(OPERATOR_ROLE)
+    {
+        transfersLocked = locked;
+        emit TransferLockToggled(locked);
+    }
+
+    // ─── METADATA ─────────────────────────────────────────────────
+
+    function updateIpfsDocHash(string calldata newHash)
+        external onlyRole(ISSUER_ROLE)
+    {
+        metadata.ipfsDocHash = newHash;
+        emit MetadataUpdated(newHash);
+    }
+
+    // ─── TRANSFER OVERRIDE ────────────────────────────────────────
+
+    function _update(
+        address from,
+        address to,
+        uint256 value
+    ) internal virtual override {
         if (from != address(0) && to != address(0)) {
-            require(tradingEnabled, "Trading not enabled");
-            require(complianceRegistry.isApproved(from), "Sender not KYC approved");
-            require(complianceRegistry.isApproved(to),   "Recipient not KYC approved");
+            require(!transfersLocked, "Transfers are locked");
+            require(
+                block.timestamp > lockupExpiry[from],
+                "Sender tokens are locked"
+            );
+
+            if (marketState == MarketState.PRE_LAUNCH) {
+                require(
+                    hasRole(OPERATOR_ROLE, msg.sender) ||
+                    hasRole(ISSUER_ROLE,   msg.sender),
+                    "Market not open: PRE_LAUNCH"
+                );
+            } else if (marketState == MarketState.HALTED) {
+                require(
+                    hasRole(OPERATOR_ROLE, msg.sender),
+                    "Market halted"
+                );
+            }
+
+            compliance.canTransfer(from, to, value);
         }
+
         super._update(from, to, value);
+
+        if (to != address(0)) _addHolder(to);
     }
 
-    function enableTrading() external onlyOwner {
-        tradingEnabled = true;
-        emit TradingEnabled(block.timestamp);
+    // ─── CAP TABLE ────────────────────────────────────────────────
+
+    function getCapTable()
+        external view
+        returns (address[] memory holders, uint256[] memory balances)
+    {
+        holders  = _holders;
+        balances = new uint256[](_holders.length);
+        for (uint256 i = 0; i < _holders.length; i++) {
+            balances[i] = balanceOf(_holders[i]);
+        }
     }
 
-    function disableTrading() external onlyOwner {
-        tradingEnabled = false;
-        emit TradingDisabled(block.timestamp);
+    function holderCount() external view returns (uint256) {
+        return _holders.length;
     }
 
-    function updateReferencePrice(uint256 newPriceCents) external onlyOwner {
-        referencePriceUSD = newPriceCents;
-        emit ReferencePriceUpdated(newPriceCents, block.timestamp);
+    // ─── INTERNAL ─────────────────────────────────────────────────
+
+    function _addHolder(address addr) private {
+        if (!_isHolder[addr] && addr != address(0)) {
+            _holders.push(addr);
+            _isHolder[addr] = true;
+        }
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    // ─── UUPS UPGRADE AUTH ────────────────────────────────────────
+
+    function _authorizeUpgrade(address newImplementation)
+        internal override onlyRole(DEFAULT_ADMIN_ROLE)
+    {}
+
+    // ─── ADMIN ────────────────────────────────────────────────────
+
+    function pause()   external onlyRole(DEFAULT_ADMIN_ROLE) { _pause(); }
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) { _unpause(); }
 }
