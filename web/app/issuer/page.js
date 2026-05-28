@@ -286,9 +286,19 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
             const isLoading = loadingId === app.id;
 
             const STAGES = isTokenisation
-              ? ['Submitted','Compliance Check','Auditor Review','SECZ Application','Approved']
+              ? ['Submitted','Compliance','Auditor Review','SECZ Approved','Contract Deployed','Primary Offering','Full Trading']
               : ['Submitted','Auditor Review','Oracle Updated','Approved'];
-            const stageIndex = ({
+            const stageIndex = isTokenisation ? ({
+              PENDING:0,
+              UNDER_REVIEW:1, INFO_REQUESTED:1,
+              AUDITOR_APPROVED:2,
+              APPROVED:3, ADMIN_APPROVED:3, TOKENIZATION_PENDING:3,
+              SECZ_REVIEW:3,
+              SECZ_APPROVED:4,
+              LIVE:5,
+              REJECTED:-1,
+            })[app.status] ?? 0
+            : ({
               PENDING:0, UNDER_REVIEW:1, INFO_REQUESTED:1,
               AUDITOR_APPROVED: STAGES.length - 2,
               APPROVED: STAGES.length - 1, REJECTED:-1,
@@ -502,10 +512,25 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
                             </button>
                           </div>
                         )}
-                        {app.status==='APPROVED' && isTokenisation && (
+                        {app.status==='LIVE' && isTokenisation && (
+                          <div className="bg-yellow-900/20 border border-yellow-800/40 rounded-xl p-4">
+                            <p className="text-yellow-300 font-bold">🪙 Step 7 — Primary Offering Phase</p>
+                            <p className="text-gray-400 text-sm mt-1">Your token is in PRIMARY_ONLY mode. Create a Primary Offering to open subscriptions for investors. Full trading unlocks automatically after the offering closes.</p>
+                            <button onClick={()=>setTab('offering')} className="mt-3 w-full py-2 rounded-xl text-sm font-semibold text-white bg-yellow-700 hover:bg-yellow-600">
+                              🪙 Go to Primary Offering →
+                            </button>
+                          </div>
+                        )}
+                        {app.status==='SECZ_APPROVED' && isTokenisation && (
+                          <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-4 text-center">
+                            <p className="text-blue-300 font-bold">🏛️ Step 6 — SECZ Approved</p>
+                            <p className="text-gray-400 text-sm mt-1">Regulatory clearance received. The platform team will activate your token for the primary offering phase shortly.</p>
+                          </div>
+                        )}
+                        {['APPROVED','ADMIN_APPROVED','TOKENIZATION_PENDING'].includes(app.status) && isTokenisation && (
                           <div className="bg-green-900/20 border border-green-800/40 rounded-xl p-4 text-center">
                             <p className="text-green-300 font-bold">🎉 Application Approved!</p>
-                            <p className="text-gray-400 text-sm mt-1">Your token will be listed. The compliance team will contact you with next steps for smart contract deployment.</p>
+                            <p className="text-gray-400 text-sm mt-1">Your token will be listed. The compliance team will contact you with next steps for smart contract deployment and SECZ review.</p>
                           </div>
                         )}
                         {['PENDING','UNDER_REVIEW','REJECTED'].includes(app.status) && (

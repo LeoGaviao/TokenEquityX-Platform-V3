@@ -976,13 +976,14 @@ function AdminBlogTab() {
 }
 
 const PIPELINE_STAGES=[
-  {key:'spv',label:'SPV Registered',icon:'🏢'},
-  {key:'kyc',label:'KYC Verified',icon:'✅'},
-  {key:'docs',label:'Documents Uploaded',icon:'📄'},
-  {key:'auditor',label:'Auditor Review',icon:'🔍'},
-  {key:'contract',label:'Smart Contract',icon:'⛓️'},
-  {key:'secz',label:'SECZ Approved',icon:'🏛️'},
-  {key:'live',label:'Live',icon:'🟢'},
+  {key:'spv',      label:'SPV Registered',     icon:'🏢'},
+  {key:'kyc',      label:'KYC Verified',        icon:'✅'},
+  {key:'docs',     label:'Documents Uploaded',  icon:'📄'},
+  {key:'auditor',  label:'Auditor Review',      icon:'🔍'},
+  {key:'contract', label:'Smart Contract',      icon:'⛓️'},
+  {key:'secz',     label:'SECZ Approved',       icon:'🏛️'},
+  {key:'offering', label:'Primary Offering',    icon:'🪙'},
+  {key:'live',     label:'Full Trading',        icon:'🟢'},
 ];
 const REVENUE_COLORS=[NAVY,GOLD,GREEN,TEAL,'#7c3aed','#db2777','#ea580c'];
 
@@ -1585,7 +1586,7 @@ export default function AdminDashboard() {
   const [detailItem, setDetailItem] = useState(null);
 
   const advanceStage = async (item) => {
-    const STAGE_KEYS = ['spv','kyc','docs','auditor','contract','secz','live'];
+    const STAGE_KEYS = ['spv','kyc','docs','auditor','contract','secz','offering','live'];
     const nextStageIdx = STAGE_KEYS.findIndex(k => !item.stages[k]);
     if (nextStageIdx === -1) { notify('info', 'Application is already fully approved.'); return; }
     const nextStage = STAGE_KEYS[nextStageIdx];
@@ -1768,7 +1769,10 @@ export default function AdminDashboard() {
             auditor:  s.auditor_status === 'ACCEPTED' || s.status === 'AUDITOR_APPROVED' || s.status === 'ADMIN_APPROVED',
             contract: ['ADMIN_APPROVED','TOKENIZATION_PENDING','SECZ_REVIEW','SECZ_APPROVED','LIVE'].includes(s.status),
             secz:     ['SECZ_APPROVED','LIVE'].includes(s.status),
-            live:     s.status === 'LIVE',
+            // offering completes when market transitions out of PRIMARY_ONLY (can't be determined
+            // from submission status alone — stays false here; active tokens below use market_state)
+            offering: false,
+            live:     false,
           },
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:'Pending assignment',
           reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,
@@ -1785,7 +1789,7 @@ export default function AdminDashboard() {
         }));
         const financialSubs = subRes.value.data.filter(s=>s.submission_type!=='TOKENISATION_APPLICATION'&&s.period!=='TOKENISATION_APPLICATION').map(s=>({
           id:s.id,name:`${s.token_symbol} — ${s.entity_name||s.token_symbol}`,symbol:s.token_symbol,asset_class:'Financial Data',
-          stages:{spv:true,kyc:true,docs:true,auditor:!!s.assigned_auditor,contract:false,secz:false,live:false},
+          stages:{spv:true,kyc:true,docs:true,auditor:!!s.assigned_auditor,contract:false,secz:false,offering:false,live:false},
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:s.assigned_auditor||'Pending assignment',
           reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,
           contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
@@ -1801,7 +1805,13 @@ export default function AdminDashboard() {
             name: t.token_name || t.name || t.company_name,
             symbol: t.token_symbol || t.symbol,
             asset_class: t.asset_type || t.asset_class || 'ACTIVE',
-            stages: { spv:true, kyc:true, docs:true, auditor:true, contract:true, secz:true, live:true },
+            stages: {
+              spv:true, kyc:true, docs:true, auditor:true, contract:true, secz:true,
+              // offering complete when market_state moved past PRIMARY_ONLY (offering was disbursed)
+              offering: ['FULL_TRADING','P2P_ONLY'].includes(t.market_state),
+              // full trading only when market_state = FULL_TRADING (not P2P_ONLY)
+              live: t.market_state === 'FULL_TRADING',
+            },
             amount_target: 0, amount_raised: 0,
             submitted: t.created_at, analyst: '—',
             status: 'ADMIN_APPROVED', application_status: 'APPROVED',
@@ -1978,7 +1988,8 @@ export default function AdminDashboard() {
   const handleFlag=(id,action)=>{setFlaggedTxns(f=>f.filter(i=>i.id!==id));notify(action==='dismiss'?'info':'warning',action==='dismiss'?'Flag dismissed.':'🚫 Wallet suspended.');};
   const pipelineProgress=stages=>{const keys=PIPELINE_STAGES.map(s=>s.key);const done=keys.filter(k=>stages[k]).length;return Math.round((done/keys.length)*100);};
   const liveListings=pipeline.filter(p=>p.stages.live).length;
-  const pendingApprovals=pipeline.filter(p=>!p.stages.live).length;
+  const inOfferingPhase=pipeline.filter(p=>p.stages.secz&&!p.stages.live).length;
+  const pendingApprovals=pipeline.filter(p=>!p.stages.secz).length;
   const totalAUM=pipeline.filter(p=>p.stages.live).reduce((a,p)=>a+p.amount_raised,0);
   const totalFeesMTD=mockRevBreakdown.length>0?mockRevBreakdown.reduce((a,r)=>a+r.value,0):0;
   const totalUsers=users.length||9;
@@ -2158,7 +2169,12 @@ export default function AdminDashboard() {
         {tab==='pipeline'&&(
           <div className="space-y-4">
             <div className="grid grid-cols-4 gap-4 mb-2">
-              {[{label:'Applications',value:pipeline.length,icon:'📋'},{label:'Live',value:pipeline.filter(p=>p.stages.live).length,icon:'🟢'},{label:'In Review',value:pipeline.filter(p=>p.stages.kyc&&!p.stages.live).length,icon:'🔍'},{label:'Awaiting KYC',value:pipeline.filter(p=>!p.stages.kyc).length,icon:'⏳'}].map((s,i)=><KPI key={i} {...s}/>)}
+              {[
+                {label:'Applications',  value:pipeline.length,                                                              icon:'📋'},
+                {label:'Full Trading',  value:pipeline.filter(p=>p.stages.live).length,                                    icon:'🟢'},
+                {label:'In Offering',   value:pipeline.filter(p=>p.stages.secz&&!p.stages.live).length,                    icon:'🪙'},
+                {label:'In Review',     value:pipeline.filter(p=>p.stages.kyc&&!p.stages.secz).length,                     icon:'🔍'},
+              ].map((s,i)=><KPI key={i} {...s}/>)}
             </div>
             {pipeline.map(item=>{
               const progress=pipelineProgress(item.stages);
@@ -2301,8 +2317,21 @@ export default function AdminDashboard() {
                           <div className="space-y-2">
                             {item.stages.live ? (
                               <div className="bg-green-900/30 border border-green-800/50 rounded-lg p-3 text-center">
-                                <p className="text-green-300 font-semibold text-sm">🟢 Live on Platform</p>
-                                <p className="text-green-400 text-xs mt-1">{fmt(item.amount_raised)} raised</p>
+                                <p className="text-green-300 font-semibold text-sm">🟢 Step 8 — Full Trading Live</p>
+                                <p className="text-green-400 text-xs mt-1">{fmt(item.amount_raised)} raised · Secondary market open 24/7</p>
+                              </div>
+                            ) : item.status === 'LIVE' ? (
+                              <div className="space-y-2">
+                                <div className="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-3">
+                                  <p className="text-yellow-300 font-bold text-xs">🪙 Step 7 — Primary Offering Phase</p>
+                                  <p className="text-gray-400 text-xs mt-1">
+                                    Token is in <span className="text-yellow-300 font-semibold">PRIMARY_ONLY</span> mode.
+                                    Issuer must create a primary offering. Full trading unlocks automatically after the offering closes and proceeds are disbursed.
+                                  </p>
+                                </div>
+                                <p className="text-xs text-gray-500 text-center px-1">
+                                  Go to the <span className="text-yellow-400 font-semibold">Primary Offerings</span> tab to review or manage this token&apos;s offering.
+                                </p>
                               </div>
                             ) : item.status === 'TOKENIZATION_PENDING' ? (
                               <div className="space-y-2">
@@ -2339,19 +2368,20 @@ export default function AdminDashboard() {
                             ) : item.status === 'SECZ_APPROVED' ? (
                               <div className="space-y-2">
                                 <div className="bg-green-900/20 border border-green-800/50 rounded-lg p-3">
-                                  <p className="text-green-300 font-bold text-xs">✅ SECZ Approved</p>
-                                  <p className="text-gray-400 text-xs mt-1">Regulatory clearance received. Token is ready to go live.</p>
+                                  <p className="text-green-300 font-bold text-xs">✅ Step 6 Complete — SECZ Approved</p>
+                                  <p className="text-gray-400 text-xs mt-1">Regulatory clearance received. Activate Primary Offering Mode to begin Step 7 — the fundraising phase.</p>
                                 </div>
                                 <button onClick={async()=>{
                                   try {
                                     const r = await api.put(`/submissions/${item.id}/set-live`);
-                                    setPipeline(p => p.map(i => i.id===item.id ? {...i, status:'LIVE', stages:{...i.stages,live:true}} : i));
+                                    // Step 7 (offering) now starts — live is step 8, unlocks after offering closes
+                                    setPipeline(p => p.map(i => i.id===item.id ? {...i, status:'LIVE', stages:{...i.stages, offering:false, live:false}} : i));
                                     notify('success', r.data.message);
                                   } catch(e) { notify('error', e.response?.data?.error || 'Failed'); }
-                                }} className="w-full py-3 rounded-lg text-sm font-bold text-white bg-green-700 hover:bg-green-600">
-                                  🚀 Set Token Live — Primary Offering Mode
+                                }} className="w-full py-3 rounded-lg text-sm font-bold text-white bg-yellow-700 hover:bg-yellow-600">
+                                  🪙 Activate Primary Offering Mode (Step 7)
                                 </button>
-                                <p className="text-xs text-gray-500 text-center px-1">Token will enter PRIMARY_ONLY market state. Issuer must create a primary offering before full trading begins.</p>
+                                <p className="text-xs text-gray-500 text-center px-1">Token enters PRIMARY_ONLY. Issuer creates offering → subscriptions open → offering closes → Step 8 (Full Trading) unlocks automatically.</p>
                               </div>
                             ) : item.status === 'AUDITOR_APPROVED' ? (
                               <>

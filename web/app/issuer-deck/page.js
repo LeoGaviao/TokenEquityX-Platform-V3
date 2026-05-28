@@ -155,14 +155,14 @@ function SlideSolution() {
 
 function SlideHowItWorks() {
   const steps = [
-    { n: 1, icon: '📝', title: 'Apply',         desc: 'Submit application & $500 fee' },
-    { n: 2, icon: '🪪', title: 'KYC/AML',       desc: 'Entity & director verification' },
-    { n: 3, icon: '🔍', title: 'Audit',          desc: 'Certified auditor assigned' },
-    { n: 4, icon: '🪙', title: 'Tokenise',       desc: 'Smart contract deployed' },
-    { n: 5, icon: '🚀', title: 'Raise',          desc: 'Investor subscriptions open' },
-    { n: 6, icon: '💸', title: 'Settle',         desc: 'USDC transferred on-chain' },
-    { n: 7, icon: '📋', title: 'List',           desc: 'Token listed on platform' },
-    { n: 8, icon: '🔄', title: 'Trade',          desc: '24/7 secondary market' },
+    { n: 1, icon: '📝', title: 'Apply',             desc: 'Submit application & $500 fee' },
+    { n: 2, icon: '🪪', title: 'KYC/AML',           desc: 'Entity & director verification' },
+    { n: 3, icon: '🔍', title: 'Audit',              desc: 'Certified auditor assigned' },
+    { n: 4, icon: '⛓️', title: 'Smart Contract',    desc: 'Token deployed on Polygon' },
+    { n: 5, icon: '🏛️', title: 'SECZ Approval',    desc: 'Regulatory sign-off received' },
+    { n: 6, icon: '🪙', title: 'Primary Offering',  desc: 'Subscriptions open to investors' },
+    { n: 7, icon: '💸', title: 'Disburse',          desc: 'Proceeds settled to issuer SPV' },
+    { n: 8, icon: '🔄', title: 'Full Trading',      desc: '24/7 secondary market live' },
   ];
   return (
     <SlideWrapper>
