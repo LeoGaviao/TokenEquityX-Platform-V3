@@ -444,15 +444,17 @@ router.post('/reconciliation-preview',
   requireRole('ADMIN'),
   async (req, res) => {
     try {
+      // TODO: Re-enable email gate before sandbox launch
+      // const emailStatus = await getReconEmailStatus();
+      // if (!emailStatus.canOperate) {
+      //   return res.status(403).json({
+      //     error:           'RECONCILIATION_EMAILS_NOT_CONFIGURED',
+      //     message:         'Reconciliation fix is disabled. Notification emails must be configured before any ledger adjustments.',
+      //     details:         emailStatus.errors,
+      //     requiredEnvVars: ['RECONCILIATION_EMAIL_PRIMARY', 'RECONCILIATION_EMAIL_SECONDARY'],
+      //   });
+      // }
       const emailStatus = await getReconEmailStatus();
-      if (!emailStatus.canOperate) {
-        return res.status(403).json({
-          error:           'RECONCILIATION_EMAILS_NOT_CONFIGURED',
-          message:         'Reconciliation fix is disabled. Notification emails must be configured before any ledger adjustments.',
-          details:         emailStatus.errors,
-          requiredEnvVars: ['RECONCILIATION_EMAIL_PRIMARY', 'RECONCILIATION_EMAIL_SECONDARY'],
-        });
-      }
 
       const [orphans] = await db.execute(`
         SELECT id, user_id, amount_usd, created_at
@@ -492,16 +494,16 @@ router.post('/reconciliation-fix',
       return res.status(400).json({ error: 'reason is required and must be at least 10 characters' });
     }
 
-    // Block fix if notification emails are not configured
+    // TODO: Re-enable email gate before sandbox launch
+    // if (!emailStatus.canOperate) {
+    //   return res.status(403).json({
+    //     error:           'RECONCILIATION_EMAILS_NOT_CONFIGURED',
+    //     message:         'Reconciliation fix is disabled. Notification emails must be configured before any ledger adjustments.',
+    //     details:         emailStatus.errors,
+    //     requiredEnvVars: ['RECONCILIATION_EMAIL_PRIMARY', 'RECONCILIATION_EMAIL_SECONDARY'],
+    //   });
+    // }
     const emailStatus = await getReconEmailStatus();
-    if (!emailStatus.canOperate) {
-      return res.status(403).json({
-        error:           'RECONCILIATION_EMAILS_NOT_CONFIGURED',
-        message:         'Reconciliation fix is disabled. Notification emails must be configured before any ledger adjustments.',
-        details:         emailStatus.errors,
-        requiredEnvVars: ['RECONCILIATION_EMAIL_PRIMARY', 'RECONCILIATION_EMAIL_SECONDARY'],
-      });
-    }
 
     const conn = await db.getConnection();
     try {

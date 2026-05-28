@@ -3541,13 +3541,13 @@ export default function AdminDashboard() {
 
             {/* Email status banner — shown after first audit run */}
             {reconAudit && (reconAudit.toolStatus === 'DISABLED' ? (
-              <div className="rounded-xl p-3 border border-red-700 bg-red-900/20 text-xs text-red-300 font-medium">
-                🔒 Reconciliation fix is <strong>DISABLED</strong>. Configure valid email addresses in environment variables or admin settings:
-                {' '}<code className="bg-red-900/40 px-1 rounded">RECONCILIATION_EMAIL_PRIMARY</code> and{' '}
-                <code className="bg-red-900/40 px-1 rounded">RECONCILIATION_EMAIL_SECONDARY</code>.
-                {reconAudit.emailStatus?.errors?.length > 0 && (
-                  <ul className="mt-2 list-disc list-inside text-red-400">{reconAudit.emailStatus.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-                )}
+              // Email gate temporarily disabled — show warning instead of blocking
+              // TODO: Revert to red blocking banner before sandbox launch
+              <div className="rounded-xl p-3 border border-amber-600 bg-amber-900/20 text-xs text-amber-300 font-medium">
+                ⚠️ Email notifications not configured. Fix will proceed <strong>without email alerts</strong>. Configure{' '}
+                <code className="bg-amber-900/40 px-1 rounded">RECONCILIATION_EMAIL_PRIMARY</code> and{' '}
+                <code className="bg-amber-900/40 px-1 rounded">RECONCILIATION_EMAIL_SECONDARY</code>{' '}
+                in Sensitive Settings before sandbox launch.
               </div>
             ) : reconAudit.emailStatus && !reconAudit.emailStatus.tertiary?.valid ? (
               <div className="rounded-xl p-3 border border-amber-700/60 bg-amber-900/10 text-xs text-amber-300">
@@ -3725,29 +3725,26 @@ export default function AdminDashboard() {
                         ))}
                       </tbody>
                     </table>
-                    {/* Preview Fix button — only shown when tool OPERATIONAL */}
+                    {/* Preview Fix button — email gate temporarily disabled, always shown */}
                     <div className="flex items-center gap-3">
-                      {reconAudit.toolStatus === 'OPERATIONAL' ? (
-                        <button onClick={async () => {
-                          setReconPreviewLoading(true);
-                          setReconPreview(null);
-                          setReconConfirmReason('');
-                          setReconConfirmChecked(false);
-                          const t = localStorage.getItem('token');
-                          try {
-                            const r = await fetch(`${API}/admin/reconciliation-preview`, { method: 'POST', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } });
-                            const d = await r.json();
-                            if (r.ok) { setReconPreview(d); setReconFixModal(true); }
-                            else notify('error', d.message || d.error || 'Preview failed');
-                          } catch { notify('error', 'Network error'); }
-                          setReconPreviewLoading(false);
-                        }} disabled={reconPreviewLoading}
-                          className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-50">
-                          {reconPreviewLoading ? '⏳ Loading preview...' : `🔧 Preview Fix (${reconAudit.orphanedCount} deposit${reconAudit.orphanedCount > 1 ? 's' : ''})`}
-                        </button>
-                      ) : (
-                        <p className="text-xs text-red-400 font-medium">🔒 Fix disabled — configure notification emails to enable.</p>
-                      )}
+                      {/* TODO: Restore OPERATIONAL gate before sandbox launch */}
+                      <button onClick={async () => {
+                        setReconPreviewLoading(true);
+                        setReconPreview(null);
+                        setReconConfirmReason('');
+                        setReconConfirmChecked(false);
+                        const t = localStorage.getItem('token');
+                        try {
+                          const r = await fetch(`${API}/admin/reconciliation-preview`, { method: 'POST', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } });
+                          const d = await r.json();
+                          if (r.ok) { setReconPreview(d); setReconFixModal(true); }
+                          else notify('error', d.message || d.error || 'Preview failed');
+                        } catch { notify('error', 'Network error'); }
+                        setReconPreviewLoading(false);
+                      }} disabled={reconPreviewLoading}
+                        className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-50">
+                        {reconPreviewLoading ? '⏳ Loading preview...' : `🔧 Preview Fix (${reconAudit.orphanedCount} deposit${reconAudit.orphanedCount > 1 ? 's' : ''})`}
+                      </button>
                       <p className="text-xs text-gray-500">Preview shows exact changes before you confirm.</p>
                     </div>
                   </>
