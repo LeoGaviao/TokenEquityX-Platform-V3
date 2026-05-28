@@ -322,4 +322,124 @@ router.delete('/listings/:tokenSymbol',
   }
 );
 
+// ── Reconciliation audit & fix ────────────────────────────────────────────────
+
+// GET /api/admin/reconciliation-audit
+// Returns orphaned confirmed deposits + current reconciliation state.
+router.get('/reconciliation-audit',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [orphans] = await db.execute(`
+        SELECT dr.id, dr.user_id, dr.amount_usd, dr.created_at, dr.notes
+        FROM deposit_requests dr
+        LEFT JOIN users u ON u.id = dr.user_id
+        WHERE dr.status = 'CONFIRMED' AND u.id IS NULL
+        ORDER BY dr.created_at ASC
+      `);
+
+      const [depRows] = await db.execute(`
+        SELECT COALESCE(SUM(dr.amount_usd), 0) AS total
+        FROM deposit_requests dr
+        JOIN users u ON u.id = dr.user_id
+        WHERE dr.status = 'CONFIRMED'
+      `);
+      const [wdRows]  = await db.execute(
+        "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM withdrawal_requests WHERE status = 'COMPLETED'"
+      );
+      const [walRows] = await db.execute(
+        'SELECT COALESCE(SUM(balance_usd), 0) AS total FROM investor_wallets'
+      );
+      const [ledRows] = await db.execute(
+        'SELECT COALESCE(SUM(amount_usd), 0) AS total FROM wallet_transactions'
+      );
+
+      const confirmedDeposits    = parseFloat(depRows[0].total);
+      const completedWithdrawals = parseFloat(wdRows[0].total);
+      const expectedBalance      = confirmedDeposits - completedWithdrawals;
+      const actualBalance        = parseFloat(walRows[0].total);
+      const ledgerNet            = parseFloat(ledRows[0].total);
+      const variance             = Math.abs(actualBalance - expectedBalance);
+      const ledgerGap            = Math.abs(ledgerNet - actualBalance);
+      const orphanedTotal        = orphans.reduce((s, r) => s + parseFloat(r.amount_usd), 0);
+
+      res.json({
+        orphans,
+        orphanedCount:         orphans.length,
+        orphanedTotal,
+        confirmedDeposits,
+        completedWithdrawals,
+        expectedBalance,
+        actualBalance,
+        ledgerNet,
+        variance,
+        ledgerGap,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// POST /api/admin/reconciliation-fix
+// Voids all orphaned CONFIRMED deposits in a single transaction.
+router.post('/reconciliation-fix',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [orphans] = await conn.execute(`
+        SELECT id, user_id, amount_usd
+        FROM deposit_requests
+        WHERE status = 'CONFIRMED'
+          AND user_id NOT IN (SELECT id FROM users)
+      `);
+
+      if (orphans.length === 0) {
+        await conn.rollback();
+        return res.json({ success: true, voided: 0, amount: 0, message: 'No orphaned deposits found — ledger is already clean.' });
+      }
+
+      const totalAmount = orphans.reduce((s, r) => s + parseFloat(r.amount_usd), 0);
+
+      await conn.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        [
+          'RECONCILIATION_FIX',
+          req.user.userId,
+          'deposit_requests',
+          `Voided ${orphans.length} orphaned CONFIRMED deposit(s) totalling $${totalAmount.toFixed(2)} for deleted investor accounts. Gap closed by admin via reconciliation-fix endpoint on ${new Date().toISOString().slice(0, 10)}.`,
+        ]
+      );
+
+      await conn.execute(`
+        UPDATE deposit_requests
+        SET
+          status = 'VOIDED',
+          notes  = CONCAT(COALESCE(notes, ''), ' | VOIDED: investor account deleted — reconciliation gap closed ', NOW()::date)
+        WHERE status = 'CONFIRMED'
+          AND user_id NOT IN (SELECT id FROM users)
+      `);
+
+      await conn.commit();
+
+      res.json({
+        success: true,
+        voided:  orphans.length,
+        amount:  totalAmount,
+        message: `Voided ${orphans.length} orphaned deposit(s) totalling $${totalAmount.toFixed(2)}. Reconciliation gap closed.`,
+      });
+    } catch (err) {
+      await conn.rollback();
+      res.status(500).json({ error: err.message });
+    } finally {
+      conn.release();
+    }
+  }
+);
+
 module.exports = router;

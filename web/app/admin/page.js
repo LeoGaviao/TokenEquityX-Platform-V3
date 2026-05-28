@@ -1534,8 +1534,12 @@ export default function AdminDashboard() {
   const [otpVerified,  setOtpVerified]      = useState(false);
   const [sensitiveKey, setSensitiveKey]     = useState('');
   const [sensitiveVal, setSensitiveVal]     = useState('');
-  const [reconLogs,    setReconLogs]        = useState([]);
-  const [reconRunning, setReconRunning]     = useState(false);
+  const [reconLogs,        setReconLogs]        = useState([]);
+  const [reconRunning,     setReconRunning]     = useState(false);
+  const [reconAudit,       setReconAudit]       = useState(null);
+  const [reconAuditLoading,setReconAuditLoading]= useState(false);
+  const [reconFixLoading,  setReconFixLoading]  = useState(false);
+  const [reconFixModal,    setReconFixModal]    = useState(false);
   const [spvFees, setSpvFees] = useState([]);
   const [staffList,    setStaffList]    = useState([]);
   const [staffLoading, setStaffLoading] = useState(false);
@@ -3492,6 +3496,125 @@ export default function AdminDashboard() {
             ) : (
               <p className="text-xs text-gray-500 text-center py-3">No reconciliation logs yet.</p>
             )}
+
+          {/* ORPHANED DEPOSIT AUDIT */}
+          <div className="bg-gray-900 border border-amber-800/40 rounded-2xl p-5 mt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm">🔍 Orphaned Deposit Audit</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Finds CONFIRMED deposits for deleted investor accounts that inflate the expected balance and cause reconciliation variance.</p>
+              </div>
+              <button onClick={async () => {
+                setReconAuditLoading(true);
+                setReconAudit(null);
+                const t = localStorage.getItem('token');
+                try {
+                  const r = await fetch(`${API}/admin/reconciliation-audit`, { headers: { Authorization: `Bearer ${t}` } });
+                  const d = await r.json();
+                  if (r.ok) setReconAudit(d);
+                  else notify('error', d.error || 'Audit failed');
+                } catch { notify('error', 'Network error'); }
+                setReconAuditLoading(false);
+              }} disabled={reconAuditLoading} className="px-4 py-2 rounded-xl text-xs font-semibold bg-amber-700 hover:bg-amber-600 text-white disabled:opacity-50 whitespace-nowrap">
+                {reconAuditLoading ? '⏳ Scanning...' : '🔍 Run Audit'}
+              </button>
+            </div>
+
+            {reconAudit && (
+              <div className="space-y-3">
+                {/* Summary row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Expected Balance', value: `$${parseFloat(reconAudit.expectedBalance).toFixed(2)}` },
+                    { label: 'Actual Balance',   value: `$${parseFloat(reconAudit.actualBalance).toFixed(2)}` },
+                    { label: 'Variance',         value: `$${parseFloat(reconAudit.variance).toFixed(2)}`, highlight: parseFloat(reconAudit.variance) > 0 },
+                    { label: 'Orphaned Total',   value: `$${parseFloat(reconAudit.orphanedTotal).toFixed(2)}`, highlight: reconAudit.orphanedCount > 0 },
+                  ].map(({ label, value, highlight }) => (
+                    <div key={label} className={`rounded-xl p-3 border ${highlight ? 'border-red-700/50 bg-red-900/10' : 'border-gray-800 bg-gray-800/30'}`}>
+                      <p className="text-xs text-gray-500">{label}</p>
+                      <p className={`font-mono font-bold text-sm mt-0.5 ${highlight ? 'text-red-300' : 'text-white'}`}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Orphan table */}
+                {reconAudit.orphanedCount > 0 ? (
+                  <>
+                    <p className="text-xs text-amber-400 font-medium">⚠ {reconAudit.orphanedCount} orphaned deposit(s) found — investor account was deleted without voiding these records.</p>
+                    <table className="w-full text-xs border border-gray-800 rounded-xl overflow-hidden">
+                      <thead><tr className="text-gray-500 border-b border-gray-800 bg-gray-800/40">
+                        {['Deposit ID','Deleted User ID','Amount','Created'].map(h => <th key={h} className="text-left py-2 px-3 font-medium">{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {reconAudit.orphans.map((o, i) => (
+                          <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                            <td className="py-2 px-3 font-mono text-gray-400">{o.id.slice(0, 8)}…</td>
+                            <td className="py-2 px-3 font-mono text-red-400">{o.user_id?.slice(0, 8)}… (deleted)</td>
+                            <td className="py-2 px-3 font-mono text-red-300">${parseFloat(o.amount_usd).toFixed(2)}</td>
+                            <td className="py-2 px-3 text-gray-400">{new Date(o.created_at).toLocaleDateString('en-GB')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setReconFixModal(true)} disabled={reconFixLoading}
+                        className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-50">
+                        🔧 Fix Variance (Void {reconAudit.orphanedCount} deposit{reconAudit.orphanedCount > 1 ? 's' : ''})
+                      </button>
+                      <p className="text-xs text-gray-500">This will mark orphaned deposits as VOIDED and write an audit log entry.</p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-green-400 font-medium">✅ No orphaned deposits found — ledger is clean. Variance of ${parseFloat(reconAudit.variance).toFixed(2)} has another cause.</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ORPHANED DEPOSIT FIX MODAL */}
+          {reconFixModal && reconAudit && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+              <div className="bg-gray-900 border border-red-700/50 rounded-2xl p-6 max-w-md w-full mx-4 space-y-4">
+                <h3 className="font-bold text-base text-red-300">⚠ Confirm Reconciliation Fix</h3>
+                <p className="text-sm text-gray-300">
+                  This will permanently void <strong>{reconAudit.orphanedCount} CONFIRMED deposit(s)</strong> totalling{' '}
+                  <strong className="text-red-300">${parseFloat(reconAudit.orphanedTotal).toFixed(2)}</strong> for deleted investor accounts.
+                </p>
+                <p className="text-xs text-gray-500">
+                  The funds belong to accounts that no longer exist. This action will close the ${parseFloat(reconAudit.variance).toFixed(2)} reconciliation variance. An audit log entry will be created.
+                </p>
+                <div className="flex gap-3 pt-2">
+                  <button onClick={async () => {
+                    setReconFixModal(false);
+                    setReconFixLoading(true);
+                    const t = localStorage.getItem('token');
+                    try {
+                      const r = await fetch(`${API}/admin/reconciliation-fix`, { method: 'POST', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } });
+                      const d = await r.json();
+                      if (r.ok) {
+                        notify('success', d.message);
+                        // Refresh audit to confirm clean state
+                        const r2 = await fetch(`${API}/admin/reconciliation-audit`, { headers: { Authorization: `Bearer ${t}` } });
+                        const d2 = await r2.json();
+                        if (r2.ok) setReconAudit(d2);
+                      } else {
+                        notify('error', d.error || 'Fix failed');
+                      }
+                    } catch { notify('error', 'Network error'); }
+                    setReconFixLoading(false);
+                  }} disabled={reconFixLoading}
+                    className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-50">
+                    {reconFixLoading ? '⏳ Applying...' : 'Yes, Void & Fix'}
+                  </button>
+                  <button onClick={() => setReconFixModal(false)}
+                    className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ANNUAL SPV FEES */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mt-4 space-y-4">
