@@ -633,12 +633,45 @@ router.put('/withdraw/:id/reject',
       if (rows.length === 0) { await conn.rollback(); return res.status(404).json({ error: 'Withdrawal not found' }); }
       const wr = rows[0];
       if (wr.status === 'COMPLETED') { await conn.rollback(); return res.status(400).json({ error: 'Cannot reject a completed withdrawal' }); }
+      if (wr.status === 'REJECTED')  { await conn.rollback(); return res.status(400).json({ error: 'Withdrawal already rejected' }); }
 
-      // Release the reserved funds back to available
-      await conn.execute(
-        'UPDATE investor_wallets SET reserved_usd = GREATEST(0, reserved_usd - ?), updated_at = NOW() WHERE user_id = ?',
-        [wr.amount_usd, wr.user_id]
+      // Look up the IMTT that was deducted at submission time.
+      // We read the actual ledger entry rather than recomputing, in case the rate changed.
+      const [imttRows] = await conn.execute(
+        "SELECT ABS(amount_usd) AS imtt_amount FROM wallet_transactions WHERE reference_id = ? AND user_id = ? AND description LIKE 'IMTT%' LIMIT 1",
+        [req.params.id, wr.user_id]
       );
+      const imttAmount = parseFloat(imttRows[0]?.imtt_amount || 0);
+
+      // Release reserved amount AND refund IMTT back to balance
+      await conn.execute(
+        'UPDATE investor_wallets SET balance_usd = balance_usd + ?, reserved_usd = GREATEST(0, reserved_usd - ?), updated_at = NOW() WHERE user_id = ?',
+        [imttAmount, wr.amount_usd, wr.user_id]
+      );
+
+      // Record IMTT refund in the ledger for full auditability
+      if (imttAmount > 0) {
+        const [wRows] = await conn.execute('SELECT balance_usd FROM investor_wallets WHERE user_id = ?', [wr.user_id]);
+        const balanceAfter = parseFloat(wRows[0]?.balance_usd || 0);
+        await conn.execute(
+          `INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+           VALUES (gen_random_uuid(), ?, 'REFUND', ?, ?, ?, ?, ?)`,
+          [
+            wr.user_id,
+            imttAmount,
+            parseFloat((balanceAfter - imttAmount).toFixed(2)),
+            balanceAfter,
+            req.params.id,
+            `IMTT refund — withdrawal rejected`,
+          ]
+        );
+
+        // Reverse the IMTT that was credited to platform treasury at submission
+        await conn.execute(
+          'UPDATE platform_treasury SET usd_liability = GREATEST(0, usd_liability - ?), updated_at = NOW() WHERE id = 1',
+          [imttAmount]
+        );
+      }
 
       await conn.execute(
         "UPDATE withdrawal_requests SET status = 'REJECTED', processed_by = ?, processed_at = NOW(), notes = ? WHERE id = ?",
@@ -646,6 +679,8 @@ router.put('/withdraw/:id/reject',
       );
 
       await conn.commit();
+
+      const imttNote = imttAmount > 0 ? ` IMTT of $${imttAmount.toFixed(2)} has been refunded to your balance.` : '';
 
       // Email investor
       mailer.notifyInvestorWithdrawalRejected({
@@ -658,13 +693,17 @@ router.put('/withdraw/:id/reject',
       await sendMessage({
         recipientId: wr.user_id,
         subject:     `❌ Withdrawal Request Rejected`,
-        body:        `Your withdrawal request of $${parseFloat(wr.amount_usd).toFixed(2)} USD could not be processed. Reason: ${reason || 'Not specified'}. Your wallet balance has been restored.`,
+        body:        `Your withdrawal request of $${parseFloat(wr.amount_usd).toFixed(2)} USD could not be processed. Reason: ${reason || 'Not specified'}. Your reserved funds have been released.${imttNote}`,
         type:        'SYSTEM',
         category:    'WALLET',
         referenceId: String(req.params.id),
       }).catch(() => {});
 
-      res.json({ success: true, message: `Withdrawal rejected. Reserved funds released back to ${wr.full_name}'s available balance.` });
+      res.json({
+        success:       true,
+        imtt_refunded: imttAmount,
+        message:       `Withdrawal rejected. Reserved funds released back to ${wr.full_name}'s available balance.${imttAmount > 0 ? ` IMTT of $${imttAmount.toFixed(2)} refunded.` : ''}`,
+      });
     } catch (err) {
       await conn.rollback();
       res.status(500).json({ error: 'Could not reject withdrawal: ' + err.message });
