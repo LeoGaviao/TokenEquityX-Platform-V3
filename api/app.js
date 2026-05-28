@@ -88,6 +88,7 @@ app.use('/api/super-admin',     require('./src/routes/superAdmin'));
 app.use('/api/payments',        require('./src/routes/payments'));
 app.use('/api/banking-partner', require('./src/routes/bankingPartner'));
 
+if (require.main === module) {
 // Daily reconciliation at 18:00
 cron.schedule('0 18 * * *', async () => {
   console.log('[CRON] Running daily USDC reconciliation...');
@@ -263,6 +264,7 @@ cron.schedule('30 9 * * *', async () => {
     console.error('[CRON] KYC expiry check failed:', err.message);
   }
 });
+} // end require.main === module (cron block)
 
 // ─── 404 HANDLER ──────────────────────────────────────────────────
 
@@ -291,14 +293,17 @@ app.use((err, req, res, next) => {
 
 // ─── START SERVER ─────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`✅ TokenEquityX V3 API running on port ${PORT}`);
-  console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔌 WebSocket available at ws://localhost:${PORT}/ws`);
-  initWebSocket(server);
-  console.log(`✅ WebSocket server initialised`);
-});
 
-module.exports = { app, server };
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`✅ TokenEquityX V3 API running on port ${PORT}`);
+    console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔌 WebSocket available at ws://localhost:${PORT}/ws`);
+    initWebSocket(server);
+    console.log(`✅ WebSocket server initialised`);
+  });
+}
+
+module.exports = app;
 
 

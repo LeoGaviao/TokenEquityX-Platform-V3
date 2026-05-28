@@ -64,6 +64,7 @@ const compatPool = {
       release:          ()       => { client.release(); },
     };
   },
+  end: () => pool.end(),
   _pool: pool,
 };
 
