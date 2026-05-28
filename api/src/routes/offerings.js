@@ -712,13 +712,13 @@ router.post('/:id/close',
         ]);
       }
 
+      const tokenSym = token.token_symbol || token.symbol;
+
       // Credit platform treasury (issuance fee + VAT)
       await conn.execute(
         'UPDATE platform_treasury SET usd_liability = usd_liability + ?, updated_at = NOW() WHERE id = 1',
         [parseFloat((issuanceFee + vatOnIssuanceFee).toFixed(2))]
       );
-
-      const tokenSym = token.token_symbol || token.symbol;
 
       // F-02: Queue disbursement for banking partner to process EFT to issuer
       await conn.execute(`

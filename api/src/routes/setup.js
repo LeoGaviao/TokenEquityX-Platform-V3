@@ -1277,6 +1277,11 @@ router.get('/cleanup-users', async (req, res) => {
 
       const userId = rows[0].id;
 
+      // Void financial records first to keep reconciliation clean
+      await pool.execute(
+        `UPDATE deposit_requests SET status = 'VOIDED', notes = CONCAT(COALESCE(notes,''), ' | VOIDED: test account cleanup ', NOW()::date) WHERE user_id = $1 AND status IN ('CONFIRMED','PENDING','PROCESSING')`,
+        [userId]
+      );
       // Delete all related data before removing the user
       await pool.execute('DELETE FROM token_holdings          WHERE user_id = $1', [userId]);
       await pool.execute('DELETE FROM investor_wallets         WHERE user_id = $1', [userId]);
@@ -1286,6 +1291,7 @@ router.get('/cleanup-users', async (req, res) => {
       await pool.execute('DELETE FROM entity_kyc               WHERE user_id = $1', [userId]);
       await pool.execute('DELETE FROM p2p_offers               WHERE seller_id = $1 OR buyer_id = $1', [userId]);
       await pool.execute('DELETE FROM offering_subscriptions   WHERE investor_id = $1', [userId]);
+      await pool.execute("DELETE FROM withdrawal_requests      WHERE user_id = $1 AND status IN ('PENDING','PROCESSING')", [userId]);
       await pool.execute('DELETE FROM risk_acknowledgements    WHERE investor_id = $1', [userId]);
       await pool.execute('DELETE FROM users                    WHERE id = $1', [userId]);
 
@@ -1347,8 +1353,10 @@ router.post('/reset-vfhg', async (req, res) => {
 });
 
 // GET /api/setup/delete-user?email=... — permanently delete a user and all related records
+// Pass ?force=true to delete even if the user has an active USD balance.
+// Without force=true, deletion is blocked when balance_usd > 0 to prevent reconciliation gaps.
 router.get('/delete-user', async (req, res) => {
-  const { email } = req.query;
+  const { email, force } = req.query;
   if (!email) return res.status(400).json({ error: 'email query parameter is required' });
 
   try {
@@ -1357,6 +1365,26 @@ router.get('/delete-user', async (req, res) => {
       return res.json({ success: true, email, users_deleted: 0, message: 'No user found with that email.' });
     }
     const userId = rows[0].id;
+
+    // Safety check: refuse deletion of investor with non-zero balance unless force=true
+    const [walletRows] = await pool.execute(
+      'SELECT balance_usd FROM investor_wallets WHERE user_id = $1', [userId]
+    );
+    const activeBalance = parseFloat(walletRows[0]?.balance_usd || 0);
+    if (activeBalance > 0 && force !== 'true') {
+      return res.status(400).json({
+        error: `Cannot delete user ${email} — they have an active USD balance of $${activeBalance.toFixed(2)}. ` +
+               `Process a manual withdrawal/adjustment to zero the balance first, ` +
+               `or pass ?force=true to force-delete (will void their CONFIRMED deposits and create an audit log entry).`,
+        balance_usd: activeBalance,
+      });
+    }
+
+    // Void CONFIRMED and PENDING deposits so they don't inflate the reconciliation expected balance
+    const [voidResult] = await pool.execute(
+      `UPDATE deposit_requests SET status = 'VOIDED', notes = CONCAT(COALESCE(notes,''), ' | VOIDED: account deleted ', NOW()::date) WHERE user_id = $1 AND status IN ('CONFIRMED','PENDING','PROCESSING')`,
+      [userId]
+    );
 
     // Delete in dependency order to avoid FK violations
     await pool.execute('DELETE FROM kyc_documents          WHERE kyc_id IN (SELECT id FROM kyc_records WHERE user_id = $1)', [userId]);
@@ -1367,15 +1395,29 @@ router.get('/delete-user', async (req, res) => {
     await pool.execute('DELETE FROM entity_kyc             WHERE user_id = $1', [userId]);
     await pool.execute('DELETE FROM messages               WHERE recipient_id = $1 OR sender_id = $1', [userId]);
     await pool.execute('DELETE FROM offering_subscriptions WHERE investor_id = $1', [userId]);
+    await pool.execute('DELETE FROM withdrawal_requests    WHERE user_id = $1 AND status IN (\'PENDING\',\'PROCESSING\')', [userId]);
     await pool.execute('DELETE FROM p2p_offers             WHERE seller_id = $1 OR buyer_id = $1', [userId]);
     await pool.execute('DELETE FROM otps                   WHERE user_id = $1', [userId]);
     const [del] = await pool.execute('DELETE FROM users   WHERE email = $1 RETURNING id', [email.toLowerCase()]);
 
+    // Audit trail: record the balance forfeiture so reconciliation variances are traceable
+    if (activeBalance > 0) {
+      await pool._pool.query(
+        `INSERT INTO audit_logs (action, performed_by, target_entity, details)
+         VALUES ('USER_DELETED_WITH_BALANCE', NULL, $1, $2)`,
+        [email, `Force-deleted user ${email} (id: ${userId}) with active balance of $${activeBalance.toFixed(2)} USD. CONFIRMED deposits voided. Reconciliation gap of $${activeBalance.toFixed(2)} closed by voiding deposits.`]
+      );
+    }
+
     res.json({
-      success:       true,
+      success:             true,
       email,
-      users_deleted: del.length,
-      message:       `User ${email} and all associated records have been permanently deleted.`,
+      users_deleted:       del.length,
+      deposits_voided:     voidResult.rowCount ?? 0,
+      forfeited_balance:   activeBalance,
+      message:             activeBalance > 0
+        ? `User ${email} deleted. $${activeBalance.toFixed(2)} USD balance forfeited — CONFIRMED deposits voided and recorded in audit_logs.`
+        : `User ${email} and all associated records have been permanently deleted.`,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -29,15 +29,31 @@ async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
     );
 
     // ── USD reconciliation ────────────────────────────────────────────────
-    // Expected balance = total confirmed deposits − total completed withdrawals.
+    // Expected balance = confirmed deposits (for active users) − completed withdrawals.
     // Actual balance   = sum of all investor wallet USD balances.
-    // These must agree; any gap means money entered or left the system without
-    // a matching wallet credit/debit.
+    // Orphaned CONFIRMED deposits (user deleted without zeroing balance) are excluded;
+    // they should be voided via /api/setup/delete-user to close any resulting gap.
     const [thresholdRows]  = await db.execute("SELECT value FROM platform_settings WHERE key = 'reconciliation_variance_threshold_usd'");
     const usdThreshold     = parseFloat(thresholdRows[0]?.value || '1.00');
 
-    const [depositRows]    = await db.execute("SELECT COALESCE(SUM(amount_usd), 0) AS total FROM deposit_requests WHERE status = 'CONFIRMED'");
+    // Only count confirmed deposits for users who still exist — prevents deleted-account gap
+    const [depositRows]    = await db.execute(`
+      SELECT COALESCE(SUM(dr.amount_usd), 0) AS total
+      FROM deposit_requests dr
+      JOIN users u ON u.id = dr.user_id
+      WHERE dr.status = 'CONFIRMED'
+    `);
     const usdDeposits      = parseFloat(depositRows[0]?.total || 0);
+
+    // Detect orphaned confirmed deposits (user deleted but deposits not voided)
+    const [orphanRows]     = await db.execute(`
+      SELECT COALESCE(SUM(dr.amount_usd), 0) AS total, COUNT(*) AS count
+      FROM deposit_requests dr
+      LEFT JOIN users u ON u.id = dr.user_id
+      WHERE dr.status = 'CONFIRMED' AND u.id IS NULL
+    `);
+    const orphanedAmount   = parseFloat(orphanRows[0]?.total || 0);
+    const orphanedCount    = parseInt(orphanRows[0]?.count   || 0);
 
     const [withdrawalRows] = await db.execute("SELECT COALESCE(SUM(amount_usd), 0) AS total FROM withdrawal_requests WHERE status = 'COMPLETED'");
     const usdWithdrawals   = parseFloat(withdrawalRows[0]?.total || 0);
@@ -49,8 +65,15 @@ async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
 
     const usdVariance      = Math.abs(usdActual - usdExpected);
 
+    // Secondary check: SUM(wallet_transactions) must equal SUM(investor_wallets.balance_usd)
+    // Any gap here means a balance was updated without a matching ledger entry (ghost update)
+    const [ledgerNetRows]  = await db.execute('SELECT COALESCE(SUM(amount_usd), 0) AS total FROM wallet_transactions');
+    const ledgerNet        = parseFloat(ledgerNetRows[0]?.total || 0);
+    const ledgerIntegrity  = Math.abs(ledgerNet - usdActual);
+
     let usdStatus = 'OK';
-    if (usdVariance > usdThreshold) usdStatus = 'CRITICAL';
+    if (usdVariance > usdThreshold || ledgerIntegrity > usdThreshold) usdStatus = 'CRITICAL';
+    if (orphanedCount > 0) usdStatus = usdStatus === 'OK' ? 'WARNING' : usdStatus;
 
     const usdNotes = [
       `Confirmed deposits:     $${usdDeposits.toFixed(2)}`,
@@ -58,6 +81,10 @@ async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
       `Expected balance:       $${usdExpected.toFixed(2)}`,
       `Actual ledger balance:  $${usdActual.toFixed(2)}`,
       `Variance:               $${usdVariance.toFixed(2)} (threshold: $${usdThreshold.toFixed(2)})`,
+      `Ledger integrity gap:   $${ledgerIntegrity.toFixed(2)} (wallet_txns net vs wallet balances)`,
+      orphanedCount > 0
+        ? `⚠ ORPHANED: ${orphanedCount} CONFIRMED deposit(s) totalling $${orphanedAmount.toFixed(2)} for deleted users — run VOID fix`
+        : `Orphaned deposits:      none`,
     ].join(' | ');
 
     await db.execute(
