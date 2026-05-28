@@ -1,0 +1,20 @@
+{
+  "network": "not-deployed",
+  "chainId": null,
+  "deployedAt": null,
+  "deployer": null,
+  "contracts": {
+    "ComplianceRegistry": "",
+    "KYCManager": "",
+    "SPVRegistry": "",
+    "ValuationOracle": "",
+    "FeeManager": "",
+    "TradeEngine": "",
+    "DistributionManager": "",
+    "GovernanceContract": "",
+    "AuditLog": "",
+    "AssetTokenImplementation": "",
+    "PlatformAdmin": ""
+  },
+  "_note": "Run 'npx hardhat run scripts/deploy.js --network polygon_mainnet' to populate this file"
+}
