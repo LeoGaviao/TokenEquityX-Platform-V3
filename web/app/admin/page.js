@@ -1536,10 +1536,19 @@ export default function AdminDashboard() {
   const [sensitiveVal, setSensitiveVal]     = useState('');
   const [reconLogs,        setReconLogs]        = useState([]);
   const [reconRunning,     setReconRunning]     = useState(false);
-  const [reconAudit,       setReconAudit]       = useState(null);
-  const [reconAuditLoading,setReconAuditLoading]= useState(false);
-  const [reconFixLoading,  setReconFixLoading]  = useState(false);
-  const [reconFixModal,    setReconFixModal]    = useState(false);
+  const [reconAudit,         setReconAudit]         = useState(null);
+  const [reconAuditLoading,  setReconAuditLoading]  = useState(false);
+  const [reconFixLoading,    setReconFixLoading]    = useState(false);
+  const [reconFixModal,      setReconFixModal]      = useState(false);
+  const [reconPreview,       setReconPreview]       = useState(null);
+  const [reconPreviewLoading,setReconPreviewLoading]= useState(false);
+  const [reconConfirmReason, setReconConfirmReason] = useState('');
+  const [reconConfirmChecked,setReconConfirmChecked]= useState(false);
+  const [reconFixSuccess,    setReconFixSuccess]    = useState(null);
+  const [reconSettings,      setReconSettings]      = useState(null);
+  const [reconSettingsLoading,setReconSettingsLoading] = useState(false);
+  const [reconSettingsSaved, setReconSettingsSaved] = useState(false);
+  const [reconSettingsForm,  setReconSettingsForm]  = useState({ primary: '', secondary: '', tertiary: '' });
   const [spvFees, setSpvFees] = useState([]);
   const [staffList,    setStaffList]    = useState([]);
   const [staffLoading, setStaffLoading] = useState(false);
@@ -3499,6 +3508,27 @@ export default function AdminDashboard() {
 
           {/* ORPHANED DEPOSIT AUDIT */}
           <div className="bg-gray-900 border border-amber-800/40 rounded-2xl p-5 mt-4 space-y-4">
+
+            {/* Email status banner — shown after first audit run */}
+            {reconAudit && (reconAudit.toolStatus === 'DISABLED' ? (
+              <div className="rounded-xl p-3 border border-red-700 bg-red-900/20 text-xs text-red-300 font-medium">
+                🔒 Reconciliation fix is <strong>DISABLED</strong>. Configure valid email addresses in environment variables or admin settings:
+                {' '}<code className="bg-red-900/40 px-1 rounded">RECONCILIATION_EMAIL_PRIMARY</code> and{' '}
+                <code className="bg-red-900/40 px-1 rounded">RECONCILIATION_EMAIL_SECONDARY</code>.
+                {reconAudit.emailStatus?.errors?.length > 0 && (
+                  <ul className="mt-2 list-disc list-inside text-red-400">{reconAudit.emailStatus.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                )}
+              </div>
+            ) : reconAudit.emailStatus && !reconAudit.emailStatus.tertiary?.valid ? (
+              <div className="rounded-xl p-3 border border-amber-700/60 bg-amber-900/10 text-xs text-amber-300">
+                ⚠️ Reconciliation fix is operational. Third notification recipient not configured — fixes will notify {reconAudit.emailStatus.recipients?.length ?? 2} recipient(s) only.
+              </div>
+            ) : reconAudit.toolStatus === 'OPERATIONAL' ? (
+              <div className="rounded-xl p-3 border border-green-700/40 bg-green-900/10 text-xs text-green-400">
+                ✅ Reconciliation system operational. Notifications will be sent to {reconAudit.emailStatus?.recipients?.length ?? 0} recipient(s): {reconAudit.emailStatus?.recipients?.join(', ')}.
+              </div>
+            ) : null)}
+
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-sm">🔍 Orphaned Deposit Audit</h3>
@@ -3507,6 +3537,7 @@ export default function AdminDashboard() {
               <button onClick={async () => {
                 setReconAuditLoading(true);
                 setReconAudit(null);
+                setReconFixSuccess(null);
                 const t = localStorage.getItem('token');
                 try {
                   const r = await fetch(`${API}/admin/reconciliation-audit`, { headers: { Authorization: `Bearer ${t}` } });
@@ -3519,6 +3550,23 @@ export default function AdminDashboard() {
                 {reconAuditLoading ? '⏳ Scanning...' : '🔍 Run Audit'}
               </button>
             </div>
+
+            {/* Fix success result */}
+            {reconFixSuccess && (
+              <div className="rounded-xl p-4 border border-green-700/50 bg-green-900/10 space-y-1">
+                <p className="text-xs text-green-300 font-semibold">✅ {reconFixSuccess.message}</p>
+                {reconFixSuccess.emailResults && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs text-gray-500">Email notifications ({reconFixSuccess.emailStatus}):</p>
+                    {reconFixSuccess.emailResults.map((r, i) => (
+                      <p key={i} className={`text-xs font-mono ${r.success ? 'text-green-400' : 'text-red-400'}`}>
+                        {r.success ? '✓' : '✗'} {r.email}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {reconAudit && (
               <div className="space-y-4">
@@ -3647,12 +3695,30 @@ export default function AdminDashboard() {
                         ))}
                       </tbody>
                     </table>
+                    {/* Preview Fix button — only shown when tool OPERATIONAL */}
                     <div className="flex items-center gap-3">
-                      <button onClick={() => setReconFixModal(true)} disabled={reconFixLoading}
-                        className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-50">
-                        🔧 Fix Variance (Void {reconAudit.orphanedCount} deposit{reconAudit.orphanedCount > 1 ? 's' : ''})
-                      </button>
-                      <p className="text-xs text-gray-500">This will mark orphaned deposits as VOIDED and write an audit log entry.</p>
+                      {reconAudit.toolStatus === 'OPERATIONAL' ? (
+                        <button onClick={async () => {
+                          setReconPreviewLoading(true);
+                          setReconPreview(null);
+                          setReconConfirmReason('');
+                          setReconConfirmChecked(false);
+                          const t = localStorage.getItem('token');
+                          try {
+                            const r = await fetch(`${API}/admin/reconciliation-preview`, { method: 'POST', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } });
+                            const d = await r.json();
+                            if (r.ok) { setReconPreview(d); setReconFixModal(true); }
+                            else notify('error', d.message || d.error || 'Preview failed');
+                          } catch { notify('error', 'Network error'); }
+                          setReconPreviewLoading(false);
+                        }} disabled={reconPreviewLoading}
+                          className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-50">
+                          {reconPreviewLoading ? '⏳ Loading preview...' : `🔧 Preview Fix (${reconAudit.orphanedCount} deposit${reconAudit.orphanedCount > 1 ? 's' : ''})`}
+                        </button>
+                      ) : (
+                        <p className="text-xs text-red-400 font-medium">🔒 Fix disabled — configure notification emails to enable.</p>
+                      )}
+                      <p className="text-xs text-gray-500">Preview shows exact changes before you confirm.</p>
                     </div>
                   </>
                 ) : (
@@ -3660,44 +3726,151 @@ export default function AdminDashboard() {
                 )}
               </div>
             )}
+
+            {/* SUPER_ADMIN: Reconciliation Email Settings */}
+            {isSuperAdmin && (
+              <div className="border border-gray-700/40 rounded-xl p-4 mt-2 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-300">⚙️ Reconciliation Email Settings</p>
+                    <p className="text-xs text-gray-500">Recipients for fix notifications. Both primary and secondary are required.</p>
+                  </div>
+                  <button onClick={async () => {
+                    const t = localStorage.getItem('token');
+                    const r = await fetch(`${API}/admin/reconciliation-settings`, { headers: { Authorization: `Bearer ${t}` } });
+                    const d = await r.json();
+                    if (r.ok) {
+                      setReconSettings(d);
+                      setReconSettingsForm({ primary: d.primary?.email || '', secondary: d.secondary?.email || '', tertiary: d.tertiary?.email || '' });
+                    }
+                  }} className="text-xs text-blue-400 hover:text-blue-300 underline">Load current</button>
+                </div>
+                {reconSettings && (
+                  <div className="space-y-2">
+                    {[
+                      { key: 'primary',   label: 'Primary (required)',   status: reconSettings.primary   },
+                      { key: 'secondary', label: 'Secondary (required)', status: reconSettings.secondary },
+                      { key: 'tertiary',  label: 'Tertiary (optional)',  status: reconSettings.tertiary  },
+                    ].map(({ key, label, status }) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 w-32 shrink-0">{label}</span>
+                        <span className="text-lg">{status?.valid ? '✅' : status?.email ? '❌' : '⚪'}</span>
+                        <input
+                          type="email"
+                          value={reconSettingsForm[key]}
+                          onChange={e => setReconSettingsForm(f => ({ ...f, [key]: e.target.value }))}
+                          placeholder={`${key}@tokenequityx.co.zw`}
+                          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-3 pt-1">
+                      <button onClick={async () => {
+                        setReconSettingsLoading(true);
+                        setReconSettingsSaved(false);
+                        const t = localStorage.getItem('token');
+                        try {
+                          const r = await fetch(`${API}/admin/reconciliation-settings`, {
+                            method: 'PUT',
+                            headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify(reconSettingsForm),
+                          });
+                          const d = await r.json();
+                          if (r.ok) { setReconSettings(d); setReconSettingsSaved(true); notify('success', 'Reconciliation emails updated.'); }
+                          else notify('error', d.error || 'Save failed');
+                        } catch { notify('error', 'Network error'); }
+                        setReconSettingsLoading(false);
+                      }} disabled={reconSettingsLoading}
+                        className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-white disabled:opacity-50">
+                        {reconSettingsLoading ? '⏳ Saving...' : reconSettingsSaved ? '✅ Saved' : 'Save'}
+                      </button>
+                      <p className="text-xs text-gray-600">Changes take effect immediately (no restart needed).</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* ORPHANED DEPOSIT FIX MODAL */}
-          {reconFixModal && reconAudit && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-              <div className="bg-gray-900 border border-red-700/50 rounded-2xl p-6 max-w-md w-full mx-4 space-y-4">
-                <h3 className="font-bold text-base text-red-300">⚠ Confirm Reconciliation Fix</h3>
-                <p className="text-sm text-gray-300">
-                  This will permanently void <strong>{reconAudit.orphanedCount} CONFIRMED deposit(s)</strong> totalling{' '}
-                  <strong className="text-red-300">${parseFloat(reconAudit.orphanedTotal).toFixed(2)}</strong> for deleted investor accounts.
-                </p>
-                <p className="text-xs text-gray-500">
-                  The funds belong to accounts that no longer exist. This action will close the ${parseFloat(reconAudit.variance).toFixed(2)} reconciliation variance. An audit log entry will be created.
-                </p>
-                <div className="flex gap-3 pt-2">
+          {/* RECONCILIATION PREVIEW + CONFIRM MODAL */}
+          {reconFixModal && reconPreview && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+              <div className="bg-gray-900 border border-red-700/50 rounded-2xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
+                <h3 className="font-bold text-base text-red-300">⚠ Reconciliation Fix — Review &amp; Confirm</h3>
+
+                <div className="rounded-xl bg-gray-800/50 p-3 space-y-1 text-xs">
+                  <div className="flex justify-between"><span className="text-gray-500">Fix type</span><span>{reconPreview.fixId}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Records to void</span><span className="text-red-300 font-bold">{reconPreview.changes?.length}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Total amount</span><span className="text-red-300 font-bold">${parseFloat(reconPreview.totalAmount).toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Will notify</span><span className="text-green-400">{reconPreview.recipients?.join(', ')}</span></div>
+                </div>
+
+                <p className="text-xs text-gray-400">{reconPreview.description}</p>
+
+                {reconPreview.changes?.length > 0 && (
+                  <table className="w-full text-xs border border-gray-800 rounded-lg overflow-hidden">
+                    <thead><tr className="bg-gray-800/60 text-gray-500">
+                      <th className="text-left py-1.5 px-2">Deposit ID</th>
+                      <th className="text-left py-1.5 px-2">Amount</th>
+                      <th className="text-left py-1.5 px-2">Created</th>
+                    </tr></thead>
+                    <tbody>
+                      {reconPreview.changes.map((c, i) => (
+                        <tr key={i} className="border-t border-gray-800/40">
+                          <td className="py-1.5 px-2 font-mono text-gray-400">{String(c.id).slice(0, 10)}…</td>
+                          <td className="py-1.5 px-2 font-mono text-red-300">${parseFloat(c.amount_usd).toFixed(2)}</td>
+                          <td className="py-1.5 px-2 text-gray-500">{new Date(c.created_at).toLocaleDateString('en-GB')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-xs text-gray-400 block">Reason for adjustment <span className="text-red-400">*</span></label>
+                  <textarea
+                    rows={3}
+                    value={reconConfirmReason}
+                    onChange={e => setReconConfirmReason(e.target.value)}
+                    placeholder="Describe why this adjustment is necessary (minimum 10 characters)..."
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-red-500 resize-none"
+                  />
+                </div>
+
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={reconConfirmChecked} onChange={e => setReconConfirmChecked(e.target.checked)}
+                    className="mt-0.5 accent-red-500" />
+                  <span className="text-xs text-gray-300">I confirm this adjustment is accurate and approved. I understand this action will be permanently recorded in the audit log and notification emails will be sent to all configured recipients.</span>
+                </label>
+
+                <div className="flex gap-3 pt-1">
                   <button onClick={async () => {
-                    setReconFixModal(false);
                     setReconFixLoading(true);
                     const t = localStorage.getItem('token');
                     try {
-                      const r = await fetch(`${API}/admin/reconciliation-fix`, { method: 'POST', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } });
+                      const r = await fetch(`${API}/admin/reconciliation-fix`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ reason: reconConfirmReason, confirmed: true }),
+                      });
                       const d = await r.json();
                       if (r.ok) {
+                        setReconFixModal(false);
+                        setReconFixSuccess(d);
                         notify('success', d.message);
-                        // Refresh audit to confirm clean state
                         const r2 = await fetch(`${API}/admin/reconciliation-audit`, { headers: { Authorization: `Bearer ${t}` } });
                         const d2 = await r2.json();
                         if (r2.ok) setReconAudit(d2);
                       } else {
-                        notify('error', d.error || 'Fix failed');
+                        notify('error', d.message || d.error || 'Fix failed');
                       }
                     } catch { notify('error', 'Network error'); }
                     setReconFixLoading(false);
-                  }} disabled={reconFixLoading}
-                    className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-50">
-                    {reconFixLoading ? '⏳ Applying...' : 'Yes, Void & Fix'}
+                  }} disabled={reconFixLoading || reconConfirmReason.trim().length < 10 || !reconConfirmChecked}
+                    className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-red-700 hover:bg-red-600 text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                    {reconFixLoading ? '⏳ Executing...' : '✅ Confirm & Execute Fix'}
                   </button>
-                  <button onClick={() => setReconFixModal(false)}
+                  <button onClick={() => { setReconFixModal(false); setReconPreview(null); setReconConfirmReason(''); setReconConfirmChecked(false); }}
                     className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">
                     Cancel
                   </button>

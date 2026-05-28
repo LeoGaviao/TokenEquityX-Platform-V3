@@ -1,8 +1,11 @@
 const router = require('express').Router();
 const db     = require('../db/pool');
 const logger = require('../utils/logger');
-const { authenticate } = require('../middleware/auth');
-const { requireRole }  = require('../middleware/roles');
+const { authenticate }         = require('../middleware/auth');
+const { requireRole }          = require('../middleware/roles');
+const { getReconEmailStatus }  = require('../utils/validateReconEmails');
+const { sendReconciliationEmail } = require('../utils/mailer');
+const { invalidateCache }      = require('../utils/platformSettings');
 
 // GET /api/admin/stats — platform statistics
 router.get('/stats',
@@ -322,146 +325,150 @@ router.delete('/listings/:tokenSymbol',
   }
 );
 
-// ── Reconciliation audit & fix ────────────────────────────────────────────────
+// ── Reconciliation audit, preview, fix & settings ────────────────────────────
+
+// Helper: collect all ledger metrics in one place (used by audit + preview)
+async function collectLedgerMetrics() {
+  const [orphans]       = await db.execute(`
+    SELECT dr.id, dr.user_id, dr.amount_usd, dr.created_at, dr.notes
+    FROM deposit_requests dr
+    LEFT JOIN users u ON u.id = dr.user_id
+    WHERE dr.status = 'CONFIRMED' AND u.id IS NULL
+    ORDER BY dr.created_at ASC
+  `);
+  const [depActiveRows] = await db.execute(`
+    SELECT COALESCE(SUM(dr.amount_usd), 0) AS total
+    FROM deposit_requests dr JOIN users u ON u.id = dr.user_id
+    WHERE dr.status = 'CONFIRMED'
+  `);
+  const [depAllRows]    = await db.execute(
+    "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM deposit_requests WHERE status = 'CONFIRMED'"
+  );
+  const [wdRows]        = await db.execute(
+    "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM withdrawal_requests WHERE status = 'COMPLETED'"
+  );
+  const [walRows]       = await db.execute('SELECT COALESCE(SUM(balance_usd), 0) AS total FROM investor_wallets');
+  const [ledRows]       = await db.execute('SELECT COALESCE(SUM(amount_usd), 0) AS total FROM wallet_transactions');
+  const [treasuryRows]  = await db.execute('SELECT COALESCE(SUM(usd_liability), 0) AS total FROM platform_treasury');
+  const [voidedRows]    = await db.execute(
+    "SELECT COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count FROM deposit_requests WHERE status = 'VOIDED'"
+  );
+  const [txTypeRows]    = await db.execute(`
+    SELECT type, COUNT(*) AS count, COALESCE(SUM(amount_usd), 0) AS total
+    FROM wallet_transactions GROUP BY type ORDER BY ABS(COALESCE(SUM(amount_usd), 0)) DESC
+  `);
+  const [imttRefundRows]= await db.execute(
+    "SELECT COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count FROM wallet_transactions WHERE type = 'REFUND' AND description ILIKE '%IMTT%'"
+  );
+  const [nonDepRows]    = await db.execute(`
+    SELECT type, COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count
+    FROM wallet_transactions WHERE amount_usd > 0 AND type NOT IN ('DEPOSIT','TRADE_SELL')
+    GROUP BY type ORDER BY total DESC
+  `);
+  const [dupeRows]      = await db.execute(`
+    SELECT reference_id, type, COUNT(*) AS count, COALESCE(SUM(amount_usd), 0) AS total
+    FROM wallet_transactions WHERE reference_id IS NOT NULL
+    GROUP BY reference_id, type HAVING COUNT(*) > 1 ORDER BY count DESC LIMIT 20
+  `);
+
+  const confirmedDeposits    = parseFloat(depActiveRows[0].total);
+  const confirmedDepositsAll = parseFloat(depAllRows[0].total);
+  const completedWithdrawals = parseFloat(wdRows[0].total);
+  const expectedBalance      = confirmedDeposits - completedWithdrawals;
+  const actualBalance        = parseFloat(walRows[0].total);
+  const ledgerNet            = parseFloat(ledRows[0].total);
+  const treasuryLiability    = parseFloat(treasuryRows[0].total);
+  const variance             = actualBalance - expectedBalance;
+  const ledgerGap            = Math.abs(ledgerNet - actualBalance);
+  const orphanedTotal        = orphans.reduce((s, r) => s + parseFloat(r.amount_usd), 0);
+  const imttRefundTotal      = parseFloat(imttRefundRows[0].total);
+  const imttRefundCount      = parseInt(imttRefundRows[0].count);
+  const voidedTotal          = parseFloat(voidedRows[0].total);
+  const voidedCount          = parseInt(voidedRows[0].count);
+  const unexplainedCredits   = nonDepRows
+    .filter(r => r.type !== 'REFUND')
+    .reduce((s, r) => s + parseFloat(r.total), 0);
+
+  return {
+    orphans,
+    orphanedCount:          orphans.length,
+    orphanedTotal,
+    confirmedDeposits,
+    confirmedDepositsAll,
+    completedWithdrawals,
+    expectedBalance,
+    actualBalance,
+    ledgerNet,
+    treasuryLiability,
+    variance,
+    varianceAbs:            Math.abs(variance),
+    varianceDirection:      variance > 0.01 ? 'EXCESS' : variance < -0.01 ? 'SHORTFALL' : 'OK',
+    ledgerGap,
+    voidedTotal,
+    voidedCount,
+    txTypeBreakdown:        txTypeRows.map(r => ({ type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
+    imttRefundTotal,
+    imttRefundCount,
+    nonDepositCredits:      nonDepRows.map(r => ({ type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
+    unexplainedCredits,
+    duplicates:             dupeRows.map(r => ({ referenceId: r.reference_id, type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
+    duplicateCount:         dupeRows.length,
+  };
+}
 
 // GET /api/admin/reconciliation-audit
-// Returns orphaned confirmed deposits, current reconciliation state, and
-// variance breakdown diagnostics (transaction type analysis, duplicates, etc.)
 router.get('/reconciliation-audit',
   authenticate,
   requireRole('ADMIN'),
   async (req, res) => {
     try {
-      // ── Orphaned deposits (confirmed, user deleted) ──────────────────────
+      const [metrics, emailStatus] = await Promise.all([
+        collectLedgerMetrics(),
+        getReconEmailStatus(),
+      ]);
+      res.json({
+        ...metrics,
+        emailStatus,
+        toolStatus: emailStatus.canOperate ? 'OPERATIONAL' : 'DISABLED',
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// POST /api/admin/reconciliation-preview
+// Returns the exact changes that would be made — no DB writes.
+router.post('/reconciliation-preview',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const emailStatus = await getReconEmailStatus();
+      if (!emailStatus.canOperate) {
+        return res.status(403).json({
+          error:           'RECONCILIATION_EMAILS_NOT_CONFIGURED',
+          message:         'Reconciliation fix is disabled. Notification emails must be configured before any ledger adjustments.',
+          details:         emailStatus.errors,
+          requiredEnvVars: ['RECONCILIATION_EMAIL_PRIMARY', 'RECONCILIATION_EMAIL_SECONDARY'],
+        });
+      }
+
       const [orphans] = await db.execute(`
-        SELECT dr.id, dr.user_id, dr.amount_usd, dr.created_at, dr.notes
-        FROM deposit_requests dr
-        LEFT JOIN users u ON u.id = dr.user_id
-        WHERE dr.status = 'CONFIRMED' AND u.id IS NULL
-        ORDER BY dr.created_at ASC
+        SELECT id, user_id, amount_usd, created_at
+        FROM deposit_requests
+        WHERE status = 'CONFIRMED' AND user_id NOT IN (SELECT id FROM users)
+        ORDER BY created_at ASC
       `);
 
-      // ── Core balance figures ─────────────────────────────────────────────
-      const [depActiveRows] = await db.execute(`
-        SELECT COALESCE(SUM(dr.amount_usd), 0) AS total
-        FROM deposit_requests dr
-        JOIN users u ON u.id = dr.user_id
-        WHERE dr.status = 'CONFIRMED'
-      `);
-      const [depAllRows] = await db.execute(
-        "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM deposit_requests WHERE status = 'CONFIRMED'"
-      );
-      const [wdRows] = await db.execute(
-        "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM withdrawal_requests WHERE status = 'COMPLETED'"
-      );
-      const [walRows] = await db.execute(
-        'SELECT COALESCE(SUM(balance_usd), 0) AS total FROM investor_wallets'
-      );
-      const [ledRows] = await db.execute(
-        'SELECT COALESCE(SUM(amount_usd), 0) AS total FROM wallet_transactions'
-      );
-      const [treasuryRows] = await db.execute(
-        'SELECT COALESCE(SUM(usd_liability), 0) AS total FROM platform_treasury'
-      );
-      const [voidedRows] = await db.execute(
-        "SELECT COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count FROM deposit_requests WHERE status = 'VOIDED'"
-      );
-
-      // ── Wallet transaction type breakdown ────────────────────────────────
-      const [txTypeRows] = await db.execute(`
-        SELECT
-          type,
-          COUNT(*)           AS count,
-          COALESCE(SUM(amount_usd), 0) AS total
-        FROM wallet_transactions
-        GROUP BY type
-        ORDER BY ABS(COALESCE(SUM(amount_usd), 0)) DESC
-      `);
-
-      // ── IMTT refunds specifically ────────────────────────────────────────
-      const [imttRefundRows] = await db.execute(`
-        SELECT COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count
-        FROM wallet_transactions
-        WHERE type = 'REFUND' AND description ILIKE '%IMTT%'
-      `);
-
-      // ── Credits from non-standard sources (not DEPOSIT or matching deposit) ──
-      // Standard inflows: DEPOSIT type transactions
-      // Non-standard inflows: DIVIDEND, REFUND, ADJUSTMENT with positive amount
-      const [nonDepositCredits] = await db.execute(`
-        SELECT type, COALESCE(SUM(amount_usd), 0) AS total, COUNT(*) AS count
-        FROM wallet_transactions
-        WHERE amount_usd > 0
-          AND type NOT IN ('DEPOSIT', 'TRADE_SELL')
-        GROUP BY type
-        ORDER BY total DESC
-      `);
-
-      // ── Duplicate transactions (same reference_id + type more than once) ─
-      const [dupeRows] = await db.execute(`
-        SELECT reference_id, type, COUNT(*) AS count, COALESCE(SUM(amount_usd), 0) AS total
-        FROM wallet_transactions
-        WHERE reference_id IS NOT NULL
-        GROUP BY reference_id, type
-        HAVING COUNT(*) > 1
-        ORDER BY count DESC
-        LIMIT 20
-      `);
-
-      // ── Compute variance direction and amounts ───────────────────────────
-      const confirmedDeposits    = parseFloat(depActiveRows[0].total);
-      const confirmedDepositsAll = parseFloat(depAllRows[0].total);
-      const completedWithdrawals = parseFloat(wdRows[0].total);
-      const expectedBalance      = confirmedDeposits - completedWithdrawals;
-      const actualBalance        = parseFloat(walRows[0].total);
-      const ledgerNet            = parseFloat(ledRows[0].total);
-      const treasuryLiability    = parseFloat(treasuryRows[0].total);
-      const variance             = actualBalance - expectedBalance; // signed: positive = actual excess, negative = expected excess
-      const ledgerGap            = Math.abs(ledgerNet - actualBalance);
-      const orphanedTotal        = orphans.reduce((s, r) => s + parseFloat(r.amount_usd), 0);
-      const imttRefundTotal      = parseFloat(imttRefundRows[0].total);
-      const imttRefundCount      = parseInt(imttRefundRows[0].count);
-      const voidedTotal          = parseFloat(voidedRows[0].total);
-      const voidedCount          = parseInt(voidedRows[0].count);
-
-      // Non-deposit credits excluding IMTT refunds (unexplained credits)
-      const unexplainedCredits   = nonDepositCredits
-        .filter(r => !(r.type === 'REFUND'))  // IMTT refunds are expected post-fix
-        .reduce((s, r) => s + parseFloat(r.total), 0);
+      const totalAmount = orphans.reduce((s, r) => s + parseFloat(r.amount_usd), 0);
 
       res.json({
-        // Orphan state
-        orphans,
-        orphanedCount:          orphans.length,
-        orphanedTotal,
-
-        // Core figures (what the variance formula uses)
-        confirmedDeposits,
-        confirmedDepositsAll,
-        completedWithdrawals,
-        expectedBalance,
-        actualBalance,
-        ledgerNet,
-        treasuryLiability,
-
-        // Variance — signed so UI can show direction
-        variance,
-        varianceAbs:            Math.abs(variance),
-        varianceDirection:      variance > 0.01 ? 'EXCESS' : variance < -0.01 ? 'SHORTFALL' : 'OK',
-        ledgerGap,
-
-        // What was fixed
-        voidedTotal,
-        voidedCount,
-
-        // Diagnostic breakdown
-        txTypeBreakdown:        txTypeRows.map(r => ({ type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
-        imttRefundTotal,
-        imttRefundCount,
-        nonDepositCredits:      nonDepositCredits.map(r => ({ type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
-        unexplainedCredits,
-        duplicates:             dupeRows.map(r => ({ referenceId: r.reference_id, type: r.type, count: Number(r.count), total: parseFloat(r.total) })),
-        duplicateCount:         dupeRows.length,
+        fixId:       'orphaned_deposits',
+        changes:     orphans,
+        totalAmount,
+        recipients:  emailStatus.recipients,
+        description: `Will void ${orphans.length} CONFIRMED deposit(s) totalling $${totalAmount.toFixed(2)} for deleted investor accounts`,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -470,20 +477,40 @@ router.get('/reconciliation-audit',
 );
 
 // POST /api/admin/reconciliation-fix
-// Voids all orphaned CONFIRMED deposits in a single transaction.
+// Executes the fix: voids orphaned deposits, logs to audit_logs, sends email.
+// Requires { reason, confirmed: true } in body.
 router.post('/reconciliation-fix',
   authenticate,
   requireRole('ADMIN'),
   async (req, res) => {
+    const { reason, confirmed } = req.body;
+
+    if (!confirmed) {
+      return res.status(400).json({ error: 'confirmed must be true — submit via the confirmation step' });
+    }
+    if (!reason || reason.trim().length < 10) {
+      return res.status(400).json({ error: 'reason is required and must be at least 10 characters' });
+    }
+
+    // Block fix if notification emails are not configured
+    const emailStatus = await getReconEmailStatus();
+    if (!emailStatus.canOperate) {
+      return res.status(403).json({
+        error:           'RECONCILIATION_EMAILS_NOT_CONFIGURED',
+        message:         'Reconciliation fix is disabled. Notification emails must be configured before any ledger adjustments.',
+        details:         emailStatus.errors,
+        requiredEnvVars: ['RECONCILIATION_EMAIL_PRIMARY', 'RECONCILIATION_EMAIL_SECONDARY'],
+      });
+    }
+
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
 
       const [orphans] = await conn.execute(`
-        SELECT id, user_id, amount_usd
+        SELECT id, user_id, amount_usd, created_at
         FROM deposit_requests
-        WHERE status = 'CONFIRMED'
-          AND user_id NOT IN (SELECT id FROM users)
+        WHERE status = 'CONFIRMED' AND user_id NOT IN (SELECT id FROM users)
       `);
 
       if (orphans.length === 0) {
@@ -491,40 +518,124 @@ router.post('/reconciliation-fix',
         return res.json({ success: true, voided: 0, amount: 0, message: 'No orphaned deposits found — ledger is already clean.' });
       }
 
-      const totalAmount = orphans.reduce((s, r) => s + parseFloat(r.amount_usd), 0);
+      const totalAmount  = orphans.reduce((s, r) => s + parseFloat(r.amount_usd), 0);
+      const confirmedAt  = new Date().toISOString();
 
+      // Fetch performer email for notification subject
+      const [adminRows]  = await conn.execute('SELECT email FROM users WHERE id = ?', [req.user.userId]);
+      const fixedByEmail = adminRows[0]?.email || req.user.userId;
+
+      // Void the deposits
+      await conn.execute(`
+        UPDATE deposit_requests
+        SET status = 'VOIDED',
+            notes  = CONCAT(COALESCE(notes, ''), ' | VOIDED: investor account deleted — reconciliation gap closed ', NOW()::date)
+        WHERE status = 'CONFIRMED'
+          AND user_id NOT IN (SELECT id FROM users)
+      `);
+
+      // Comprehensive audit log entry
       await conn.execute(
         'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
         [
           'RECONCILIATION_FIX',
           req.user.userId,
-          'deposit_requests',
-          `Voided ${orphans.length} orphaned CONFIRMED deposit(s) totalling $${totalAmount.toFixed(2)} for deleted investor accounts. Gap closed by admin via reconciliation-fix endpoint on ${new Date().toISOString().slice(0, 10)}.`,
+          'reconciliation',
+          JSON.stringify({
+            fixId:           'orphaned_deposits',
+            reason:          reason.trim(),
+            changes:         orphans.map(o => ({ id: o.id, user_id: o.user_id, amount_usd: parseFloat(o.amount_usd) })),
+            totalAmount,
+            emailRecipients: emailStatus.recipients,
+            emailStatus:     'PENDING',
+            confirmed_at:    confirmedAt,
+            performed_by:    fixedByEmail,
+          }),
         ]
       );
 
-      await conn.execute(`
-        UPDATE deposit_requests
-        SET
-          status = 'VOIDED',
-          notes  = CONCAT(COALESCE(notes, ''), ' | VOIDED: investor account deleted — reconciliation gap closed ', NOW()::date)
-        WHERE status = 'CONFIRMED'
-          AND user_id NOT IN (SELECT id FROM users)
-      `);
-
       await conn.commit();
 
+      // Send notification emails (after commit — non-fatal if email fails)
+      const emailResults = await sendReconciliationEmail({
+        fixId:       'orphaned_deposits',
+        reason:      reason.trim(),
+        changes:     orphans,
+        totalAmount,
+        fixedByEmail,
+        recipients:  emailStatus.recipients,
+        confirmedAt,
+      });
+
+      const emailFailed = emailResults.some(r => !r.success);
+      const emailStatusStr = emailFailed
+        ? (emailResults.some(r => r.success) ? 'PARTIAL_FAILURE' : 'FAILED')
+        : 'SENT';
+
+      // Update audit log with final email status
+      await db.execute(
+        `UPDATE audit_logs SET details = details::jsonb || $1::jsonb
+         WHERE action = 'RECONCILIATION_FIX' AND performed_by = $2
+         ORDER BY id DESC LIMIT 1`,
+        [JSON.stringify({ emailStatus: emailStatusStr, emailResults }), req.user.userId]
+      ).catch(() => {}); // Non-fatal — main audit entry already written
+
       res.json({
-        success: true,
-        voided:  orphans.length,
-        amount:  totalAmount,
-        message: `Voided ${orphans.length} orphaned deposit(s) totalling $${totalAmount.toFixed(2)}. Reconciliation gap closed.`,
+        success:      true,
+        voided:       orphans.length,
+        amount:       totalAmount,
+        emailStatus:  emailStatusStr,
+        emailResults,
+        recipients:   emailStatus.recipients,
+        message:      `Voided ${orphans.length} orphaned deposit(s) totalling $${totalAmount.toFixed(2)}. Notifications ${emailStatusStr === 'SENT' ? 'sent to' : 'attempted for'}: ${emailStatus.recipients.join(', ')}.`,
       });
     } catch (err) {
       await conn.rollback();
       res.status(500).json({ error: err.message });
     } finally {
       conn.release();
+    }
+  }
+);
+
+// GET /api/admin/reconciliation-settings — current email config (ADMIN+)
+router.get('/reconciliation-settings',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const emailStatus = await getReconEmailStatus();
+      res.json(emailStatus);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// PUT /api/admin/reconciliation-settings — update email config (SUPER_ADMIN only)
+router.put('/reconciliation-settings',
+  authenticate,
+  requireRole('SUPER_ADMIN'),
+  async (req, res) => {
+    const { primary, secondary, tertiary } = req.body;
+    try {
+      const upsert = async (key, value) => {
+        await db.execute(
+          `INSERT INTO platform_settings (key, value, updated_by, updated_at)
+           VALUES (?, ?, ?, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+          [key, (value || '').trim(), req.user.userId]
+        );
+      };
+      await upsert('reconciliation_email_primary',   primary);
+      await upsert('reconciliation_email_secondary', secondary);
+      await upsert('reconciliation_email_tertiary',  tertiary);
+      invalidateCache();
+
+      const updated = await getReconEmailStatus();
+      res.json({ success: true, ...updated });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   }
 );

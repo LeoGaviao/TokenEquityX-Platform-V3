@@ -977,8 +977,46 @@ async function notifyIssuerAuditorAccepted({ issuerEmail, issuerName, tokenSymbo
     `));
 }
 
+// ── Reconciliation notification ───────────────────────────────────────────────
+// Sends a detailed fix notification to all configured reconciliation recipients.
+// Returns an array of per-recipient send results for audit logging.
+async function sendReconciliationEmail({ fixId, reason, changes, totalAmount, fixedByEmail, recipients, confirmedAt }) {
+  const subject = `🔧 TokenEquityX Reconciliation Fix — ${fixId} — $${parseFloat(totalAmount).toFixed(2)} — ${fixedByEmail}`;
+
+  const changesRows = changes.map(c =>
+    `<div class="detail-row"><span>Deposit ${String(c.id).slice(0, 8)}… ($${parseFloat(c.amount_usd).toFixed(2)})</span><span class="danger">→ VOIDED</span></div>`
+  ).join('');
+
+  const html = baseTemplate('Reconciliation Adjustment Notification', `
+    <p>A reconciliation fix has been applied to the TokenEquityX platform ledger. Review the details below and contact the platform team if you have concerns.</p>
+    <div class="detail-row"><span>Fix Type</span><span>${fixId}</span></div>
+    <div class="detail-row"><span>Total Adjusted</span><span class="danger">$${parseFloat(totalAmount).toFixed(2)}</span></div>
+    <div class="detail-row"><span>Records Affected</span><span>${changes.length}</span></div>
+    <div class="detail-row"><span>Performed By</span><span>${fixedByEmail}</span></div>
+    <div class="detail-row"><span>Timestamp</span><span>${confirmedAt}</span></div>
+    <div class="detail-row"><span>Reason</span><span>${reason}</span></div>
+    <h3 style="margin:20px 0 8px;font-size:14px;color:#374151;">Affected Records</h3>
+    ${changesRows || '<p style="color:#6b7280;font-size:13px;">No records listed.</p>'}
+    <p style="margin-top:20px;font-size:13px;color:#6b7280;">
+      Notification sent to: ${recipients.join(', ')}
+    </p>
+  `);
+
+  const results = [];
+  for (const recipient of recipients) {
+    try {
+      const result = await send(recipient, subject, html);
+      results.push({ email: recipient, success: !result?.error, error: result?.error || null });
+    } catch (e) {
+      results.push({ email: recipient, success: false, error: e.message });
+    }
+  }
+  return results;
+}
+
 module.exports = {
   send,
+  sendReconciliationEmail,
   notifyUserWelcome,
   notifyIssuerApplicationReceived,
   notifyIssuerApplicationApproved,
