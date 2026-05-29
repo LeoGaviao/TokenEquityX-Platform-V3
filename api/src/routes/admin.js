@@ -642,4 +642,227 @@ router.put('/reconciliation-settings',
   }
 );
 
+// ── Adjustment transaction audit & reversal ───────────────────────────────────
+
+// GET /api/admin/adjustment-audit
+// Returns all ADJUSTMENT wallet transactions with wallet impact for review.
+router.get('/adjustment-audit',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [adjustments] = await db.execute(`
+        SELECT
+          wt.id, wt.user_id, wt.amount_usd, wt.description,
+          wt.reference_id, wt.created_at, wt.balance_before, wt.balance_after,
+          u.email, u.full_name,
+          iw.balance_usd AS current_wallet_balance
+        FROM wallet_transactions wt
+        LEFT JOIN users u ON u.id = wt.user_id
+        LEFT JOIN investor_wallets iw ON iw.user_id = wt.user_id
+        WHERE wt.type = 'ADJUSTMENT'
+        ORDER BY wt.created_at DESC
+      `);
+
+      // Also check for existing reversals so UI can flag already-reversed records
+      const [reversals] = await db.execute(`
+        SELECT reference_id FROM wallet_transactions WHERE type = 'ADJUSTMENT_REVERSAL'
+      `);
+      const reversedIds = new Set(reversals.map(r => r.reference_id));
+
+      const [walRows] = await db.execute(
+        'SELECT COALESCE(SUM(balance_usd), 0) AS total FROM investor_wallets'
+      );
+      const [ledRows] = await db.execute(
+        'SELECT COALESCE(SUM(amount_usd), 0) AS total FROM wallet_transactions'
+      );
+      const walletTotal  = parseFloat(walRows[0].total);
+      const ledgerNet    = parseFloat(ledRows[0].total);
+      const ledgerGap    = Math.abs(ledgerNet - walletTotal);
+
+      res.json({
+        adjustments: adjustments.map(a => ({
+          ...a,
+          amount_usd:       parseFloat(a.amount_usd),
+          balance_before:   parseFloat(a.balance_before),
+          balance_after:    parseFloat(a.balance_after),
+          current_wallet_balance: parseFloat(a.current_wallet_balance || 0),
+          already_reversed: reversedIds.has(a.id),
+        })),
+        totalAdjustmentCredits:  adjustments.filter(a => parseFloat(a.amount_usd) > 0).reduce((s, a) => s + parseFloat(a.amount_usd), 0),
+        totalAdjustmentDebits:   adjustments.filter(a => parseFloat(a.amount_usd) < 0).reduce((s, a) => s + parseFloat(a.amount_usd), 0),
+        reversalCount:     reversals.length,
+        walletTotal,
+        ledgerNet,
+        ledgerGap,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// POST /api/admin/adjustment-reversal
+// Creates counter-transactions for the specified ADJUSTMENT records.
+// Body: { ids: ['uuid',...], reason: string (>=10 chars), confirmed: true }
+router.post('/adjustment-reversal',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    const { ids, reason, confirmed } = req.body;
+
+    if (!confirmed) {
+      return res.status(400).json({ error: 'confirmed must be true' });
+    }
+    if (!reason || reason.trim().length < 10) {
+      return res.status(400).json({ error: 'reason is required and must be at least 10 characters' });
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array of adjustment transaction UUIDs' });
+    }
+
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Load the target adjustment records, guard against wrong type or already reversed
+      const placeholders = ids.map(() => '?').join(',');
+      const [targets] = await conn.execute(
+        `SELECT wt.id, wt.user_id, wt.amount_usd, wt.description, wt.type
+         FROM wallet_transactions wt
+         WHERE wt.id IN (${placeholders}) AND wt.type = 'ADJUSTMENT'`,
+        ids
+      );
+
+      if (targets.length === 0) {
+        await conn.rollback();
+        return res.status(400).json({ error: 'No ADJUSTMENT records found for the provided IDs' });
+      }
+
+      // Check none are already reversed
+      const [existingReversals] = await conn.execute(
+        `SELECT reference_id FROM wallet_transactions WHERE type = 'ADJUSTMENT_REVERSAL' AND reference_id IN (${placeholders})`,
+        ids
+      );
+      if (existingReversals.length > 0) {
+        await conn.rollback();
+        return res.status(400).json({
+          error: `${existingReversals.length} of the selected adjustment(s) already have reversals. Re-run the audit to see current state.`,
+          already_reversed: existingReversals.map(r => r.reference_id),
+        });
+      }
+
+      const reversalIds  = [];
+      const variances    = [];
+
+      for (const adj of targets) {
+        const originalAmount = parseFloat(adj.amount_usd);
+        const reversalAmount = -originalAmount; // opposite sign
+
+        // Fetch current wallet balance for accurate before/after
+        const [walletRows] = await conn.execute(
+          'SELECT balance_usd FROM investor_wallets WHERE user_id = ?',
+          [adj.user_id]
+        );
+        if (walletRows.length === 0) {
+          // Wallet deleted — skip balance update but still create the reversal ledger entry
+          await conn.execute(
+            `INSERT INTO wallet_transactions
+               (user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+             VALUES (?, 'ADJUSTMENT_REVERSAL', ?, 0, 0, ?, ?)`,
+            [
+              adj.user_id,
+              reversalAmount,
+              adj.id,
+              `Reversal of incorrect adjustment #${adj.id.slice(0, 8)}: ${adj.description || 'no description'}`,
+            ]
+          );
+          reversalIds.push({ original_id: adj.id, reversal_amount: reversalAmount, wallet_update: 'skipped — wallet not found' });
+          continue;
+        }
+
+        const balanceBefore = parseFloat(walletRows[0].balance_usd);
+        const balanceAfter  = parseFloat((balanceBefore + reversalAmount).toFixed(2));
+
+        // Create counter-transaction in the ledger
+        const [inserted] = await conn.execute(
+          `INSERT INTO wallet_transactions
+             (user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+           VALUES (?, 'ADJUSTMENT_REVERSAL', ?, ?, ?, ?, ?)
+           RETURNING id`,
+          [
+            adj.user_id,
+            reversalAmount,
+            balanceBefore,
+            balanceAfter,
+            adj.id,
+            `Reversal of incorrect adjustment #${adj.id.slice(0, 8)}: ${adj.description || 'no description'}`,
+          ]
+        );
+
+        // Correct the wallet balance
+        await conn.execute(
+          'UPDATE investor_wallets SET balance_usd = balance_usd + ?, updated_at = NOW() WHERE user_id = ?',
+          [reversalAmount, adj.user_id]
+        );
+
+        reversalIds.push({
+          original_id:     adj.id,
+          reversal_id:     inserted[0]?.id,
+          original_amount: originalAmount,
+          reversal_amount: reversalAmount,
+          balance_before:  balanceBefore,
+          balance_after:   balanceAfter,
+        });
+        variances.push({ user_id: adj.user_id, amount: originalAmount });
+      }
+
+      const totalReversed = targets.reduce((s, a) => s + Math.abs(parseFloat(a.amount_usd)), 0);
+
+      // Comprehensive audit log entry
+      await conn.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        [
+          'RECONCILIATION_ADJUSTMENT_REVERSAL',
+          req.user.userId,
+          'wallet_transactions',
+          JSON.stringify({
+            original_adjustments: targets.map(a => ({ id: a.id, user_id: a.user_id, amount_usd: parseFloat(a.amount_usd), description: a.description })),
+            reversals:            reversalIds,
+            reason:               reason.trim(),
+            total_reversed:       totalReversed,
+            reason_detail:        'Incorrect sign on original adjustment — debits applied as credits',
+            fixed_at:             new Date().toISOString(),
+            performed_by:         req.user.userId,
+          }),
+        ]
+      );
+
+      await conn.commit();
+
+      // Post-commit ledger integrity check
+      const [walRows] = await db.execute('SELECT COALESCE(SUM(balance_usd), 0) AS total FROM investor_wallets');
+      const [ledRows] = await db.execute('SELECT COALESCE(SUM(amount_usd), 0) AS total FROM wallet_transactions');
+      const walletTotal = parseFloat(walRows[0].total);
+      const ledgerNet   = parseFloat(ledRows[0].total);
+      const ledgerGap   = Math.abs(ledgerNet - walletTotal);
+
+      res.json({
+        success:        true,
+        reversals:      reversalIds,
+        totalReversed,
+        walletTotal,
+        ledgerNet,
+        ledgerGap,
+        message: `Reversed ${reversalIds.length} adjustment(s) totalling $${totalReversed.toFixed(2)}. Ledger integrity gap: $${ledgerGap.toFixed(2)}.`,
+      });
+    } catch (err) {
+      await conn.rollback();
+      res.status(500).json({ error: err.message });
+    } finally {
+      conn.release();
+    }
+  }
+);
+
 module.exports = router;

@@ -1550,6 +1550,14 @@ export default function AdminDashboard() {
   const [reconSettingsLoading,setReconSettingsLoading] = useState(false);
   const [reconSettingsSaved, setReconSettingsSaved] = useState(false);
   const [reconSettingsForm,  setReconSettingsForm]  = useState({ primary: '', secondary: '', tertiary: '' });
+  const [adjAudit,           setAdjAudit]           = useState(null);
+  const [adjAuditLoading,    setAdjAuditLoading]    = useState(false);
+  const [adjSelected,        setAdjSelected]        = useState([]);
+  const [adjReversalLoading, setAdjReversalLoading] = useState(false);
+  const [adjReversalModal,   setAdjReversalModal]   = useState(false);
+  const [adjReversalReason,  setAdjReversalReason]  = useState('');
+  const [adjReversalChecked, setAdjReversalChecked] = useState(false);
+  const [adjReversalResult,  setAdjReversalResult]  = useState(null);
   const [spvFees, setSpvFees] = useState([]);
   const [staffList,    setStaffList]    = useState([]);
   const [staffLoading, setStaffLoading] = useState(false);
@@ -3898,6 +3906,198 @@ export default function AdminDashboard() {
                     {reconFixLoading ? '⏳ Executing...' : '✅ Confirm & Execute Fix'}
                   </button>
                   <button onClick={() => { setReconFixModal(false); setReconPreview(null); setReconConfirmReason(''); setReconConfirmChecked(false); }}
+                    className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ADJUSTMENT TRANSACTION REVERSAL */}
+          <div className="bg-gray-900 border border-orange-800/40 rounded-2xl p-5 mt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm">🔃 Adjustment Transaction Reversal</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Find and reverse incorrectly-signed ADJUSTMENT wallet transactions. Creates ADJUSTMENT_REVERSAL counter-entries and corrects wallet balances.</p>
+              </div>
+              <button onClick={async () => {
+                setAdjAuditLoading(true);
+                setAdjAudit(null);
+                setAdjSelected([]);
+                setAdjReversalResult(null);
+                const t = localStorage.getItem('token');
+                try {
+                  const r = await fetch(`${API}/admin/adjustment-audit`, { headers: { Authorization: `Bearer ${t}` } });
+                  const d = await r.json();
+                  if (r.ok) setAdjAudit(d);
+                  else notify('error', d.error || 'Audit failed');
+                } catch { notify('error', 'Network error'); }
+                setAdjAuditLoading(false);
+              }} disabled={adjAuditLoading} className="px-4 py-2 rounded-xl text-xs font-semibold bg-orange-700 hover:bg-orange-600 text-white disabled:opacity-50 whitespace-nowrap">
+                {adjAuditLoading ? '⏳ Loading...' : '🔍 Load Adjustments'}
+              </button>
+            </div>
+
+            {adjReversalResult && (
+              <div className="rounded-xl p-4 border border-green-700/50 bg-green-900/10 space-y-1">
+                <p className="text-xs text-green-300 font-semibold">✅ {adjReversalResult.message}</p>
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  {[
+                    { label: 'Total Reversed', value: `$${parseFloat(adjReversalResult.totalReversed||0).toFixed(2)}` },
+                    { label: 'Ledger Net',     value: `$${parseFloat(adjReversalResult.ledgerNet||0).toFixed(2)}` },
+                    { label: 'Ledger Gap',     value: `$${parseFloat(adjReversalResult.ledgerGap||0).toFixed(2)}`, warn: parseFloat(adjReversalResult.ledgerGap||0) > 0.01 },
+                  ].map(m => (
+                    <div key={m.label} className={`rounded-lg p-2 border ${m.warn ? 'border-amber-700/50 bg-amber-900/10' : 'border-gray-800 bg-gray-800/30'}`}>
+                      <p className="text-xs text-gray-500">{m.label}</p>
+                      <p className={`font-mono font-bold text-sm ${m.warn ? 'text-amber-300' : 'text-white'}`}>{m.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {adjAudit && (
+              <div className="space-y-3">
+                {/* Summary */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'ADJUSTMENT records',  value: adjAudit.adjustments?.length ?? 0 },
+                    { label: 'Total credits (+)',    value: `$${parseFloat(adjAudit.totalAdjustmentCredits||0).toFixed(2)}`, warn: (adjAudit.totalAdjustmentCredits||0) > 0 },
+                    { label: 'Total debits (−)',     value: `$${Math.abs(adjAudit.totalAdjustmentDebits||0).toFixed(2)}` },
+                    { label: 'Ledger integrity gap', value: `$${parseFloat(adjAudit.ledgerGap||0).toFixed(2)}`, warn: (adjAudit.ledgerGap||0) > 0.01 },
+                  ].map(({ label, value, warn }) => (
+                    <div key={label} className={`rounded-xl p-3 border ${warn ? 'border-amber-700/50 bg-amber-900/10' : 'border-gray-800 bg-gray-800/30'}`}>
+                      <p className="text-xs text-gray-500">{label}</p>
+                      <p className={`font-mono font-bold text-sm mt-0.5 ${warn ? 'text-amber-300' : 'text-white'}`}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {adjAudit.adjustments?.length > 0 ? (
+                  <>
+                    {/* Select all / deselect */}
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                        <input type="checkbox"
+                          checked={adjSelected.length === adjAudit.adjustments.filter(a => !a.already_reversed).length && adjAudit.adjustments.some(a => !a.already_reversed)}
+                          onChange={e => setAdjSelected(e.target.checked ? adjAudit.adjustments.filter(a => !a.already_reversed).map(a => a.id) : [])}
+                          className="accent-orange-500" />
+                        Select all unreversed
+                      </label>
+                      <span className="text-xs text-gray-600">{adjSelected.length} selected</span>
+                    </div>
+
+                    {/* Adjustment table */}
+                    <table className="w-full text-xs border border-gray-800 rounded-xl overflow-hidden">
+                      <thead><tr className="text-gray-500 border-b border-gray-800 bg-gray-800/40">
+                        {['','ID','User','Amount','Balance Before→After','Description','Status'].map(h => <th key={h} className="text-left py-2 px-2 font-medium">{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {adjAudit.adjustments.map((a, i) => (
+                          <tr key={i} className={`border-b border-gray-800/40 ${adjSelected.includes(a.id) ? 'bg-orange-900/10' : 'hover:bg-gray-800/20'}`}>
+                            <td className="py-2 px-2">
+                              {!a.already_reversed && (
+                                <input type="checkbox"
+                                  checked={adjSelected.includes(a.id)}
+                                  onChange={e => setAdjSelected(s => e.target.checked ? [...s, a.id] : s.filter(x => x !== a.id))}
+                                  className="accent-orange-500" />
+                              )}
+                            </td>
+                            <td className="py-2 px-2 font-mono text-gray-400">{a.id.slice(0, 8)}…</td>
+                            <td className="py-2 px-2 text-gray-300">{a.email || a.user_id?.slice(0, 8)}</td>
+                            <td className={`py-2 px-2 font-mono font-bold ${a.amount_usd > 0 ? 'text-amber-300' : 'text-green-400'}`}>
+                              {a.amount_usd > 0 ? '+' : ''}{parseFloat(a.amount_usd).toFixed(2)}
+                            </td>
+                            <td className="py-2 px-2 font-mono text-gray-500 text-xs">
+                              ${parseFloat(a.balance_before).toFixed(2)} → ${parseFloat(a.balance_after).toFixed(2)}
+                            </td>
+                            <td className="py-2 px-2 text-gray-400 max-w-xs truncate">{a.description || '—'}</td>
+                            <td className="py-2 px-2">
+                              {a.already_reversed
+                                ? <span className="px-2 py-0.5 rounded-full text-xs bg-green-900/40 text-green-300">Reversed ✓</span>
+                                : <span className="px-2 py-0.5 rounded-full text-xs bg-amber-900/40 text-amber-300">Pending</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {adjSelected.length > 0 && (
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => { setAdjReversalReason(''); setAdjReversalChecked(false); setAdjReversalModal(true); }}
+                          className="px-4 py-2 rounded-xl text-xs font-semibold bg-orange-700 hover:bg-orange-600 text-white">
+                          🔃 Reverse {adjSelected.length} Selected Adjustment{adjSelected.length > 1 ? 's' : ''} →
+                        </button>
+                        <p className="text-xs text-gray-500">
+                          Total: ${adjAudit.adjustments.filter(a => adjSelected.includes(a.id)).reduce((s,a) => s + Math.abs(a.amount_usd), 0).toFixed(2)}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-green-400">✅ No ADJUSTMENT transactions found.</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ADJUSTMENT REVERSAL MODAL */}
+          {adjReversalModal && adjAudit && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+              <div className="bg-gray-900 border border-orange-700/50 rounded-2xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
+                <h3 className="font-bold text-base text-orange-300">🔃 Confirm Adjustment Reversal</h3>
+
+                <div className="rounded-xl bg-gray-800/50 p-3 space-y-1 text-xs">
+                  <div className="flex justify-between"><span className="text-gray-500">Adjustments to reverse</span><span className="text-orange-300 font-bold">{adjSelected.length}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Total amount</span><span className="text-orange-300 font-bold">
+                    ${adjAudit.adjustments.filter(a => adjSelected.includes(a.id)).reduce((s,a) => s + Math.abs(a.amount_usd), 0).toFixed(2)}
+                  </span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Action</span><span>Create ADJUSTMENT_REVERSAL counter-entries + correct wallet balances</span></div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-400 block">Reason <span className="text-red-400">*</span></label>
+                  <textarea rows={3} value={adjReversalReason} onChange={e => setAdjReversalReason(e.target.value)}
+                    placeholder="e.g. Incorrect sign on original adjustment — debits applied as credits (min 10 chars)"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500 resize-none" />
+                </div>
+
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={adjReversalChecked} onChange={e => setAdjReversalChecked(e.target.checked)} className="mt-0.5 accent-orange-500" />
+                  <span className="text-xs text-gray-300">I confirm these reversals are accurate. Original records will be preserved. This action is audit-logged.</span>
+                </label>
+
+                <div className="flex gap-3">
+                  <button onClick={async () => {
+                    setAdjReversalLoading(true);
+                    const t = localStorage.getItem('token');
+                    try {
+                      const r = await fetch(`${API}/admin/adjustment-reversal`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: adjSelected, reason: adjReversalReason, confirmed: true }),
+                      });
+                      const d = await r.json();
+                      if (r.ok) {
+                        setAdjReversalModal(false);
+                        setAdjReversalResult(d);
+                        setAdjSelected([]);
+                        notify('success', d.message);
+                        // Refresh adjustment audit
+                        const r2 = await fetch(`${API}/admin/adjustment-audit`, { headers: { Authorization: `Bearer ${t}` } });
+                        const d2 = await r2.json();
+                        if (r2.ok) setAdjAudit(d2);
+                      } else {
+                        notify('error', d.error || 'Reversal failed');
+                      }
+                    } catch { notify('error', 'Network error'); }
+                    setAdjReversalLoading(false);
+                  }} disabled={adjReversalLoading || adjReversalReason.trim().length < 10 || !adjReversalChecked}
+                    className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-orange-700 hover:bg-orange-600 text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                    {adjReversalLoading ? '⏳ Executing...' : '✅ Confirm & Reverse'}
+                  </button>
+                  <button onClick={() => setAdjReversalModal(false)}
                     className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white">
                     Cancel
                   </button>
