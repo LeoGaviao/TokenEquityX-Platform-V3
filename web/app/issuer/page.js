@@ -98,14 +98,21 @@ function FinancialsTab({ t, price, account, setPostMsg, NAVY }) {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600">
               {['Q1 2026','Q4 2025','Q3 2025','Q2 2025'].map(p=><option key={p}>{p}</option>)}
             </select>
+            <p className="text-xs text-gray-500 mt-1 leading-snug">Which quarter this data covers. Submit each quarter separately — you cannot edit a submitted entry, but you can submit a corrected version.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {[['Revenue (USD)','revenue','e.g. 128000'],['EBITDA (USD)','ebitda','e.g. 91000'],['Total Assets (USD)','netAssets','e.g. 5400000'],['Net Liabilities (USD)','netLiabilities','e.g. 1200000']].map(([label,field,ph])=>(
+            {[
+              ['Revenue (USD)','revenue','e.g. 128000','Total income from all business operations for the period, before any deductions.'],
+              ['EBITDA (USD)','ebitda','e.g. 91000','Earnings Before Interest, Tax, Depreciation & Amortisation — core operating profit excluding financing and accounting adjustments.'],
+              ['Total Assets (USD)','netAssets','e.g. 5400000','Sum of everything the company owns: cash, receivables, property, equipment, and intangibles.'],
+              ['Net Liabilities (USD)','netLiabilities','e.g. 1200000','Total liabilities minus total assets. Enter as a positive number if liabilities exceed assets.'],
+            ].map(([label,field,ph,helper])=>(
               <div key={field}>
                 <label className="text-xs text-gray-400 block mb-1">{label}</label>
                 <input type="number" placeholder={ph} value={form[field]}
                   onChange={e=>setForm(f=>({...f,[field]:e.target.value}))}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">{helper}</p>
               </div>
             ))}
           </div>
@@ -115,6 +122,7 @@ function FinancialsTab({ t, price, account, setPostMsg, NAVY }) {
               onChange={e=>setForm(f=>({...f,managementStatement:e.target.value}))}
               placeholder="Describe the quarter's performance, key developments, and outlook..."
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-600 resize-none"/>
+            <p className="text-xs text-gray-500 mt-1 leading-snug">Summarise key events, performance drivers, risks, and outlook for the period. Auditors read this alongside the numbers — 2–4 paragraphs recommended.</p>
           </div>
           <div>
             <label className="text-sm text-gray-400 block mb-2">Supporting Documents</label>
@@ -713,10 +721,12 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, onRefresh, refreshing
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">Legal Entity Name *</label>
                   <input value={form.entity_name} onChange={e=>set('entity_name',e.target.value)} className={inputCls} placeholder="As registered"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Enter the name exactly as it appears on your Certificate of Incorporation.</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">Registration Number *</label>
                   <input value={form.registration_number} onChange={e=>set('registration_number',e.target.value)} className={inputCls} placeholder="e.g. ZW2024-001"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Your Companies Office of Zimbabwe number, found on your Certificate of Incorporation.</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">Country of Registration</label>
@@ -728,23 +738,28 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, onRefresh, refreshing
                     <option value="">— Select —</option>
                     {['Private Company (Pvt Ltd)','Public Company','Partnership','Trust','Non-Profit','Government Entity','Other'].map(t=><option key={t}>{t}</option>)}
                   </select>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Select the legal structure of the entity that will issue the token.</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">Date Incorporated</label>
                   <input type="date" value={form.date_incorporated} onChange={e=>set('date_incorporated',e.target.value)} className={inputCls}/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">The date registered with the Companies Office, as shown on your incorporation certificate.</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">Tax Clearance Number</label>
                   <input value={form.tax_clearance_number} onChange={e=>set('tax_clearance_number',e.target.value)} className={inputCls} placeholder="e.g. ZIMRA-2024-12345"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Your current ZIMRA Tax Clearance Certificate number. Must be valid (not expired). Required for SECZ compliance.</p>
                 </div>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Registered Address *</label>
                 <textarea rows={2} value={form.registered_address} onChange={e=>set('registered_address',e.target.value)} className={inputCls+' resize-none'} placeholder="Full registered office address"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">The official address on record with the Companies Office — not your trading or operational address.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Business Description *</label>
                 <textarea rows={3} value={form.business_description} onChange={e=>set('business_description',e.target.value)} className={inputCls+' resize-none'} placeholder="Describe your principal business activities"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">Briefly describe what the entity does, its primary revenue streams, and the industry it operates in. 2–4 sentences.</p>
               </div>
               <button onClick={()=>{ if(!form.entity_name||!form.registration_number){setMsg({type:'error',text:'Please fill required fields.'});return;} setMsg(null);setStep(2); }}
                 className="w-full py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>
@@ -762,11 +777,17 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, onRefresh, refreshing
                   <p className="text-xs font-semibold text-gray-300">Director {i+1}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div><label className="text-xs text-gray-500 block mb-1">Full Name *</label><input value={d.name} onChange={e=>setDir(i,'name',e.target.value)} className={inputCls} placeholder="Full legal name"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport *</label><input value={d.id_number} onChange={e=>setDir(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/></div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">National ID / Passport *</label>
+                      <input value={d.id_number} onChange={e=>setDir(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/>
+                      <p className="text-xs text-gray-500 mt-1 leading-snug">Must match the ID document. Used for sanctions screening and KYC cross-referencing.</p>
+                    </div>
                     <div><label className="text-xs text-gray-500 block mb-1">Email</label><input value={d.email} onChange={e=>setDir(i,'email',e.target.value)} className={inputCls} placeholder="email@example.com"/></div>
-                    <div className="flex items-center gap-2 mt-4">
-                      <input type="checkbox" checked={d.pep} onChange={e=>setDir(i,'pep',e.target.checked)} id={`pep-${i}`}/>
-                      <label htmlFor={`pep-${i}`} className="text-xs text-gray-400">Politically Exposed Person (PEP)</label>
+                    <div className="mt-2">
+                      <div className="flex items-start gap-2">
+                        <input type="checkbox" checked={d.pep} onChange={e=>setDir(i,'pep',e.target.checked)} id={`pep-${i}`} className="mt-0.5 flex-shrink-0"/>
+                        <label htmlFor={`pep-${i}`} className="text-xs text-gray-400 cursor-pointer">Politically Exposed Person <span title="A current or former senior government official, judge, military officer, state enterprise executive, or immediate family member of one. Higher due-diligence applies under FATF Recommendation 12." className="text-blue-400 cursor-help">ⓘ</span></label>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -791,9 +812,21 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, onRefresh, refreshing
                   <p className="text-xs font-semibold text-gray-300">Beneficial Owner {i+1}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div><label className="text-xs text-gray-500 block mb-1">Full Name *</label><input value={o.name} onChange={e=>setOwn(i,'name',e.target.value)} className={inputCls} placeholder="Full legal name"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Ownership % *</label><input type="number" value={o.ownership_pct} onChange={e=>setOwn(i,'ownership_pct',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport</label><input value={o.id_number} onChange={e=>setOwn(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/></div>
-                    <div><label className="text-xs text-gray-500 block mb-1">Nationality</label><input value={o.nationality} onChange={e=>setOwn(i,'nationality',e.target.value)} className={inputCls} placeholder="e.g. Zimbabwean"/></div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">Ownership % *</label>
+                      <input type="number" value={o.ownership_pct} onChange={e=>setOwn(i,'ownership_pct',e.target.value)} className={inputCls} placeholder="e.g. 35"/>
+                      <p className="text-xs text-gray-500 mt-1 leading-snug">Percentage of shares or economic interest held directly or indirectly. Include indirect ownership through other entities.</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">National ID / Passport</label>
+                      <input value={o.id_number} onChange={e=>setOwn(i,'id_number',e.target.value)} className={inputCls} placeholder="ID number"/>
+                      <p className="text-xs text-gray-500 mt-1 leading-snug">Must match the ID document uploaded below. Used for sanctions screening.</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">Nationality</label>
+                      <input value={o.nationality} onChange={e=>setOwn(i,'nationality',e.target.value)} className={inputCls} placeholder="e.g. Zimbabwean"/>
+                      <p className="text-xs text-gray-500 mt-1 leading-snug">Country of citizenship. If dual nationality, list both.</p>
+                    </div>
                     {parseFloat(o.ownership_pct||0) >= boThreshold && (
                       <div className="col-span-2">
                         <label className="flex items-start gap-2 cursor-pointer bg-amber-900/20 border border-amber-700/40 rounded-lg p-2">
@@ -869,6 +902,10 @@ function EntityKycTab({ entityKyc, kycLoaded, onSubmitted, onRefresh, refreshing
                 <label className="text-xs text-gray-400 block mb-1">Source of Funds *</label>
                 <textarea rows={3} value={form.source_of_funds} onChange={e=>set('source_of_funds',e.target.value)} className={inputCls+' resize-none'}
                   placeholder="Describe the source of funds for this entity's operations and planned token issuance..."/>
+                <details className="mt-1">
+                  <summary className="text-xs text-blue-400 cursor-pointer select-none">ⓘ What to include</summary>
+                  <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">Explain the legitimate origin of the capital — e.g. retained business profits, shareholder loans, sale of property, grants. Vague answers such as &quot;business income&quot; will require follow-up. FATF Recommendation 22 requires documented source-of-funds for all issuers.</p>
+                </details>
               </div>
               <div className="space-y-3">
                 <label className="flex items-start gap-3 cursor-pointer bg-gray-800/50 rounded-xl p-4">
@@ -1454,30 +1491,39 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Legal Entity Name *</label>
                 <input value={form.legalName} onChange={e=>set('legalName',e.target.value)} className={inputCls} placeholder="e.g. ZimGov Securities (Pvt) Ltd"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">The registered legal name of the entity that will hold the <span title="Special Purpose Vehicle — a separate legal entity created solely to hold and manage the tokenised asset, isolating it from the issuer&apos;s other liabilities." className="text-blue-400 cursor-help">SPV ⓘ</span>. This becomes the issuer of record on the blockchain.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Registration Number *</label>
                 <input value={form.registrationNumber} onChange={e=>set('registrationNumber',e.target.value)} className={inputCls} placeholder="e.g. ZW2024-GOV-001"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">Companies Office of Zimbabwe registration number. Found on your Certificate of Incorporation.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Jurisdiction</label>
                 <input value={form.jurisdiction} onChange={e=>set('jurisdiction',e.target.value)} className={inputCls} placeholder="ZW"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">ISO country code for where the entity is registered. Use ZW for Zimbabwe. Multi-jurisdiction structures should list the primary jurisdiction.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Sector</label>
                 <select value={form.sector} onChange={e=>set('sector',e.target.value)} className={inputCls}>
                   {['TECH','FINTECH','AGRICULTURE','MANUFACTURING','MINING','REAL_ESTATE','INFRASTRUCTURE','GOVERNMENT','HEALTHCARE','EDUCATION','LOGISTICS','OTHER'].map(s=><option key={s}>{s}</option>)}
                 </select>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">The primary industry sector. Used for benchmarking and regulatory classification.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Asset Type</label>
                 <select value={form.assetType} onChange={e=>set('assetType',e.target.value)} className={inputCls}>
                   {['EQUITY','BOND','REIT','REAL_ESTATE','MINING','INFRASTRUCTURE','OTHER'].map(s=><option key={s}>{s}</option>)}
                 </select>
+                <details className="mt-1">
+                  <summary className="text-xs text-blue-400 cursor-pointer select-none">ⓘ Which type should I choose?</summary>
+                  <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">EQUITY — private company shares. BOND — fixed-income debt instrument. REIT — diversified property portfolio. REAL_ESTATE — single asset or development. MINING — resource extraction rights. INFRASTRUCTURE — concessions (toll roads, energy, telecoms). This choice determines the valuation model used in Step 6.</p>
+                </details>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Year Founded</label>
                 <input type="number" value={form.foundedYear} onChange={e=>set('foundedYear',e.target.value)} className={inputCls} placeholder="e.g. 2018"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">The calendar year the operating business was established — not the SPV registration date.</p>
               </div>
             </div>
             <div>
@@ -1491,10 +1537,12 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
             <div>
               <label className="text-xs text-gray-400 block mb-1">Business Description *</label>
               <textarea rows={3} value={form.description} onChange={e=>set('description',e.target.value)} className={inputCls+' resize-none'} placeholder="Describe the business or asset being tokenised..."/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Describe the asset, its revenue model, and what makes it investable. This text appears in your token prospectus. 3–5 sentences recommended.</p>
             </div>
             <div>
               <label className="text-xs text-gray-400 block mb-1">Number of Employees</label>
               <input value={form.numEmployees} onChange={e=>set('numEmployees',e.target.value)} className={inputCls} placeholder="e.g. 10-50"/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Approximate headcount as a range. Includes full-time and permanent part-time staff.</p>
             </div>
             <button onClick={()=>{ if(!form.legalName||!form.registrationNumber||!form.description){setPostMsg({type:'error',text:'Please fill in all required fields.'});return;} setPostMsg(null); goToStep(2); }}
               className="w-full py-3 rounded-xl font-semibold text-white" style={{background:NAVY}}>
@@ -1511,6 +1559,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Token Name *</label>
                 <input value={form.tokenName} onChange={e=>set('tokenName',e.target.value)} className={inputCls} placeholder="e.g. ZimGov Bond 2029"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">A descriptive name as it will appear to investors. Include the asset type and year for bonds (e.g. &quot;Harare CBD REIT&quot; or &quot;Acme Mining 2029 Bond&quot;).</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Token Symbol * (2-5 letters)</label>
@@ -1524,16 +1573,22 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                   {symbolStatus==='taken'     && <span className="absolute right-3 top-2.5 text-xs text-red-400">❌</span>}
                 </div>
                 {symbolStatus==='taken' && <p className="text-xs text-red-400 mt-1">Symbol taken — choose another.</p>}
+                {symbolStatus !== 'taken' && <p className="text-xs text-gray-500 mt-1 leading-snug">A unique 2–5 letter uppercase ticker, like a stock symbol. Cannot be changed after smart contract deployment.</p>}
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Asset Class</label>
                 <select value={form.assetClass} onChange={e=>set('assetClass',e.target.value)} className={inputCls}>
                   {['Private Equity','Real Estate / REIT','Infrastructure Bond','Corporate Bond','Mining / PGMs','Agriculture','Other'].map(s=><option key={s}>{s}</option>)}
                 </select>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">The investment category investors will see. Determines which market tab this token appears on.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Authorised Shares</label>
                 <input type="number" value={form.authorisedShares} onChange={e=>set('authorisedShares',e.target.value)} className={inputCls} placeholder="e.g. 5000000"/>
+                <details className="mt-1">
+                  <summary className="text-xs text-blue-400 cursor-pointer select-none">ⓘ Authorised vs issued shares</summary>
+                  <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">This is the ceiling — the maximum tokens that can ever be created. Think of it as your authorised share capital. The actual tokens issued (Total Supply in Step 3) must not exceed this number. Set it higher than your initial raise to allow future rounds without re-registration.</p>
+                </details>
               </div>
             </div>
             <div className="flex gap-3">
@@ -1554,29 +1609,41 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Target Raise (USD)</label>
                 <input type="number" value={form.targetRaiseUsd} onChange={e=>set('targetRaiseUsd',e.target.value)} className={inputCls} placeholder="e.g. 3000000"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">Total USD you aim to raise through the primary offering. A 1.5% issuance fee applies to actual proceeds raised — not this target.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Issue Price (USD)</label>
                 <input type="number" value={form.tokenIssuePrice} onChange={e=>set('tokenIssuePrice',e.target.value)} className={inputCls} placeholder="e.g. 1.00"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">Price per token during the primary offering. Most issuers set this at $1.00. Secondary market price may differ once trading begins.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Total Supply</label>
                 <input type="number" value={form.totalSupply} onChange={e=>set('totalSupply',e.target.value)} className={inputCls} placeholder="e.g. 5000000"/>
+                <details className="mt-1">
+                  <summary className="text-xs text-blue-400 cursor-pointer select-none">ⓘ How to calculate Total Supply</summary>
+                  <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">Total Supply = Target Raise ÷ Issue Price. E.g. $3,000,000 ÷ $1.00 = 3,000,000 tokens. Must not exceed Authorised Shares set in Step 2. This is the number of tokens created on-chain for this offering.</p>
+                </details>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Expected Annual Yield %</label>
                 <input type="number" value={form.expectedYield} onChange={e=>set('expectedYield',e.target.value)} className={inputCls} placeholder="e.g. 8.5"/>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">Projected annual return to investors. For bonds, enter the coupon rate. For early-stage equity with no dividends, enter 0.</p>
               </div>
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Distribution Frequency</label>
                 <select value={form.distributionFrequency} onChange={e=>set('distributionFrequency',e.target.value)} className={inputCls}>
                   {['Quarterly','Monthly','Semi-Annual','Annual','Not Applicable'].map(s=><option key={s}>{s}</option>)}
                 </select>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">How often you will pay dividends or interest. Quarterly is most common for REITs and bonds; annually for equity growth companies.</p>
               </div>
             </div>
             <div>
               <label className="text-xs text-gray-400 block mb-1">Use of Proceeds</label>
               <textarea rows={3} value={form.useOfProceeds} onChange={e=>set('useOfProceeds',e.target.value)} className={inputCls+' resize-none'} placeholder="Describe how funds raised will be used..."/>
+              <details className="mt-1">
+                <summary className="text-xs text-blue-400 cursor-pointer select-none">ⓘ What investors and auditors look for</summary>
+                <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">Break down how funds will be deployed with percentages — e.g. &quot;40% property acquisition, 30% refurbishment, 20% debt repayment, 10% working capital.&quot; Vague descriptions reduce investor confidence and may delay auditor approval. This text is published in your prospectus.</p>
+              </details>
             </div>
             <div className="flex gap-3">
               <button onClick={()=>goToStep(2)} className="px-6 py-2.5 rounded-xl font-semibold bg-gray-700 hover:bg-gray-600 text-white text-sm">← Back</button>
@@ -1602,7 +1669,11 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                 <div className="grid grid-cols-3 gap-2">
                   <div><label className="text-xs text-gray-500 block mb-1">Full Name</label><input value={form[`${prefix}_name`]} onChange={e=>set(`${prefix}_name`,e.target.value)} className={inputCls} placeholder="Full name"/></div>
                   <div><label className="text-xs text-gray-500 block mb-1">Email</label><input value={form[`${prefix}_email`]} onChange={e=>set(`${prefix}_email`,e.target.value)} className={inputCls} placeholder="email@example.com"/></div>
-                  <div><label className="text-xs text-gray-500 block mb-1">National ID / Passport</label><input value={form[`${prefix}_id`]} onChange={e=>set(`${prefix}_id`,e.target.value)} className={inputCls} placeholder="ID number"/></div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">National ID / Passport</label>
+                    <input value={form[`${prefix}_id`]} onChange={e=>set(`${prefix}_id`,e.target.value)} className={inputCls} placeholder="ID number"/>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">Required for KYC cross-referencing. Use the same ID number submitted in the Entity KYC section.</p>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1622,13 +1693,20 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
             <p className="text-gray-400 text-sm">Upload supporting documents. Missing documents can be submitted later but will delay approval.</p>
             <div className="space-y-2">
               {[
-                { key:'certificate',   label:'Certificate of Incorporation / SPV Registration', required: true },
-                { key:'prospectus',    label:'Prospectus or Information Memorandum (draft accepted)', required: true },
-                { key:'financials',    label:'Audited Financial Statements (last 2 years)', required: true },
-                { key:'valuation',     label:'Independent Asset Valuation Report', required: true },
-                { key:'kyc_docs',      label:'KYC Documents — All Directors', required: true },
-                { key:'legal_opinion', label:'Legal Opinion on Asset Ownership' },
-                { key:'regulatory',    label:'Environmental / Regulatory Approvals' },
+                { key:'certificate',   label:'Certificate of Incorporation / SPV Registration', required: true,
+                  helper:'Your official registration document from the Companies Office, showing entity name, registration number, and date. SPV = Special Purpose Vehicle.' },
+                { key:'prospectus',    label:'Prospectus or Information Memorandum (draft accepted)', required: true,
+                  helper:'A document describing the investment opportunity, risks, and terms for investors. Drafts accepted — your auditor will review before final approval.' },
+                { key:'financials',    label:'Audited Financial Statements (last 2 years)', required: true,
+                  helper:'Accounts signed off by a registered auditor for the last two completed financial years. Unaudited management accounts are not accepted.' },
+                { key:'valuation',     label:'Independent Asset Valuation Report', required: true,
+                  helper:'A valuation by an independent, SECZ-recognised valuer. Must be dated within 12 months of this application.' },
+                { key:'kyc_docs',      label:'KYC Documents — All Directors', required: true,
+                  helper:'Scanned copies of valid passports or national IDs for every director listed in Step 4. Bundle into one PDF if multiple directors.' },
+                { key:'legal_opinion', label:'Legal Opinion on Asset Ownership',
+                  helper:'A letter from a registered legal practitioner confirming clear, unencumbered title to the asset being tokenised.' },
+                { key:'regulatory',    label:'Environmental / Regulatory Approvals',
+                  helper:'Any EIA, mining licence, planning permission, or sector-specific approval. Not required for pure equity or bond structures.' },
               ].map(doc => {
                 const newFile    = files[doc.key];
                 const existing   = existingDocs[doc.key];
@@ -1639,6 +1717,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                     <span className="shrink-0">{hasDoc ? '✅' : '📎'}</span>
                     <div className="min-w-0">
                       <p className="text-sm text-white">{doc.label}{doc.required&&<span className="text-red-400 ml-1">*</span>}</p>
+                      {!newFile && !existing && doc.helper && <p className="text-xs text-gray-500 mt-0.5 leading-snug">{doc.helper}</p>}
                       {newFile && <p className="text-xs text-green-400 truncate">New: {newFile.name}</p>}
                       {!newFile && existing && (
                         <p className="text-xs text-green-500 truncate">
@@ -1706,65 +1785,175 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
 
             {finAsset === 'EQUITY' && (
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label><input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 5000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">EBITDA TTM (USD)</label><input type="number" value={finData.ebitdaTTM} onChange={e=>setFin('ebitdaTTM',e.target.value)} className={inputCls} placeholder="e.g. 1500000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Free Cash Flow (USD)</label><input type="number" value={finData.freeCashFlow} onChange={e=>setFin('freeCashFlow',e.target.value)} className={inputCls} placeholder="e.g. 800000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 2000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Cash & Equivalents (USD)</label><input type="number" value={finData.cash} onChange={e=>setFin('cash',e.target.value)} className={inputCls} placeholder="e.g. 500000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label><input type="number" value={finData.growthRatePct} onChange={e=>setFin('growthRatePct',e.target.value)} className={inputCls} placeholder="e.g. 12"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Discount Rate / WACC (%)</label><input type="number" value={finData.discountRatePct} onChange={e=>setFin('discountRatePct',e.target.value)} className={inputCls} placeholder="e.g. 15"/></div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Revenue TTM <span title="Trailing Twelve Months — the last 12 calendar months of revenue. Annualise if using a shorter period." className="text-blue-400 cursor-help">ⓘ</span> (USD)</label>
+                  <input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 5000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Total revenue for the last 12 months. Annualise if reporting for a shorter period.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">EBITDA TTM <span title="Earnings Before Interest, Tax, Depreciation & Amortisation — core operating profit excluding financing and accounting items." className="text-blue-400 cursor-help">ⓘ</span> (USD)</label>
+                  <input type="number" value={finData.ebitdaTTM} onChange={e=>setFin('ebitdaTTM',e.target.value)} className={inputCls} placeholder="e.g. 1500000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Used to calculate your EV/EBITDA multiple. A higher margin signals stronger operating leverage.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Free Cash Flow <span title="Operating cash flow minus capital expenditure. The cash the business actually generates after maintaining its assets." className="text-blue-400 cursor-help">ⓘ</span> (USD)</label>
+                  <input type="number" value={finData.freeCashFlow} onChange={e=>setFin('freeCashFlow',e.target.value)} className={inputCls} placeholder="e.g. 800000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Operating cash flow minus capital expenditure. Used in the DCF valuation alongside EBITDA.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label>
+                  <input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 2000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">All interest-bearing debt: bank loans, bonds, directors&apos; loans. Excludes trade payables and accruals.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Cash &amp; Equivalents (USD)</label>
+                  <input type="number" value={finData.cash} onChange={e=>setFin('cash',e.target.value)} className={inputCls} placeholder="e.g. 500000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Cash on hand plus short-term liquid investments. Used to calculate net debt (Total Debt − Cash).</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label>
+                  <input type="number" value={finData.growthRatePct} onChange={e=>setFin('growthRatePct',e.target.value)} className={inputCls} placeholder="e.g. 12"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Expected compound annual revenue growth over the forecast period. Use historical CAGR if available.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Discount Rate / <span title="Weighted Average Cost of Capital — the blended required return for equity and debt holders, used to discount future cash flows to present value." className="text-blue-400 cursor-help">WACC ⓘ</span> (%)</label>
+                  <input type="number" value={finData.discountRatePct} onChange={e=>setFin('discountRatePct',e.target.value)} className={inputCls} placeholder="e.g. 15"/>
+                  <details className="mt-1">
+                    <summary className="text-xs text-blue-400 cursor-pointer select-none">ⓘ How to choose a discount rate</summary>
+                    <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">For Zimbabwe emerging-market assets, typical WACC ranges: early-stage 18–25%, growth-stage 14–18%, stable/cash-generating 10–14%. A higher rate lowers the valuation. Your auditor will review and may adjust this figure.</p>
+                  </details>
+                </div>
               </div>
             )}
 
             {finAsset === 'BOND' && (
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Face / Par Value (USD)</label><input type="number" value={finData.faceValue} onChange={e=>setFin('faceValue',e.target.value)} className={inputCls} placeholder="e.g. 1000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Coupon Rate (%)</label><input type="number" value={finData.couponRatePct} onChange={e=>setFin('couponRatePct',e.target.value)} className={inputCls} placeholder="e.g. 8.5"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Market Yield (%)</label><input type="number" value={finData.marketYieldPct} onChange={e=>setFin('marketYieldPct',e.target.value)} className={inputCls} placeholder="e.g. 7"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Periods Remaining</label><input type="number" value={finData.periodsRemaining} onChange={e=>setFin('periodsRemaining',e.target.value)} className={inputCls} placeholder="e.g. 20"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Periods per Year</label><input type="number" value={finData.periodsPerYear} onChange={e=>setFin('periodsPerYear',e.target.value)} className={inputCls} placeholder="e.g. 2"/></div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Face / Par Value (USD)</label>
+                  <input type="number" value={finData.faceValue} onChange={e=>setFin('faceValue',e.target.value)} className={inputCls} placeholder="e.g. 1000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">The nominal value of the bond at maturity — what the issuer promises to repay. Distinct from the market or offering price.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Coupon Rate (%)</label>
+                  <input type="number" value={finData.couponRatePct} onChange={e=>setFin('couponRatePct',e.target.value)} className={inputCls} placeholder="e.g. 8.5"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Annual interest paid to bondholders as a % of face value. E.g. 8.5% on a $1M bond = $85,000/year.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Market Yield (%)</label>
+                  <input type="number" value={finData.marketYieldPct} onChange={e=>setFin('marketYieldPct',e.target.value)} className={inputCls} placeholder="e.g. 7"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Current market rate for comparable bonds (same credit quality, maturity). Determines whether your bond trades at a premium or discount to face value.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Periods Remaining</label>
+                  <input type="number" value={finData.periodsRemaining} onChange={e=>setFin('periodsRemaining',e.target.value)} className={inputCls} placeholder="e.g. 20"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Number of coupon payment periods until maturity. E.g. 10-year semi-annual bond = 20 periods.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Periods per Year</label>
+                  <input type="number" value={finData.periodsPerYear} onChange={e=>setFin('periodsPerYear',e.target.value)} className={inputCls} placeholder="e.g. 2"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">1 = annual · 2 = semi-annual · 4 = quarterly · 12 = monthly coupon payments.</p>
+                </div>
               </div>
             )}
 
             {finAsset === 'REAL_ESTATE' && (
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Property Valuation (USD)</label><input type="number" value={finData.propertyValuation} onChange={e=>setFin('propertyValuation',e.target.value)} className={inputCls} placeholder="e.g. 10000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 2000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Net Operating Income (USD)</label><input type="number" value={finData.netOperatingIncome} onChange={e=>setFin('netOperatingIncome',e.target.value)} className={inputCls} placeholder="e.g. 600000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Cap Rate (%)</label><input type="number" value={finData.capRate} onChange={e=>setFin('capRate',e.target.value)} className={inputCls} placeholder="e.g. 6"/></div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Property Valuation (USD)</label>
+                  <input type="number" value={finData.propertyValuation} onChange={e=>setFin('propertyValuation',e.target.value)} className={inputCls} placeholder="e.g. 10000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Current market value per your independent valuation report. Must match the valuation report uploaded in Step 5.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label>
+                  <input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 2000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Mortgage or secured lending against the property. Used to calculate loan-to-value (LTV) ratio.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1"><span title="Net Operating Income — annual rental income minus operating expenses (maintenance, rates, insurance), before debt service." className="text-blue-400 cursor-help">NOI ⓘ</span> (USD)</label>
+                  <input type="number" value={finData.netOperatingIncome} onChange={e=>setFin('netOperatingIncome',e.target.value)} className={inputCls} placeholder="e.g. 600000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Annual rental income minus operating expenses, before interest and debt service.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1"><span title="Capitalisation Rate = NOI ÷ Property Value. Reflects the market&apos;s required yield for this property type and location." className="text-blue-400 cursor-help">Cap Rate ⓘ</span> (%)</label>
+                  <input type="number" value={finData.capRate} onChange={e=>setFin('capRate',e.target.value)} className={inputCls} placeholder="e.g. 6"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Market cap rates for Zimbabwe commercial property typically range 6–10%. Lower = premium asset.</p>
+                </div>
               </div>
             )}
 
             {finAsset === 'REIT' && (
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Portfolio Valuation (USD)</label><input type="number" value={finData.propertyValuation} onChange={e=>setFin('propertyValuation',e.target.value)} className={inputCls} placeholder="e.g. 50000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 15000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Net Operating Income (USD)</label><input type="number" value={finData.netOperatingIncome} onChange={e=>setFin('netOperatingIncome',e.target.value)} className={inputCls} placeholder="e.g. 3500000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Cap Rate (%)</label><input type="number" value={finData.capRate} onChange={e=>setFin('capRate',e.target.value)} className={inputCls} placeholder="e.g. 7"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Occupancy Rate (%)</label><input type="number" value={finData.occupancyPct} onChange={e=>setFin('occupancyPct',e.target.value)} className={inputCls} placeholder="e.g. 94"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Number of Units</label><input type="number" value={finData.unitCount} onChange={e=>setFin('unitCount',e.target.value)} className={inputCls} placeholder="e.g. 120"/></div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Portfolio Valuation (USD)</label>
+                  <input type="number" value={finData.propertyValuation} onChange={e=>setFin('propertyValuation',e.target.value)} className={inputCls} placeholder="e.g. 50000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Current market value of all properties in the portfolio. Must be consistent with the valuation report uploaded in Step 5.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label>
+                  <input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 15000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">All mortgage and secured lending across the portfolio. Used to calculate net asset value (NAV).</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1"><span title="Net Operating Income — total portfolio rental income minus operating expenses, before debt service." className="text-blue-400 cursor-help">NOI ⓘ</span> (USD)</label>
+                  <input type="number" value={finData.netOperatingIncome} onChange={e=>setFin('netOperatingIncome',e.target.value)} className={inputCls} placeholder="e.g. 3500000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Total rental income across the portfolio minus operating expenses, before interest.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1"><span title="Capitalisation Rate = NOI ÷ Portfolio Value. Market rate for this property class and geography." className="text-blue-400 cursor-help">Cap Rate ⓘ</span> (%)</label>
+                  <input type="number" value={finData.capRate} onChange={e=>setFin('capRate',e.target.value)} className={inputCls} placeholder="e.g. 7"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Blended cap rate for the portfolio. Use the weighted average of individual property cap rates.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Occupancy Rate (%)</label>
+                  <input type="number" value={finData.occupancyPct} onChange={e=>setFin('occupancyPct',e.target.value)} className={inputCls} placeholder="e.g. 94"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Percentage of lettable area currently leased. E.g. 94 = 94% occupied. Directly impacts NOI.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Number of Units</label>
+                  <input type="number" value={finData.unitCount} onChange={e=>setFin('unitCount',e.target.value)} className={inputCls} placeholder="e.g. 120"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Total number of lettable units, floors, or properties in the portfolio. Used for per-unit metrics.</p>
+                </div>
               </div>
             )}
 
             {finAsset === 'MINING' && (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-xs text-gray-400 block mb-1">Total Resource (tonnes of ore)</label><input type="number" value={finData.totalResourceTonnes} onChange={e=>setFin('totalResourceTonnes',e.target.value)} className={inputCls} placeholder="e.g. 850000"/></div>
-                  <div><label className="text-xs text-gray-400 block mb-1">Grade (%)</label><input type="number" value={finData.gradePercent} onChange={e=>setFin('gradePercent',e.target.value)} className={inputCls} placeholder="e.g. 3.5"/></div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Total Resource (tonnes of ore)</label>
+                    <input type="number" value={finData.totalResourceTonnes} onChange={e=>setFin('totalResourceTonnes',e.target.value)} className={inputCls} placeholder="e.g. 850000"/>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">Total in-situ ore resource in tonnes per your SAMREC/JORC-compliant resource statement or independent geological report.</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Grade (%)</label>
+                    <input type="number" value={finData.gradePercent} onChange={e=>setFin('gradePercent',e.target.value)} className={inputCls} placeholder="e.g. 3.5"/>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">Average metal grade as a percentage (e.g. 3.5 means 35kg of metal per tonne of ore). Source: your resource statement.</p>
+                  </div>
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">Gross Revenue per Tonne of Ore <span className="text-gray-600">(USD/t-ore)</span></label>
                     <input type="number" value={finData.commodityPricePerTonne} onChange={e=>setFin('commodityPricePerTonne',e.target.value)} className={inputCls} placeholder="e.g. 62"/>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">Estimated revenue generated per tonne of ore processed, based on current metal prices and grade. See formula below.</p>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-400 block mb-1">All-In Mining Cost per Tonne of Ore <span className="text-gray-600">(USD/t-ore)</span></label>
+                    <label className="text-xs text-gray-400 block mb-1">All-In Mining Cost per Tonne of Ore <span className="text-gray-600 cursor-help" title="Includes mining, milling, transport, G&A, and sustaining capital expenditure — all costs to bring one tonne of ore to saleable metal.">ⓘ</span> <span className="text-gray-600">(USD/t-ore)</span></label>
                     <input type="number" value={finData.miningCostPerTonne} onChange={e=>setFin('miningCostPerTonne',e.target.value)} className={inputCls} placeholder="e.g. 28"/>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">Total cost to mine, process, and deliver one tonne of ore to market. Must use the same per-tonne-of-ore basis as revenue above.</p>
                   </div>
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">Recovery Rate <span className="text-gray-600">(decimal — e.g. 0.87 for 87%)</span></label>
                     <input type="number" step="0.01" min="0" max="1" value={finData.recoveryRate} onChange={e=>setFin('recoveryRate',e.target.value)} className={inputCls} placeholder="e.g. 0.85"/>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">Proportion of metal actually extracted during processing. Source: metallurgical testwork or operational data. Enter as a decimal (0.87 not 87).</p>
                   </div>
-                  <div><label className="text-xs text-gray-400 block mb-1">Mine Life (years)</label><input type="number" value={finData.mineLifeYears} onChange={e=>setFin('mineLifeYears',e.target.value)} className={inputCls} placeholder="e.g. 10"/></div>
-                  <div><label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label><input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 4200000"/></div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Mine Life (years)</label>
+                    <input type="number" value={finData.mineLifeYears} onChange={e=>setFin('mineLifeYears',e.target.value)} className={inputCls} placeholder="e.g. 10"/>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">Expected operational life based on total resource divided by planned annual throughput.</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label>
+                    <input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 4200000"/>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">Actual revenue earned from mining operations over the trailing twelve months.</p>
+                  </div>
                 </div>
                 <div className="bg-amber-950/30 border border-amber-700/30 rounded-lg p-3 text-xs text-amber-300/80 space-y-1">
                   <p className="font-semibold text-amber-300">How to calculate gross revenue per tonne of ore</p>
@@ -1777,20 +1966,56 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
 
             {finAsset === 'INFRASTRUCTURE' && (
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Annual Revenue (USD)</label><input type="number" value={finData.annualRevenue} onChange={e=>setFin('annualRevenue',e.target.value)} className={inputCls} placeholder="e.g. 8000000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label><input type="number" value={finData.operatingMarginPct} onChange={e=>setFin('operatingMarginPct',e.target.value)} className={inputCls} placeholder="e.g. 35"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Contract Years Remaining</label><input type="number" value={finData.contractYears} onChange={e=>setFin('contractYears',e.target.value)} className={inputCls} placeholder="e.g. 20"/></div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Annual Revenue (USD)</label>
+                  <input type="number" value={finData.annualRevenue} onChange={e=>setFin('annualRevenue',e.target.value)} className={inputCls} placeholder="e.g. 8000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Last full-year revenue from the infrastructure asset (toll road, energy plant, telecoms, etc.).</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label>
+                  <input type="number" value={finData.operatingMarginPct} onChange={e=>setFin('operatingMarginPct',e.target.value)} className={inputCls} placeholder="e.g. 35"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Operating profit as a percentage of revenue. E.g. 35 means $0.35 of every $1 revenue becomes operating profit.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Contract Years Remaining</label>
+                  <input type="number" value={finData.contractYears} onChange={e=>setFin('contractYears',e.target.value)} className={inputCls} placeholder="e.g. 20"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Years left on the concession, PPP agreement, or service contract that underpins the revenue. This directly drives the valuation — more years = higher value.</p>
+                </div>
               </div>
             )}
 
             {finAsset === 'AGRICULTURE' && (
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs text-gray-400 block mb-1">Annual Revenue (USD)</label><input type="number" value={finData.annualRevenue} onChange={e=>setFin('annualRevenue',e.target.value)} className={inputCls} placeholder="e.g. 3500000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label><input type="number" value={finData.operatingMarginPct} onChange={e=>setFin('operatingMarginPct',e.target.value)} className={inputCls} placeholder="e.g. 22"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label><input type="number" value={finData.growthRatePct} onChange={e=>setFin('growthRatePct',e.target.value)} className={inputCls} placeholder="e.g. 12"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Discount Rate (%)</label><input type="number" value={finData.discountRatePct} onChange={e=>setFin('discountRatePct',e.target.value)} className={inputCls} placeholder="e.g. 18"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label><input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 400000"/></div>
-                <div><label className="text-xs text-gray-400 block mb-1">Cash & Equivalents (USD)</label><input type="number" value={finData.cash} onChange={e=>setFin('cash',e.target.value)} className={inputCls} placeholder="e.g. 150000"/></div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Annual Revenue (USD)</label>
+                  <input type="number" value={finData.annualRevenue} onChange={e=>setFin('annualRevenue',e.target.value)} className={inputCls} placeholder="e.g. 3500000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Last full-year revenue from farming or agri-processing operations.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label>
+                  <input type="number" value={finData.operatingMarginPct} onChange={e=>setFin('operatingMarginPct',e.target.value)} className={inputCls} placeholder="e.g. 22"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Operating profit divided by revenue, as a percentage. Typical range for Zimbabwe commercial agriculture: 15–30%.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label>
+                  <input type="number" value={finData.growthRatePct} onChange={e=>setFin('growthRatePct',e.target.value)} className={inputCls} placeholder="e.g. 12"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Expected annual revenue growth. Use 3-year historical average if available.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Discount Rate (%)</label>
+                  <input type="number" value={finData.discountRatePct} onChange={e=>setFin('discountRatePct',e.target.value)} className={inputCls} placeholder="e.g. 18"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Rate used to discount future farm cash flows. Higher than urban real estate to reflect commodity price and climate risk. Typical range: 16–22%.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label>
+                  <input type="number" value={finData.totalDebt} onChange={e=>setFin('totalDebt',e.target.value)} className={inputCls} placeholder="e.g. 400000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">All interest-bearing debt secured against the farming operation or land.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Cash &amp; Equivalents (USD)</label>
+                  <input type="number" value={finData.cash} onChange={e=>setFin('cash',e.target.value)} className={inputCls} placeholder="e.g. 150000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Cash on hand and liquid assets. Used to calculate net debt and enterprise value.</p>
+                </div>
               </div>
             )}
 
@@ -2155,18 +2380,46 @@ function IssuerOfferingTab({ notify, submissionStatus = null }) {
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs text-gray-400 block mb-1">Offering Price (USD) *</label><input type="number" value={form.offering_price_usd} onChange={e=>setForm(f=>({...f,offering_price_usd:e.target.value}))} className={inputCls} placeholder="e.g. 1.00"/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Target Raise (USD) *</label><input type="number" value={form.target_raise_usd} onChange={e=>setForm(f=>({...f,target_raise_usd:e.target.value}))} className={inputCls} placeholder="e.g. 2000000"/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Total Tokens Offered *</label><input type="number" value={form.total_tokens_offered} onChange={e=>setForm(f=>({...f,total_tokens_offered:e.target.value}))} className={inputCls} placeholder="e.g. 2000000"/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Subscription Deadline *</label><input type="date" value={form.subscription_deadline} min={new Date().toISOString().split('T')[0]} onChange={e=>setForm(f=>({...f,subscription_deadline:e.target.value}))} className={inputCls}/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Min Subscription (USD)</label><input type="number" value={form.min_subscription_usd} onChange={e=>setForm(f=>({...f,min_subscription_usd:e.target.value}))} className={inputCls} placeholder="100"/></div>
-            <div><label className="text-xs text-gray-400 block mb-1">Max Subscription (USD)</label><input type="number" value={form.max_subscription_usd} onChange={e=>setForm(f=>({...f,max_subscription_usd:e.target.value}))} className={inputCls} placeholder="Optional"/></div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Offering Price (USD) *</label>
+              <input type="number" value={form.offering_price_usd} onChange={e=>setForm(f=>({...f,offering_price_usd:e.target.value}))} className={inputCls} placeholder="e.g. 1.00"/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Price per token during this fundraise. Should be consistent with the auditor-certified valuation. Most issuers start at $1.00.</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Target Raise (USD) *</label>
+              <input type="number" value={form.target_raise_usd} onChange={e=>setForm(f=>({...f,target_raise_usd:e.target.value}))} className={inputCls} placeholder="e.g. 2000000"/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Total USD to raise. The offering stays open until target is reached or the deadline passes. A 1.5% issuance fee applies to actual proceeds.</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Total Tokens Offered *</label>
+              <input type="number" value={form.total_tokens_offered} onChange={e=>setForm(f=>({...f,total_tokens_offered:e.target.value}))} className={inputCls} placeholder="e.g. 2000000"/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Number of tokens available for subscription. Should equal Target Raise ÷ Offering Price.</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Subscription Deadline *</label>
+              <input type="date" value={form.subscription_deadline} min={new Date().toISOString().split('T')[0]} onChange={e=>setForm(f=>({...f,subscription_deadline:e.target.value}))} className={inputCls}/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Last date investors can subscribe. Offering auto-closes on this date even if target is not reached. Minimum 14 days recommended.</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Min Subscription (USD)</label>
+              <input type="number" value={form.min_subscription_usd} onChange={e=>setForm(f=>({...f,min_subscription_usd:e.target.value}))} className={inputCls} placeholder="100"/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Lowest amount a single investor can subscribe. The platform default is $100. Raising this threshold reduces operational overhead.</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Max Subscription (USD)</label>
+              <input type="number" value={form.max_subscription_usd} onChange={e=>setForm(f=>({...f,max_subscription_usd:e.target.value}))} className={inputCls} placeholder="Optional"/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Cap a single investor&apos;s subscription to avoid concentration risk. Leave blank for no cap.</p>
+            </div>
           </div>
           <div>
             <label className="text-xs text-gray-400 block mb-1">Offering Rationale</label>
             <textarea rows={3} value={form.offering_rationale} onChange={e=>setForm(f=>({...f,offering_rationale:e.target.value}))}
               className={inputCls+' resize-none'}
               placeholder="Explain the purpose of this fundraise, how proceeds will be used, and why the price reflects fair value."/>
+            <details className="mt-1">
+              <summary className="text-xs text-blue-400 cursor-pointer select-none">ⓘ What to include</summary>
+              <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">Explain: (1) why you are raising at this valuation, (2) what the funds will specifically achieve, (3) why the offering price reflects fair value. This is reviewed by the auditor during approval and published for investors during due diligence. A strong rationale accelerates approval.</p>
+            </details>
           </div>
           <button onClick={submitOffering} disabled={submitting}
             className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-40 bg-blue-700 hover:bg-blue-600">
