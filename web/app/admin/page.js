@@ -3329,45 +3329,8 @@ export default function AdminDashboard() {
                 Open Portal →
               </a>
             </div>
-            {/* Banking Partner Webhook URL */}
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-                <h3 className="font-bold text-sm mb-1">💰 Tax & Fee Rates</h3>
-                <p className="text-xs text-gray-500 mb-4">These rates are applied dynamically across all platform calculations. Changes take effect immediately.</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { key:'platform_fee_rate',      label:'Platform Fee Rate',           hint:'0.0050 = 0.50%' },
-                    { key:'secz_levy_rate',          label:'SECZ Levy Rate',              hint:'0.0032 = 0.32%' },
-                    { key:'vat_rate',                label:'VAT Rate',                    hint:'0.155 = 15.5%' },
-                    { key:'wht_resident_rate',       label:'WHT — Residents',             hint:'0.10 = 10%' },
-                    { key:'wht_non_resident_rate',   label:'WHT — Non-Residents',         hint:'0.15 = 15%' },
-                    { key:'cgt_rate',                label:'Capital Gains Tax Rate',      hint:'0.20 = 20%' },
-                    { key:'imtt_rate',               label:'IMTT Rate',                   hint:'0.02 = 2%' },
-                    { key:'beneficial_owner_threshold', label:'Beneficial Owner Threshold', hint:'0.10 = 10%' },
-                  ].map(s => (
-                    <div key={s.key} className="space-y-1">
-                      <label className="text-xs text-gray-400 block">{s.label}</label>
-                      <p className="text-xs text-gray-600 mb-1">{s.hint}</p>
-                      <div className="flex gap-2">
-                        <input
-                          type="number" step="0.001"
-                          defaultValue={settings[s.key]?.value ?? ''}
-                          id={`tax-${s.key}`}
-                          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
-                        />
-                        <button onClick={()=>{
-                          const val = document.getElementById(`tax-${s.key}`)?.value;
-                          if (val) handleSaveSetting(s.key, val);
-                        }} className="px-3 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold">
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {[
-                  { key: 'compliance_fee_usd',      label: 'Compliance Fee (USD)',         type: 'number', desc: 'Platform compliance fee charged per tokenisation application.' },
                   { key: 'applications_meeting_day', label: 'Application Review Day',       type: 'text',   desc: 'Day of week when applications are reviewed (e.g. Tuesday).' },
                   { key: 'platform_fee_bps',         label: 'Trading Fee (basis points)',   type: 'number', desc: 'Platform trading fee in basis points (e.g. 50 = 0.50%).' },
                   { key: 'min_investment_usd',        label: 'Minimum Investment (USD)',     type: 'number', desc: 'Minimum investor subscription amount in USD.' },
@@ -4280,7 +4243,63 @@ export default function AdminDashboard() {
 
             {/* Tax & Fees tab */}
             {settingsTab === 'tax' && (
-              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+              <div className="space-y-5">
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                  <h3 className="font-bold text-sm mb-1">💰 Tax & Fee Rates</h3>
+                  <p className="text-xs text-gray-500 mb-4">These rates are applied dynamically across all platform calculations. Changes take effect immediately.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { key:'platform_fee_rate',         label:'Platform Fee Rate',           hint:'0.0050 = 0.50%' },
+                      { key:'secz_levy_rate',             label:'SECZ Levy Rate',              hint:'0.0032 = 0.32%' },
+                      { key:'vat_rate',                   label:'VAT Rate',                    hint:'0.155 = 15.5%' },
+                      { key:'wht_resident_rate',          label:'WHT — Residents',             hint:'0.10 = 10%' },
+                      { key:'wht_non_resident_rate',      label:'WHT — Non-Residents',         hint:'0.15 = 15%' },
+                      { key:'cgt_rate',                   label:'Capital Gains Tax Rate',      hint:'0.20 = 20%' },
+                      { key:'imtt_rate',                  label:'IMTT Rate',                   hint:'0.02 = 2%' },
+                      { key:'beneficial_owner_threshold', label:'Beneficial Owner Threshold',  hint:'0.10 = 10%' },
+                    ].map(s => (
+                      <div key={s.key} className="space-y-1">
+                        <label className="text-xs text-gray-400 block">{s.label}</label>
+                        <p className="text-xs text-gray-600 mb-1">{s.hint}</p>
+                        <div className="flex gap-2">
+                          <input
+                            type="number" step="0.001"
+                            defaultValue={settings[s.key]?.value ?? ''}
+                            id={`tax-${s.key}`}
+                            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
+                          />
+                          <button onClick={() => {
+                            const val = document.getElementById(`tax-${s.key}`)?.value;
+                            if (val) handleSaveSetting(s.key, val);
+                          }} className="px-3 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold">
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                  <label className="text-sm font-semibold text-white block mb-0.5">Compliance Fee (USD)</label>
+                  <p className="text-xs text-gray-500 mb-3">Platform compliance fee charged per tokenisation application.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={settings['compliance_fee_usd']?.value ?? ''}
+                      onChange={e => setSettings(s => ({ ...s, compliance_fee_usd: { ...(s.compliance_fee_usd||{}), value: e.target.value } }))}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                    />
+                    <button
+                      onClick={() => handleSaveSetting('compliance_fee_usd', settings['compliance_fee_usd']?.value ?? '')}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
+                      Save
+                    </button>
+                  </div>
+                  {settings['compliance_fee_usd']?.updated_at && (
+                    <p className="text-xs text-gray-600 mt-2">Last updated: {dt(settings['compliance_fee_usd'].updated_at)}</p>
+                  )}
+                </div>
+              </div>
             )}
             {/* Banking tab */}
             {settingsTab === 'banking' && (
