@@ -666,6 +666,77 @@ export default function AuditorDashboard() {
   const [cardMessages,  setCardMessages]  = useState({});
   const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
+  // ── Independence declarations ──────────────────────────────────────────────
+  // keyed by submission_id: array of declaration records
+  const [declarationCache, setDeclarationCache] = useState({});
+  const [declLoading,      setDeclLoading]      = useState(false);
+  const [declSubmitting,   setDeclSubmitting]   = useState(false);
+  const [declMsg,          setDeclMsg]          = useState(null);
+  const BLANK_DECL = {
+    no_financial_relationship: false,
+    no_token_holdings:         false,
+    no_personal_relationship:  false,
+    professional_indemnity:    false,
+    icaz_member:               false,
+    practising_certificate:    '',
+    insurance_amount:          '',
+    declaration_text:          '',
+    digital_signature:         '',
+  };
+  const [declForm, setDeclForm] = useState(BLANK_DECL);
+
+  const loadDeclaration = async (submissionId) => {
+    if (declarationCache[submissionId] !== undefined) return;
+    setDeclLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`${API}/auditor/declarations/${submissionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data  = await res.json();
+      setDeclarationCache(c => ({ ...c, [submissionId]: Array.isArray(data) ? data : [] }));
+    } catch {
+      setDeclarationCache(c => ({ ...c, [submissionId]: [] }));
+    }
+    setDeclLoading(false);
+  };
+
+  const approvedDeclaration = (submissionId) =>
+    (declarationCache[submissionId] || []).find(d => d.status === 'APPROVED');
+
+  const pendingDeclaration = (submissionId) =>
+    (declarationCache[submissionId] || []).find(d => d.status === 'PENDING');
+
+  const submitDeclaration = async (submissionId) => {
+    setDeclSubmitting(true);
+    setDeclMsg(null);
+    try {
+      const token = localStorage.getItem('token');
+      const user  = JSON.parse(localStorage.getItem('user') || '{}');
+      // Pre-fill declaration_text if blank
+      const text = declForm.declaration_text.trim() ||
+        `I, ${user.full_name || 'the undersigned auditor'}, hereby declare that I am independent of the issuer and meet all requirements of Policy 7 of the TokenEquityX Approved Auditor Policy. I confirm all statements above are true and accurate.`;
+      const res = await fetch(`${API}/auditor/declarations`, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ...declForm, submission_id: submissionId, declaration_text: text }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        setDeclMsg({ type: 'success', text: d.message });
+        setDeclForm(BLANK_DECL);
+        // Invalidate cache so it reloads
+        setDeclarationCache(c => { const n = {...c}; delete n[submissionId]; return n; });
+        loadDeclaration(submissionId);
+      } else {
+        setDeclMsg({ type: 'error', text: d.error || 'Submission failed' });
+      }
+    } catch {
+      setDeclMsg({ type: 'error', text: 'Network error' });
+    }
+    setDeclSubmitting(false);
+  };
+
   useEffect(() => {
     if (typeof window === 'undefined') return null;
     const _u = JSON.parse(localStorage.getItem('user') || '{}');
@@ -796,12 +867,13 @@ api.get('/auditor/completed').then(r => {
             <span className="ml-2 text-xs bg-teal-900 text-teal-300 px-2 py-0.5 rounded-full">AUDITOR</span>
           </div>
           <nav className="flex gap-1">
-            {['queue','valuation','completed','flags','offerings'].map(t=>(
+            {['queue','declarations','valuation','completed','flags','offerings'].map(t=>(
               <button key={t} onClick={()=>setTab(t)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
                 {t}
                 {t==='queue'&&pending>0&&<span className="ml-1 bg-red-600 text-white text-xs px-1.5 rounded-full">{pending}</span>}
                 {t==='flags'&&queue.filter(q=>q.flags.length>0).length>0&&<span className="ml-1 bg-amber-600 text-white text-xs px-1.5 rounded-full">{queue.filter(q=>q.flags.length>0).length}</span>}
+                {t==='declarations'&&queue.filter(q=>!approvedDeclaration(q.id)&&q.assigned_auditor).length>0&&<span className="ml-1 bg-amber-600 text-white text-xs px-1.5 rounded-full">{queue.filter(q=>!approvedDeclaration(q.id)&&q.assigned_auditor).length}</span>}
               </button>
             ))}
           </nav>
@@ -854,7 +926,7 @@ api.get('/auditor/completed').then(r => {
                 </div>
               )}
               {queue.map(item=>(
-                <div key={item.id} onClick={()=>setSelItem(selItem?.id===item.id?null:item)}
+                <div key={item.id} onClick={()=>{const n=selItem?.id===item.id?null:item;setSelItem(n);if(n)loadDeclaration(n.id);}}
                   className={`rounded-xl p-4 border cursor-pointer transition-all ${
                     selItem?.id===item.id?'border-blue-500 bg-blue-900/20':PRIORITY_BG[item.priority]
                   }${item.auditor_status==='DECLINED'?' opacity-60':''}`}>
@@ -1009,6 +1081,85 @@ api.get('/auditor/completed').then(r => {
                   <p className="text-3xl mb-3">🔒</p>
                   <p className="text-white font-semibold mb-1">Accept Assignment to Begin Review</p>
                   <p className="text-gray-500 text-sm">Please accept or decline this assignment using the buttons on the submission card.</p>
+                </div>
+              ) : !approvedDeclaration(selItem.id) ? (
+                /* ── Independence Declaration gate ── */
+                <div className="bg-gray-900 border border-amber-700/40 rounded-xl p-6 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">🗂️</span>
+                    <div>
+                      <p className="font-bold text-base text-white">Independence Declaration Required</p>
+                      <p className="text-xs text-gray-400 mt-1">Per Policy 7 (Approved Auditor Policy) and IOSCO Principles 19–23, you must submit and receive admin approval of your independence declaration before beginning this review.</p>
+                    </div>
+                  </div>
+
+                  {pendingDeclaration(selItem.id) ? (
+                    <div className="bg-blue-900/20 border border-blue-700/40 rounded-xl p-4 text-center">
+                      <p className="text-blue-300 font-semibold text-sm">⏳ Declaration Submitted — Awaiting Admin Approval</p>
+                      <p className="text-gray-400 text-xs mt-1">The platform admin will review your declaration and notify you by email. You will be able to proceed once approved.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {declMsg && (
+                        <div className={`rounded-xl p-3 border text-xs ${declMsg.type==='error'?'bg-red-900/30 border-red-700 text-red-300':'bg-green-900/30 border-green-700 text-green-300'}`}>
+                          {declMsg.text}
+                        </div>
+                      )}
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Confirm all of the following:</p>
+                        {[
+                          ['no_financial_relationship', 'I have had no financial relationship with this issuer in the past 3 years'],
+                          ['no_token_holdings',         'I hold no tokens, equity, or debt instruments in this issuer'],
+                          ['no_personal_relationship',  'I have no close personal relationship with any director or beneficial owner of this issuer'],
+                          ['professional_indemnity',    'I hold current professional indemnity insurance of at least USD 100,000'],
+                          ['icaz_member',               'I am a registered member of ICAZ or equivalent body with a current practising certificate'],
+                        ].map(([key, label]) => (
+                          <label key={key} className="flex items-start gap-3 cursor-pointer bg-gray-800/50 rounded-xl p-3 border border-gray-700">
+                            <input type="checkbox"
+                              checked={declForm[key]}
+                              onChange={e => setDeclForm(f => ({...f, [key]: e.target.checked}))}
+                              className="mt-0.5 flex-shrink-0 accent-blue-500"/>
+                            <span className="text-xs text-gray-300">{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-gray-400 block mb-1">Practising Certificate Number *</label>
+                          <input value={declForm.practising_certificate}
+                            onChange={e => setDeclForm(f => ({...f, practising_certificate: e.target.value}))}
+                            className={inputCls} placeholder="e.g. ICAZ-2024-001234"/>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 block mb-1">Professional Indemnity Amount (USD)</label>
+                          <input type="number" value={declForm.insurance_amount}
+                            onChange={e => setDeclForm(f => ({...f, insurance_amount: e.target.value}))}
+                            className={inputCls} placeholder="e.g. 150000"/>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">Declaration Statement</label>
+                        <textarea rows={3} value={declForm.declaration_text}
+                          onChange={e => setDeclForm(f => ({...f, declaration_text: e.target.value}))}
+                          className={textareaCls}
+                          placeholder={`I, [your name], declare that I am independent of the issuer and meet all requirements of Policy 7 of the TokenEquityX Approved Auditor Policy. I confirm all statements above are true and accurate as of ${new Date().toLocaleDateString('en-GB')}.`}/>
+                        <p className="text-xs text-gray-500 mt-1">Leave blank to use the default declaration text. Minimum 50 characters if you enter custom text.</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">Digital Signature (full name)</label>
+                        <input value={declForm.digital_signature}
+                          onChange={e => setDeclForm(f => ({...f, digital_signature: e.target.value}))}
+                          className={inputCls} placeholder="Type your full name as your electronic signature"/>
+                      </div>
+                      <button
+                        onClick={() => submitDeclaration(selItem.id)}
+                        disabled={declSubmitting || !declForm.no_financial_relationship || !declForm.no_token_holdings || !declForm.no_personal_relationship || !declForm.professional_indemnity || !declForm.icaz_member || !declForm.practising_certificate}
+                        className="w-full py-3 rounded-xl font-semibold text-sm text-white bg-blue-700 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed">
+                        {declSubmitting ? '⏳ Submitting…' : '📋 Submit Independence Declaration'}
+                      </button>
+                      <p className="text-xs text-gray-600 text-center">All checkboxes must be confirmed before you can submit. The platform admin will review your declaration before you may proceed.</p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <AuditReviewPanel

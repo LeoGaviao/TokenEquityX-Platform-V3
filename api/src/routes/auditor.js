@@ -5,6 +5,7 @@ const { requireRole }  = require('../middleware/roles');
 const { v4: uuidv4 }   = require('uuid');
 const { calculateValuation } = require('../services/valuation');
 const { generateDataHash }   = require('../services/dataHash');
+const mailer = require('../utils/mailer');
 
 // GET /api/auditor/queue
 router.get('/queue',
@@ -196,5 +197,211 @@ router.get('/completed', authenticate, requireRole('AUDITOR','ADMIN'), async (re
     res.status(500).json({ error: 'Failed to fetch completed reviews: ' + err.message });
   }
 });
+
+// ── Independence Declaration endpoints ───────────────────────────────────────
+
+// POST /api/auditor/declarations — auditor submits independence declaration
+router.post('/declarations',
+  authenticate,
+  requireRole('AUDITOR'),
+  async (req, res) => {
+    const {
+      submission_id, no_financial_relationship, no_token_holdings,
+      no_personal_relationship, professional_indemnity, icaz_member,
+      practising_certificate, insurance_amount, declaration_text, digital_signature,
+    } = req.body;
+
+    if (!submission_id)        return res.status(400).json({ error: 'submission_id is required' });
+    if (!practising_certificate) return res.status(400).json({ error: 'practising_certificate is required' });
+    if (!declaration_text || declaration_text.trim().length < 50)
+      return res.status(400).json({ error: 'declaration_text must be at least 50 characters' });
+
+    try {
+      const [subs] = await db.execute(
+        'SELECT id, entity_name, token_symbol, assigned_auditor FROM data_submissions WHERE id = ?',
+        [submission_id]
+      );
+      if (subs.length === 0) return res.status(404).json({ error: 'Submission not found' });
+      const sub = subs[0];
+      if (sub.assigned_auditor !== req.user.userId)
+        return res.status(403).json({ error: 'You are not assigned to this submission' });
+
+      // Block duplicate active declarations
+      const [existing] = await db.execute(
+        "SELECT id FROM auditor_declarations WHERE auditor_id = ? AND submission_id = ? AND status IN ('PENDING','APPROVED')",
+        [req.user.userId, submission_id]
+      );
+      if (existing.length > 0)
+        return res.status(409).json({ error: 'A declaration is already pending or approved for this submission' });
+
+      const allChecked = !!(no_financial_relationship && no_token_holdings &&
+        no_personal_relationship && professional_indemnity && icaz_member);
+      const status         = allChecked ? 'PENDING' : 'REJECTED';
+      const rejectionReason = allChecked ? null : 'One or more independence requirements not met at submission';
+
+      const [inserted] = await db.execute(
+        `INSERT INTO auditor_declarations
+           (auditor_id, submission_id, no_financial_relationship, no_token_holdings,
+            no_personal_relationship, professional_indemnity, icaz_member,
+            practising_certificate, insurance_amount, declaration_text, digital_signature,
+            status, rejection_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        [
+          req.user.userId, submission_id,
+          no_financial_relationship, no_token_holdings, no_personal_relationship,
+          professional_indemnity, icaz_member, practising_certificate,
+          insurance_amount || null, declaration_text.trim(), digital_signature || null,
+          status, rejectionReason,
+        ]
+      );
+
+      if (status === 'PENDING') {
+        await db.execute(
+          "UPDATE data_submissions SET status = 'DECLARATION_PENDING', updated_at = NOW() WHERE id = ?",
+          [submission_id]
+        );
+        // Notify admin
+        const [adminRows] = await db.execute(
+          "SELECT email, full_name FROM users WHERE role = 'ADMIN' LIMIT 1"
+        );
+        const [auditorRows] = await db.execute(
+          'SELECT full_name, email FROM users WHERE id = ?', [req.user.userId]
+        );
+        if (adminRows.length > 0) {
+          mailer.notifyAdminAuditorDeclarationSubmitted({
+            adminEmail:    adminRows[0].email,
+            auditorName:   auditorRows[0]?.full_name || 'Auditor',
+            auditorEmail:  auditorRows[0]?.email || '',
+            issuerName:    sub.entity_name || sub.token_symbol,
+            tokenSymbol:   sub.token_symbol,
+            submissionId:  submission_id,
+            certificate:   practising_certificate,
+          }).catch(e => console.error('[MAILER] declaration submitted to admin failed:', e.message));
+        }
+      }
+
+      res.json({
+        success: true,
+        id:      inserted[0]?.id,
+        status,
+        message: status === 'PENDING'
+          ? 'Declaration submitted successfully. Awaiting admin review before you may proceed.'
+          : 'Declaration automatically rejected — all independence checkboxes must be confirmed.',
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// GET /api/auditor/declarations/:submissionId — get declaration for a submission
+router.get('/declarations/:submissionId',
+  authenticate,
+  requireRole('ADMIN','AUDITOR','COMPLIANCE_OFFICER'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute(
+        `SELECT ad.*, u.full_name as auditor_name, u.email as auditor_email,
+                r.full_name as reviewer_name
+         FROM auditor_declarations ad
+         LEFT JOIN users u ON u.id = ad.auditor_id
+         LEFT JOIN users r ON r.id = ad.reviewed_by
+         WHERE ad.submission_id = ?
+         ORDER BY ad.created_at DESC LIMIT 5`,
+        [req.params.submissionId]
+      );
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// PUT /api/auditor/declarations/:id/approve — admin approves declaration
+router.put('/declarations/:id/approve',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute(
+        `SELECT ad.*, ds.entity_name, ds.token_symbol, ds.id as sub_id,
+                u.email as auditor_email, u.full_name as auditor_name
+         FROM auditor_declarations ad
+         JOIN data_submissions ds ON ds.id = ad.submission_id
+         JOIN users u ON u.id = ad.auditor_id
+         WHERE ad.id = ?`,
+        [req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Declaration not found' });
+      const decl = rows[0];
+      if (decl.status === 'APPROVED') return res.status(400).json({ error: 'Already approved' });
+
+      await db.execute(
+        "UPDATE auditor_declarations SET status = 'APPROVED', reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW() WHERE id = ?",
+        [req.user.userId, req.params.id]
+      );
+      // Advance submission to AUDITOR_REVIEW so auditor can proceed
+      await db.execute(
+        "UPDATE data_submissions SET status = 'AUDITOR_REVIEW', updated_at = NOW() WHERE id = ?",
+        [decl.sub_id]
+      );
+
+      mailer.notifyAuditorDeclarationApproved({
+        auditorEmail: decl.auditor_email,
+        auditorName:  decl.auditor_name,
+        issuerName:   decl.entity_name || decl.token_symbol,
+        tokenSymbol:  decl.token_symbol,
+      }).catch(e => console.error('[MAILER] declaration approved failed:', e.message));
+
+      res.json({ success: true, message: 'Declaration approved. Auditor may now proceed with the review.' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// PUT /api/auditor/declarations/:id/reject — admin rejects declaration
+router.put('/declarations/:id/reject',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    const { rejection_reason } = req.body;
+    if (!rejection_reason?.trim()) return res.status(400).json({ error: 'rejection_reason is required' });
+    try {
+      const [rows] = await db.execute(
+        `SELECT ad.*, ds.entity_name, ds.token_symbol, ds.id as sub_id,
+                u.email as auditor_email, u.full_name as auditor_name
+         FROM auditor_declarations ad
+         JOIN data_submissions ds ON ds.id = ad.submission_id
+         JOIN users u ON u.id = ad.auditor_id
+         WHERE ad.id = ?`,
+        [req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Declaration not found' });
+      const decl = rows[0];
+
+      await db.execute(
+        "UPDATE auditor_declarations SET status = 'REJECTED', reviewed_by = ?, reviewed_at = NOW(), rejection_reason = ?, updated_at = NOW() WHERE id = ?",
+        [req.user.userId, rejection_reason.trim(), req.params.id]
+      );
+      await db.execute(
+        "UPDATE data_submissions SET status = 'DECLARATION_REJECTED', updated_at = NOW() WHERE id = ?",
+        [decl.sub_id]
+      );
+
+      mailer.notifyAuditorDeclarationRejected({
+        auditorEmail:    decl.auditor_email,
+        auditorName:     decl.auditor_name,
+        issuerName:      decl.entity_name || decl.token_symbol,
+        tokenSymbol:     decl.token_symbol,
+        rejectionReason: rejection_reason.trim(),
+      }).catch(e => console.error('[MAILER] declaration rejected failed:', e.message));
+
+      res.json({ success: true, message: 'Declaration rejected. Auditor must resubmit.' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
 
 module.exports = router;

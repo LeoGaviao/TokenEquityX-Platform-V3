@@ -505,6 +505,31 @@ CREATE TABLE IF NOT EXISTS analytics_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_analytics_date ON analytics_snapshots(snapshot_date);
 
+CREATE TABLE IF NOT EXISTS auditor_declarations (
+  id                       UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  auditor_id               UUID          NOT NULL REFERENCES users(id),
+  submission_id            UUID          NOT NULL REFERENCES data_submissions(id),
+  declaration_date         TIMESTAMP     DEFAULT NOW(),
+  no_financial_relationship BOOLEAN      NOT NULL DEFAULT FALSE,
+  no_token_holdings        BOOLEAN       NOT NULL DEFAULT FALSE,
+  no_personal_relationship BOOLEAN       NOT NULL DEFAULT FALSE,
+  professional_indemnity   BOOLEAN       NOT NULL DEFAULT FALSE,
+  icaz_member              BOOLEAN       NOT NULL DEFAULT FALSE,
+  practising_certificate   VARCHAR(255)  NOT NULL,
+  insurance_amount         NUMERIC(12,2),
+  declaration_text         TEXT          NOT NULL,
+  digital_signature        VARCHAR(255),
+  status                   VARCHAR(20)   DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPROVED','REJECTED')),
+  reviewed_by              UUID          REFERENCES users(id),
+  reviewed_at              TIMESTAMP,
+  rejection_reason         TEXT,
+  created_at               TIMESTAMP     NOT NULL DEFAULT NOW(),
+  updated_at               TIMESTAMP     NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ad_auditor    ON auditor_declarations(auditor_id);
+CREATE INDEX IF NOT EXISTS idx_ad_submission ON auditor_declarations(submission_id);
+CREATE INDEX IF NOT EXISTS idx_ad_status     ON auditor_declarations(status);
+
 INSERT INTO platform_treasury (id, usdc_balance, usd_liability) VALUES (1, 0, 0) ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO users (id, email, full_name, password_hash, role, kyc_status, is_active, onboarding_complete, wallet_address) VALUES

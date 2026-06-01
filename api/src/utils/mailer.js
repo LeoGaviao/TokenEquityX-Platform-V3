@@ -977,6 +977,42 @@ async function notifyIssuerAuditorAccepted({ issuerEmail, issuerName, tokenSymbo
     `));
 }
 
+// ── Auditor independence declaration notifications ────────────────────────────
+
+async function notifyAdminAuditorDeclarationSubmitted({ adminEmail, auditorName, auditorEmail, issuerName, tokenSymbol, submissionId, certificate }) {
+  const html = baseTemplate('Auditor Independence Declaration Submitted', `
+    <p>An auditor has submitted an independence declaration for your review.</p>
+    <div class="detail-row"><span>Auditor</span><span>${auditorName} (${auditorEmail})</span></div>
+    <div class="detail-row"><span>Issuer / Token</span><span>${issuerName} (${tokenSymbol})</span></div>
+    <div class="detail-row"><span>Practising Certificate</span><span>${certificate}</span></div>
+    <div class="detail-row"><span>Submission ID</span><span>${String(submissionId).slice(0, 8)}…</span></div>
+    <p>Please log into the admin dashboard → Pipeline tab to review and approve or reject the declaration before the auditor may proceed.</p>
+    <a href="${PLATFORM}/admin" class="btn">Review Declaration →</a>
+  `);
+  return send(adminEmail, `🗂️ Auditor Independence Declaration — ${issuerName} (${tokenSymbol})`, html);
+}
+
+async function notifyAuditorDeclarationApproved({ auditorEmail, auditorName, issuerName, tokenSymbol }) {
+  const html = baseTemplate('Independence Declaration Approved', `
+    <p>Dear ${auditorName},</p>
+    <p>Your independence declaration for <strong>${issuerName} (${tokenSymbol})</strong> has been reviewed and <span class="success">approved</span> by the platform administrator.</p>
+    <p>You may now proceed with your financial review. Please log in to the auditor portal to access the submission documents and complete your audit report.</p>
+    <a href="${PLATFORM}/auditor" class="btn">Go to Auditor Portal →</a>
+  `);
+  return send(auditorEmail, `✅ Declaration Approved — You May Proceed: ${tokenSymbol}`, html);
+}
+
+async function notifyAuditorDeclarationRejected({ auditorEmail, auditorName, issuerName, tokenSymbol, rejectionReason }) {
+  const html = baseTemplate('Independence Declaration Rejected', `
+    <p>Dear ${auditorName},</p>
+    <p>Your independence declaration for <strong>${issuerName} (${tokenSymbol})</strong> has been <span class="danger">rejected</span> by the platform administrator.</p>
+    <div class="detail-row"><span>Reason</span><span>${rejectionReason}</span></div>
+    <p>Please review the reason above and submit a revised declaration. You cannot proceed with the audit review until a declaration is approved.</p>
+    <a href="${PLATFORM}/auditor" class="btn btn-gold">Resubmit Declaration →</a>
+  `);
+  return send(auditorEmail, `❌ Declaration Rejected — Action Required: ${tokenSymbol}`, html);
+}
+
 // ── Reconciliation notification ───────────────────────────────────────────────
 // Sends a detailed fix notification to all configured reconciliation recipients.
 // Returns an array of per-recipient send results for audit logging.
@@ -1066,4 +1102,7 @@ module.exports = {
   notifyPartnerKycApproved,
   notifyBankingPartnerKycApproved,
   notifyStaffKycRejected,
+  notifyAdminAuditorDeclarationSubmitted,
+  notifyAuditorDeclarationApproved,
+  notifyAuditorDeclarationRejected,
 };
