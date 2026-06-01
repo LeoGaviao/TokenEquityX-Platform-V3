@@ -1530,6 +1530,7 @@ export default function AdminDashboard() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [settings, setSettings] = useState({});
   const [isSuperAdmin, setIsSuperAdmin]     = useState(false);
+  const [settingsTab, setSettingsTab]       = useState('overview');
   const [otpSent,      setOtpSent]          = useState(false);
   const [otpCode,      setOtpCode]          = useState('');
   const [otpVerified,  setOtpVerified]      = useState(false);
@@ -3287,6 +3288,32 @@ export default function AdminDashboard() {
         {/* ══ SETTINGS ══ */}
         {tab==='settings' && (
           <div className="space-y-6">
+            {/* Settings Sub-Tab Bar */}
+            <div className="flex gap-1 border-b border-gray-800 pb-0 mb-2">
+              {[
+                { key: 'overview',   label: 'Overview' },
+                { key: 'tax',        label: 'Tax & Fees' },
+                { key: 'banking',    label: 'Banking' },
+                { key: 'tiers',      label: 'Investor Tiers' },
+                { key: 'operations', label: 'Operations' },
+                ...(isSuperAdmin ? [{ key: 'superadmin', label: 'Super Admin' }] : []),
+              ].map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setSettingsTab(t.key)}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    settingsTab === t.key
+                      ? 'border-yellow-500 text-white'
+                      : 'border-transparent text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Overview tab ── */}
+            {settingsTab === 'overview' && <>
             {/* Banking Partner Portal Link */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -4249,6 +4276,28 @@ export default function AdminDashboard() {
             )}
           </div>
           </div>
+          </>}
+
+            {/* Tax & Fees tab */}
+            {settingsTab === 'tax' && (
+              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+            )}
+            {/* Banking tab */}
+            {settingsTab === 'banking' && (
+              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+            )}
+            {/* Investor Tiers tab */}
+            {settingsTab === 'tiers' && (
+              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+            )}
+            {/* Operations tab */}
+            {settingsTab === 'operations' && (
+              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+            )}
+            {/* Super Admin tab */}
+            {isSuperAdmin && settingsTab === 'superadmin' && (
+              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+            )}
           </div>
         )}
 
