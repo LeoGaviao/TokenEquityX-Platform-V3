@@ -1530,7 +1530,7 @@ export default function AdminDashboard() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [settings, setSettings] = useState({});
   const [isSuperAdmin, setIsSuperAdmin]     = useState(false);
-  const [settingsTab, setSettingsTab]       = useState('overview');
+  const [activeTab, setActiveTab]       = useState('overview');
   const [otpSent,      setOtpSent]          = useState(false);
   const [otpCode,      setOtpCode]          = useState('');
   const [otpVerified,  setOtpVerified]      = useState(false);
@@ -3289,23 +3289,21 @@ export default function AdminDashboard() {
         {tab==='settings' && (
           <div className="space-y-6">
             {/* Settings Sub-Tab Bar */}
-            <div className="flex gap-1 border-b border-gray-800 pb-0 mb-2">
+            <div className="flex gap-2 border-b border-slate-700 pb-2 mb-4">
               {[
                 { key: 'overview',   label: 'Overview' },
                 { key: 'tax',        label: 'Tax & Fees' },
                 { key: 'banking',    label: 'Banking' },
                 { key: 'tiers',      label: 'Investor Tiers' },
                 { key: 'operations', label: 'Operations' },
-                ...(isSuperAdmin ? [{ key: 'superadmin', label: 'Super Admin' }] : []),
+                ...(JSON.parse(localStorage.getItem('user')||'{}')?.role === 'SUPER_ADMIN' ? [{ key: 'superadmin', label: 'Super Admin' }] : []),
               ].map(t => (
                 <button
                   key={t.key}
-                  onClick={() => setSettingsTab(t.key)}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                    settingsTab === t.key
-                      ? 'border-yellow-500 text-white'
-                      : 'border-transparent text-gray-400 hover:text-white'
-                  }`}
+                  onClick={() => setActiveTab(t.key)}
+                  className={activeTab === t.key
+                    ? 'px-4 py-2 bg-yellow-500 text-slate-900 rounded-t font-medium'
+                    : 'px-4 py-2 text-slate-400 hover:text-white cursor-pointer'}
                 >
                   {t.label}
                 </button>
@@ -3313,7 +3311,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* ── Overview tab ── */}
-            {settingsTab === 'overview' && <>
+            {activeTab === 'overview' && <div className="bg-slate-800 rounded-b p-6">
             {/* Banking Partner Portal Link */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -4233,10 +4231,11 @@ export default function AdminDashboard() {
             )}
           </div>
           </div>
-          </>}
+          </div>}
 
             {/* Tax & Fees tab */}
-            {settingsTab === 'tax' && (
+            {activeTab === 'tax' && (
+              <div className="bg-slate-800 rounded-b p-6">
               <div className="space-y-5">
                 <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
                   <h3 className="font-bold text-sm mb-1">💰 Tax & Fee Rates</h3>
@@ -4294,9 +4293,11 @@ export default function AdminDashboard() {
                   )}
                 </div>
               </div>
+              </div>
             )}
             {/* Banking tab */}
-            {settingsTab === 'banking' && (
+            {activeTab === 'banking' && (
+              <div className="bg-slate-800 rounded-b p-6">
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
                 <h3 className="font-bold text-sm mb-1">🏦 Banking Details</h3>
                 <p className="text-xs text-gray-500 mb-4">Platform bank account used for compliance fee payments and payment reference generation.</p>
@@ -4332,18 +4333,19 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               </div>
+              </div>
             )}
             {/* Investor Tiers tab */}
-            {settingsTab === 'tiers' && (
-              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+            {activeTab === 'tiers' && (
+              <div className="bg-slate-800 rounded-b p-6 text-center text-slate-400 text-sm">Coming soon</div>
             )}
             {/* Operations tab */}
-            {settingsTab === 'operations' && (
-              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+            {activeTab === 'operations' && (
+              <div className="bg-slate-800 rounded-b p-6 text-center text-slate-400 text-sm">Coming soon</div>
             )}
             {/* Super Admin tab */}
-            {isSuperAdmin && settingsTab === 'superadmin' && (
-              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+            {JSON.parse(localStorage.getItem('user')||'{}')?.role === 'SUPER_ADMIN' && activeTab === 'superadmin' && (
+              <div className="bg-slate-800 rounded-b p-6 text-center text-slate-400 text-sm">Coming soon</div>
             )}
           </div>
         )}
