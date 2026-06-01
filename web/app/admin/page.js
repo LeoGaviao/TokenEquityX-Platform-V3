@@ -3336,12 +3336,6 @@ export default function AdminDashboard() {
                   { key: 'min_investment_usd',        label: 'Minimum Investment (USD)',     type: 'number', desc: 'Minimum investor subscription amount in USD.' },
                   { key: 'kyc_expiry_days',           label: 'KYC Expiry (days)',            type: 'number', desc: 'Number of days before KYC approval expires and must be renewed.' },
                   { key: 'max_offering_days',         label: 'Max Offering Duration (days)', type: 'number', desc: 'Maximum number of days a primary offering can remain open.' },
-                  { key: 'bank_name',           label: 'Bank Name',              type: 'text',   desc: 'Bank for compliance fee payments.' },
-                  { key: 'bank_account_name',   label: 'Account Name',           type: 'text',   desc: 'Account name for payments.' },
-                  { key: 'bank_account_number', label: 'Account Number',         type: 'text',   desc: 'Bank account number.' },
-                  { key: 'bank_branch',         label: 'Branch',                 type: 'text',   desc: 'Bank branch name.' },
-                  { key: 'bank_swift_code',     label: 'SWIFT Code',             type: 'text',   desc: 'SWIFT/BIC code for international payments.' },
-                  { key: 'bank_reference_prefix', label: 'Payment Ref Prefix',   type: 'text',   desc: 'Prefix for auto-generated payment references (e.g. TEXZ-APP).' },
                   { key: 'tier1_min_investment_usd',         label: 'Min Investment — Tier 1 Retail (USD)',       type: 'number', desc: 'Minimum subscription amount for retail investors.' },
                   { key: 'tier2_min_investment_usd',         label: 'Min Investment — Tier 2 Corporate (USD)',    type: 'number', desc: 'Minimum subscription amount for corporate investors.' },
                   { key: 'tier3_min_investment_usd',         label: 'Min Investment — Tier 3 Institution (USD)',  type: 'number', desc: 'Minimum subscription amount for institutional investors.' },
@@ -4303,7 +4297,41 @@ export default function AdminDashboard() {
             )}
             {/* Banking tab */}
             {settingsTab === 'banking' && (
-              <div className="py-8 text-center text-gray-500 text-sm">Coming soon</div>
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                <h3 className="font-bold text-sm mb-1">🏦 Banking Details</h3>
+                <p className="text-xs text-gray-500 mb-4">Platform bank account used for compliance fee payments and payment reference generation.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {[
+                    { key: 'bank_name',           label: 'Bank Name',           type: 'text', desc: 'Bank for compliance fee payments.' },
+                    { key: 'bank_account_name',   label: 'Account Name',        type: 'text', desc: 'Account name for payments.' },
+                    { key: 'bank_account_number', label: 'Account Number',      type: 'text', desc: 'Bank account number.' },
+                    { key: 'bank_branch',         label: 'Branch',              type: 'text', desc: 'Bank branch name.' },
+                    { key: 'bank_swift_code',     label: 'SWIFT Code',          type: 'text', desc: 'SWIFT/BIC code for international payments.' },
+                    { key: 'bank_reference_prefix', label: 'Payment Ref Prefix', type: 'text', desc: 'Prefix for auto-generated payment references (e.g. TEXZ-APP).' },
+                  ].map(({ key, label, type, desc }) => (
+                    <div key={key} className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+                      <label className="text-sm font-semibold text-white block mb-0.5">{label}</label>
+                      <p className="text-xs text-gray-500 mb-3">{desc}</p>
+                      <div className="flex gap-2">
+                        <input
+                          type={type}
+                          value={settings[key]?.value ?? ''}
+                          onChange={e => setSettings(s => ({ ...s, [key]: { ...(s[key]||{}), value: e.target.value } }))}
+                          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                        />
+                        <button
+                          onClick={() => handleSaveSetting(key, settings[key]?.value ?? '')}
+                          className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
+                          Save
+                        </button>
+                      </div>
+                      {settings[key]?.updated_at && (
+                        <p className="text-xs text-gray-600 mt-2">Last updated: {dt(settings[key].updated_at)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             {/* Investor Tiers tab */}
             {settingsTab === 'tiers' && (
