@@ -1,8 +1,10 @@
 const { createClient } = require('@supabase/supabase-js');
 
-// Primary: use environment variables (fast, no DB hit)
-// Fallback: credentials can be updated via platform settings
-const supabaseUrl = process.env.SUPABASE_URL || 'https://uainioygsgoorbwpksna.supabase.co';
+const supabaseUrl = process.env.SUPABASE_URL;
+if (!supabaseUrl) {
+  throw new Error('FATAL: SUPABASE_URL environment variable is not set.');
+}
+
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseKey) {
