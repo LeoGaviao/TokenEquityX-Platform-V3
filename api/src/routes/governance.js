@@ -150,6 +150,26 @@ router.post('/vote', authenticate, requireKYC, async (req, res) => {
   }
 });
 
+// GET /api/governance/my-votes — voting history for the current investor
+router.get('/my-votes', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.execute(`
+      SELECT v.id, v.choice, v.created_at AS voted_at,
+             p.title AS proposal_title, p.status AS proposal_status,
+             p.votes_for, p.votes_against, p.votes_abstain, p.end_time,
+             t.token_symbol
+      FROM votes v
+      JOIN proposals p ON p.id = v.proposal_id
+      JOIN tokens    t ON t.id = p.token_id
+      WHERE v.user_id = ?
+      ORDER BY v.created_at DESC
+    `, [req.user.userId]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not fetch voting history' });
+  }
+});
+
 // PUT /api/governance/proposals/:id/finalize — finalize after voting ends
 router.put('/proposals/:id/finalize', authenticate, async (req, res) => {
   try {
