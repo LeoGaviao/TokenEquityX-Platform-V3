@@ -168,7 +168,7 @@ cron.schedule('0 9 * * *', async () => {
     const [feeRows] = await db.execute(
       "SELECT value FROM platform_settings WHERE key = 'annual_spv_fee_usd'"
     );
-    const feeAmount = parseFloat(feeRows[0]?.value || 2500);
+    const feeAmount = parseFloat(feeRows[0]?.value || 5000);
 
     // Get all ACTIVE tokens with their listing dates
     const [tokens] = await db.execute(

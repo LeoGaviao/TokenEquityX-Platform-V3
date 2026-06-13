@@ -896,7 +896,7 @@ router.get('/migrate', async (req, res) => {
 
     // ── Annual SPV Fees ───────────────────────────────────────────────
     `INSERT INTO platform_settings (key, value, description) VALUES
-      ('annual_spv_fee_usd', '2500.00', 'Annual SPV maintenance fee per listed token (USD)')
+      ('annual_spv_fee_usd', '5000.00', 'Annual SPV maintenance fee per listed token (USD)')
     ON CONFLICT (key) DO NOTHING`,
     `CREATE TABLE IF NOT EXISTS spv_annual_fees (
       id              UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -904,7 +904,7 @@ router.get('/migrate', async (req, res) => {
       issuer_id       UUID,
       entity_name     VARCHAR(255),
       fee_period      VARCHAR(20)   NOT NULL,
-      amount_usd      NUMERIC(10,2) NOT NULL DEFAULT 2500.00,
+      amount_usd      NUMERIC(10,2) NOT NULL DEFAULT 5000.00,
       due_date        DATE          NOT NULL,
       status          VARCHAR(20)   NOT NULL DEFAULT 'DUE',
       paid_at         TIMESTAMP,
@@ -996,6 +996,16 @@ router.get('/migrate', async (req, res) => {
 
     // ── F-10: Reconciliation logs currency column ─────────────────────────
     `ALTER TABLE reconciliation_logs ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'USDC'`,
+
+    // ── Business config: annual SPV fee corrected to USD 5,000 ───────────
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES ('annual_spv_fee_usd', '5000.00', 'Annual SPV maintenance fee per listed token (USD)')
+     ON CONFLICT (key) DO UPDATE SET value = '5000.00'`,
+
+    // ── Regulatory: Investor Protection Levy rate ─────────────────────────
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES ('ipl_rate', '0.00025', 'Investor Protection Levy rate per side (SECZ regulatory — 0.025%)')
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
   ];
   const results = [];
   for (const sql of migrations) {
