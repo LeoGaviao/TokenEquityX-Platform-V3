@@ -52,6 +52,7 @@ async function matchOrders(tokenId, db) {
     const vatRate         = await getNumericSetting('vat_rate', 0.155);
     const cgtRate         = await getNumericSetting('cgt_rate', 0.20);
     const imttRate        = await getNumericSetting('imtt_rate', 0.02);
+    const iplRate         = await getNumericSetting('ipl_rate', 0.00025); // 0.025% per side — SECZ regulatory
 
     const trades = [];
 
@@ -88,7 +89,10 @@ async function matchOrders(tokenId, db) {
         const vatOnPlatformFee = parseFloat((platformFee * vatRate).toFixed(2));
         const totalFees        = parseFloat((platformFee + seczLevy + vatOnPlatformFee).toFixed(2));
         const imttAmount       = parseFloat((totalValue * imttRate).toFixed(2));
-        const buyerDebit       = parseFloat((totalValue + imttAmount).toFixed(2));
+        // Investor Protection Levy — 0.025% per side (SECZ regulatory requirement)
+        const buyerIPL         = parseFloat((totalValue * iplRate).toFixed(2));
+        const sellerIPL        = parseFloat((totalValue * iplRate).toFixed(2));
+        const buyerDebit       = parseFloat((totalValue + imttAmount + buyerIPL).toFixed(2));
         // CGT and sellerNet are computed after seller holdings load below
         let capitalGain = 0;
         let cgtAmount   = 0;
@@ -194,7 +198,7 @@ async function matchOrders(tokenId, db) {
         const sellerAvgCost = parseFloat(sellerHoldings[0].average_cost_usd || 0);
         capitalGain = Math.max(0, (tradePrice - sellerAvgCost) * fillQty);
         cgtAmount   = parseFloat((capitalGain * cgtRate).toFixed(2));
-        sellerNet   = parseFloat((totalValue - totalFees - cgtAmount).toFixed(2));
+        sellerNet   = parseFloat((totalValue - totalFees - cgtAmount - sellerIPL).toFixed(2));
 
         // ══ ATOMIC SETTLEMENT ══
         const conn = await db.getConnection();
@@ -236,8 +240,13 @@ async function matchOrders(tokenId, db) {
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(2)), newBuyerUSD, buy.id,
+            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(2)), parseFloat((buyerBalance - totalValue - imttAmount).toFixed(2)), buy.id,
                `IMTT 2% on $${totalValue.toFixed(2)} trade`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
+            `, [buy.user_id, -buyerIPL, parseFloat((buyerBalance - totalValue - imttAmount).toFixed(2)), newBuyerUSD, buy.id,
+               `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade`]);
           } else {
             const newBuyerUSDC = parseFloat((buyerBalance - buyerDebit).toFixed(8));
             await conn.execute(
@@ -252,8 +261,13 @@ async function matchOrders(tokenId, db) {
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(8)), newBuyerUSDC, buy.id,
+            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(8)), parseFloat((buyerBalance - totalValue - imttAmount).toFixed(8)), buy.id,
                `IMTT 2% on $${totalValue.toFixed(2)} trade [USDC]`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
+            `, [buy.user_id, -buyerIPL, parseFloat((buyerBalance - totalValue - imttAmount).toFixed(8)), newBuyerUSDC, buy.id,
+               `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade [USDC]`]);
           }
 
           // 3. Seller credit (in seller's settlement rail)
@@ -278,6 +292,12 @@ async function matchOrders(tokenId, db) {
               VALUES (uuid(), ?, 'CGT', ?, ?, ?, ?, ?)
             `, [sell.user_id, -cgtAmount, parseFloat((sellerBalance + totalValue).toFixed(2)), newSellerUSD, sell.id,
                `CGT 20% on $${capitalGain.toFixed(2)} capital gain`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
+            `, [sell.user_id, -sellerIPL, newSellerUSD, parseFloat((newSellerUSD - sellerIPL).toFixed(2)), sell.id,
+               `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade`]);
+            // Deduct IPL from seller balance (already reflected in sellerNet)
           } else {
             const newSellerUSDC = parseFloat((sellerBalance + sellerNet).toFixed(8));
             await conn.execute(
@@ -299,6 +319,11 @@ async function matchOrders(tokenId, db) {
               VALUES (uuid(), ?, 'CGT', ?, ?, ?, ?, ?)
             `, [sell.user_id, -cgtAmount, parseFloat((sellerBalance + totalValue).toFixed(8)), newSellerUSDC, sell.id,
                `CGT 20% on $${capitalGain.toFixed(2)} capital gain [USDC]`]);
+            await conn.execute(`
+              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+              VALUES (uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
+            `, [sell.user_id, -sellerIPL, newSellerUSDC, parseFloat((newSellerUSDC - sellerIPL).toFixed(8)), sell.id,
+               `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade [USDC]`]);
           }
 
           // 4. Treasury credit — IMTT in buyer's rail, fees+CGT in seller's rail
@@ -366,13 +391,13 @@ async function matchOrders(tokenId, db) {
             from_user_id:    buy.user_id,
             to_user_id:      sell.user_id,
             gross_amount:    totalValue,
-            fee_amount:      totalFees + cgtAmount + imttAmount,
+            fee_amount:      totalFees + cgtAmount + imttAmount + buyerIPL + sellerIPL,
             net_amount:      sellerNet,
             settlement_rail: buyerRail,
             reference:       `TRADE-${buy.id.slice(0,8)}-${sell.id.slice(0,8)}-${Date.now()}`,
             metadata:        buyerRail !== sellerRail
-              ? { cross_rail: true, buyer_rail: buyerRail, seller_rail: sellerRail }
-              : null,
+              ? { cross_rail: true, buyer_rail: buyerRail, seller_rail: sellerRail, buyer_ipl: buyerIPL, seller_ipl: sellerIPL }
+              : { buyer_ipl: buyerIPL, seller_ipl: sellerIPL },
           });
 
           await conn.commit();
@@ -386,7 +411,7 @@ async function matchOrders(tokenId, db) {
           const tradeData = {
             id: `trade-${Date.now()}`, quantity: fillQty, price: tradePrice,
             totalValue, platformFee, seczLevy, vatOnPlatformFee, totalFees,
-            imttAmount, cgtAmount, capitalGain, sellerNet,
+            imttAmount, cgtAmount, capitalGain, buyerIPL, sellerIPL, sellerNet,
             buyerRail, sellerRail,
             matchedAt: new Date().toISOString()
           };
