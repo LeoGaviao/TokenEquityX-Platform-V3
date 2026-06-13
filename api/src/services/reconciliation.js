@@ -1,5 +1,6 @@
 const db = require('../db/pool');
 const { sendMessage } = require('../utils/messenger');
+const { getSetting } = require('../utils/platformSettings');
 
 const TOLERANCE = 0.01;
 
@@ -95,30 +96,53 @@ async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
     // Alert admin on any CRITICAL status
     const overallStatus = [usdcStatus, usdStatus].includes('CRITICAL') ? 'CRITICAL' : 'OK';
     if (overallStatus === 'CRITICAL') {
+      const alertBody = [
+        'Critical discrepancy detected during reconciliation.',
+        '',
+        'USDC',
+        `  On-chain balance:  $${usdcOnChain.toFixed(2)}`,
+        `  Ledger total:      $${usdcLedgerTotal.toFixed(2)}`,
+        `  Variance:          $${Math.abs(usdcVariance).toFixed(2)}`,
+        '',
+        'USD',
+        `  Confirmed deposits:    $${usdDeposits.toFixed(2)}`,
+        `  Completed withdrawals: $${usdWithdrawals.toFixed(2)}`,
+        `  Expected balance:      $${usdExpected.toFixed(2)}`,
+        `  Actual ledger balance: $${usdActual.toFixed(2)}`,
+        `  Variance:              $${usdVariance.toFixed(2)} (threshold: $${usdThreshold.toFixed(2)})`,
+        '',
+        'Investigate immediately.',
+      ].join('\n');
+
+      // In-platform message to first admin
       const [adminRows] = await db.execute("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1");
       if (adminRows.length > 0) {
         await sendMessage({
           recipientId: adminRows[0].id,
           subject: '🚨 CRITICAL: Reconciliation Failure',
-          body: [
-            'Critical discrepancy detected during reconciliation.',
-            '',
-            `USDC`,
-            `  On-chain balance:  $${usdcOnChain.toFixed(2)}`,
-            `  Ledger total:      $${usdcLedgerTotal.toFixed(2)}`,
-            `  Variance:          $${Math.abs(usdcVariance).toFixed(2)}`,
-            '',
-            `USD`,
-            `  Confirmed deposits:    $${usdDeposits.toFixed(2)}`,
-            `  Completed withdrawals: $${usdWithdrawals.toFixed(2)}`,
-            `  Expected balance:      $${usdExpected.toFixed(2)}`,
-            `  Actual ledger balance: $${usdActual.toFixed(2)}`,
-            `  Variance:              $${usdVariance.toFixed(2)} (threshold: $${usdThreshold.toFixed(2)})`,
-            '',
-            'Investigate immediately.',
-          ].join('\n'),
+          body: alertBody,
           type: 'SYSTEM', category: 'WALLET',
         }).catch(() => {});
+      }
+
+      // Email alert — check platform_settings first, then env vars as fallback
+      const primaryEmail   = (await getSetting('reconciliation_email_primary'))   || process.env.RECONCILIATION_EMAIL_PRIMARY;
+      const secondaryEmail = (await getSetting('reconciliation_email_secondary'))  || process.env.RECONCILIATION_EMAIL_SECONDARY;
+      const emailRecipients = [primaryEmail, secondaryEmail].filter(Boolean);
+
+      if (emailRecipients.length > 0) {
+        try {
+          const { Resend } = require('resend');
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          for (const to of emailRecipients) {
+            await resend.emails.send({
+              from: process.env.SMTP_FROM || 'noreply@tokenequityx.co.zw',
+              to,
+              subject: '🚨 CRITICAL: TokenEquityX Reconciliation Failure',
+              text: alertBody,
+            }).catch(() => {});
+          }
+        } catch {}
       }
     }
 

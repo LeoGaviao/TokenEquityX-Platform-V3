@@ -3500,6 +3500,7 @@ export default function AdminDashboard() {
                       { key:'cgt_rate',                   label:'Capital Gains Tax Rate',      hint:'0.20 = 20%' },
                       { key:'imtt_rate',                  label:'IMTT Rate',                   hint:'0.02 = 2%' },
                       { key:'beneficial_owner_threshold', label:'Beneficial Owner Threshold',  hint:'0.10 = 10%' },
+                      { key:'ipl_rate',                   label:'Investor Protection Levy (per side)', hint:'0.00025 = 0.025% per side' },
                     ].map(s => (
                       <div key={s.key} className="space-y-1">
                         <label className="text-xs text-gray-400 block">{s.label}</label>
@@ -3587,7 +3588,88 @@ export default function AdminDashboard() {
             )}
             {/* Investor Tiers tab */}
             {activeTab === 'tiers' && (
-              <div className="bg-slate-800 rounded-b p-6 text-center text-slate-400 text-sm">Coming soon</div>
+              <div className="bg-slate-800 rounded-b p-6">
+                <div className="space-y-4">
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                    <h3 className="font-bold text-sm mb-1">🏅 Investor Tier Minimums</h3>
+                    <p className="text-xs text-gray-500 mb-5">Minimum investment amounts required for each investor tier. Applied at onboarding and subscription.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {[
+                        { key: 'tier1_min_investment_usd', label: 'Tier 1 — Retail Minimum (USD)',        desc: 'Minimum investment for retail investors.',       placeholder: '100',   badge: 'RETAIL' },
+                        { key: 'tier2_min_investment_usd', label: 'Tier 2 — Corporate Minimum (USD)',      desc: 'Minimum investment for corporate investors.',    placeholder: '500',   badge: 'CORPORATE' },
+                        { key: 'tier3_min_investment_usd', label: 'Tier 3 — Institutional Minimum (USD)', desc: 'Minimum investment for institutional investors.', placeholder: '10000', badge: 'INSTITUTIONAL' },
+                      ].map(({ key, label, desc, placeholder, badge }) => (
+                        <div key={key} className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300 font-semibold">{badge}</span>
+                          </div>
+                          <label className="text-sm font-semibold text-white block mt-2 mb-0.5">{label}</label>
+                          <p className="text-xs text-gray-500 mb-3">{desc}</p>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              value={settings[key]?.value ?? ''}
+                              onChange={e => setSettings(s => ({ ...s, [key]: { ...(s[key] || {}), value: e.target.value } }))}
+                              placeholder={placeholder}
+                              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                            />
+                            <button
+                              onClick={() => handleSaveSetting(key, settings[key]?.value ?? '')}
+                              className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                              Save
+                            </button>
+                          </div>
+                          {settings[key]?.updated_at && (
+                            <p className="text-xs text-gray-600 mt-2">Updated: {dt(settings[key].updated_at)}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                    <h3 className="font-bold text-sm mb-1">⏱ Premium Access Trial</h3>
+                    <p className="text-xs text-gray-500 mb-5">Control the platform-wide premium trial period and new-investor trial window.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+                        <label className="text-sm font-semibold text-white block mb-0.5">Premium Trial End Date</label>
+                        <p className="text-xs text-gray-500 mb-3">All investors receive full premium access until this date. After this, individual 30-day trials apply.</p>
+                        <div className="flex gap-2">
+                          <input
+                            type="date"
+                            value={settings['premium_trial_end_date']?.value ?? ''}
+                            onChange={e => setSettings(s => ({ ...s, premium_trial_end_date: { ...(s.premium_trial_end_date || {}), value: e.target.value } }))}
+                            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                          />
+                          <button
+                            onClick={() => handleSaveSetting('premium_trial_end_date', settings['premium_trial_end_date']?.value ?? '')}
+                            className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                      <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+                        <label className="text-sm font-semibold text-white block mb-0.5">New Investor Trial Period (days)</label>
+                        <p className="text-xs text-gray-500 mb-3">Number of days new investors get full premium access from their registration date.</p>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            value={settings['premium_trial_days_new_investors']?.value ?? ''}
+                            onChange={e => setSettings(s => ({ ...s, premium_trial_days_new_investors: { ...(s.premium_trial_days_new_investors || {}), value: e.target.value } }))}
+                            placeholder="e.g. 30"
+                            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                          />
+                          <button
+                            onClick={() => handleSaveSetting('premium_trial_days_new_investors', settings['premium_trial_days_new_investors']?.value ?? '')}
+                            className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
             {/* Operations tab */}
             {activeTab === 'operations' && (
@@ -4203,7 +4285,28 @@ export default function AdminDashboard() {
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mt-4 space-y-4">
             <div>
               <h3 className="font-bold text-sm">📋 Annual SPV Fees</h3>
-              <p className="text-xs text-gray-500 mt-0.5">USD 2,500 per listed SPV per annum. Generated automatically on each token's listing anniversary.</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                USD {settings['annual_spv_fee_usd']?.value ?? '5,000'} per listed SPV per annum. Generated automatically on each token&apos;s listing anniversary.
+              </p>
+            </div>
+            {/* Editable annual SPV fee setting */}
+            <div className="bg-gray-800/40 border border-gray-700 rounded-xl p-4">
+              <label className="text-sm font-semibold text-white block mb-0.5">Annual SPV Listing Fee (USD)</label>
+              <p className="text-xs text-gray-500 mb-3">Annual fee charged to each listed token/SPV. Changes take effect on the next billing cycle.</p>
+              <div className="flex gap-2 max-w-xs">
+                <input
+                  type="number"
+                  value={settings['annual_spv_fee_usd']?.value ?? ''}
+                  onChange={e => setSettings(s => ({ ...s, annual_spv_fee_usd: { ...(s.annual_spv_fee_usd || {}), value: e.target.value } }))}
+                  placeholder="e.g. 5000"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                />
+                <button
+                  onClick={() => handleSaveSetting('annual_spv_fee_usd', settings['annual_spv_fee_usd']?.value ?? '')}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
+                  Save
+                </button>
+              </div>
             </div>
             {spvFees.length === 0 ? (
               <p className="text-xs text-gray-500 text-center py-3">No annual SPV fees generated yet. Fees are created automatically on each token's listing anniversary.</p>
@@ -4242,6 +4345,66 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             )}
+          </div>
+
+          {/* ── Reconciliation Alert Emails ── */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mt-4 space-y-4">
+            <div>
+              <h3 className="font-bold text-sm">📧 Reconciliation Alert Emails</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Recipients for CRITICAL reconciliation alerts. Primary is required for the fix tool to operate.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { key: 'reconciliation_email_primary',   label: 'Primary Alert Email',   desc: 'Receives all reconciliation CRITICAL alerts. Required for the fix tool.' },
+                { key: 'reconciliation_email_secondary', label: 'Secondary Alert Email',  desc: 'Backup recipient for reconciliation alerts.' },
+              ].map(({ key, label, desc }) => (
+                <div key={key} className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+                  <label className="text-sm font-semibold text-white block mb-0.5">{label}</label>
+                  <p className="text-xs text-gray-500 mb-3">{desc}</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={settings[key]?.value ?? ''}
+                      onChange={e => setSettings(s => ({ ...s, [key]: { ...(s[key] || {}), value: e.target.value } }))}
+                      placeholder="email@tokenequityx.co.zw"
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                    />
+                    <button
+                      onClick={() => handleSaveSetting(key, settings[key]?.value ?? '')}
+                      className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                      Save
+                    </button>
+                  </div>
+                  {settings[key]?.updated_at && (
+                    <p className="text-xs text-gray-600 mt-2">Updated: {dt(settings[key].updated_at)}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Partner Settings ── */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mt-4">
+            <h3 className="font-bold text-sm mb-1">🤝 Partner Settings</h3>
+            <p className="text-xs text-gray-500 mb-4">Commission paid to referring partners on completed trades.</p>
+            <div className="max-w-xs">
+              <label className="text-sm font-semibold text-white block mb-0.5">Default Partner Commission Rate</label>
+              <p className="text-xs text-gray-500 mb-3">Commission paid to referring partners per trade. Default: 0.1% of trade value. Format: 0.001 = 0.1%</p>
+              <div className="flex gap-2">
+                <input
+                  type="number" step="0.0001"
+                  value={settings['partner_commission_rate']?.value ?? ''}
+                  onChange={e => setSettings(s => ({ ...s, partner_commission_rate: { ...(s.partner_commission_rate || {}), value: e.target.value } }))}
+                  placeholder="e.g. 0.001"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                />
+                <button
+                  onClick={() => handleSaveSetting('partner_commission_rate', settings['partner_commission_rate']?.value ?? '')}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600">
+                  Save
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* ── Staff Management ── */}
