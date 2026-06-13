@@ -11,7 +11,10 @@ const { authenticate } = require('../middleware/auth');
 const { requireRole } = require('../middleware/roles');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'tokenequityx_jwt_secret_2026';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('FATAL: JWT_SECRET environment variable is not set.');
+}
 
 // ── Helper ──────────────────────────────────────────────────────
 function makeToken(user) {

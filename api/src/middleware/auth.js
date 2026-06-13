@@ -2,16 +2,21 @@ const jwt    = require('jsonwebtoken');
 const db     = require('../db/pool');
 const logger = require('../utils/logger');
 
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error(
+    'FATAL: JWT_SECRET environment variable is not set. ' +
+    'The server cannot start without it.'
+  );
+}
+
 const authenticate = async (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
     return res.status(401).json({ error: 'No token provided' });
   }
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'dev-secret-change-in-production'
-    );
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     // Fetch fresh user data on every request
     const [users] = await db.execute(
@@ -35,10 +40,7 @@ const optionalAuth = async (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return next();
   try {
-    req.user = jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'dev-secret-change-in-production'
-    );
+    req.user = jwt.verify(token, JWT_SECRET);
   } catch {}
   next();
 };
