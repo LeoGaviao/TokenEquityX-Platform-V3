@@ -2,11 +2,12 @@
 // Email/password auth + MetaMask auth (both supported)
 // New: signup, role-select, onboarding, staff creation
 
-const express  = require('express');
-const bcrypt   = require('bcryptjs');
-const jwt      = require('jsonwebtoken');
+const express    = require('express');
+const bcrypt     = require('bcryptjs');
+const jwt        = require('jsonwebtoken');
+const rateLimit  = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
-const db       = require('../db/pool');
+const db         = require('../db/pool');
 const { authenticate } = require('../middleware/auth');
 const { requireRole } = require('../middleware/roles');
 
@@ -15,6 +16,32 @@ const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET environment variable is not set.');
 }
+
+// ── Per-route rate limiters ──────────────────────────────────────
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+});
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many accounts created from this IP. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const walletConnectLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many wallet connection attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ── Helper ──────────────────────────────────────────────────────
 function makeToken(user) {
@@ -28,7 +55,7 @@ function makeToken(user) {
 // ── POST /api/auth/signup ────────────────────────────────────────
 // Public signup: name + email + password
 // Role is set in the next step (role-select)
-router.post('/signup', async (req, res) => {
+router.post('/signup', signupLimiter, async (req, res) => {
   try {
     const { full_name, email, password } = req.body;
 
@@ -104,7 +131,7 @@ router.post('/signup', async (req, res) => {
 
 // ── POST /api/auth/login ─────────────────────────────────────────
 // Email/password login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
@@ -254,7 +281,7 @@ router.get('/me', authenticate, async (req, res) => {
 
 // ── POST /api/auth/connect-wallet ───────────────────────────────
 // Existing MetaMask users — keep working as before
-router.post('/connect-wallet', async (req, res) => {
+router.post('/connect-wallet', walletConnectLimiter, async (req, res) => {
   try {
     const { wallet, signature } = req.body;
     if (!wallet) return res.status(400).json({ error: 'Wallet address required' });
