@@ -3481,6 +3481,117 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          </div>}
+
+            {/* Tax & Fees tab */}
+            {activeTab === 'tax' && (
+              <div className="bg-slate-800 rounded-b p-6">
+              <div className="space-y-5">
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                  <h3 className="font-bold text-sm mb-1">💰 Tax & Fee Rates</h3>
+                  <p className="text-xs text-gray-500 mb-4">These rates are applied dynamically across all platform calculations. Changes take effect immediately.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { key:'platform_fee_rate',         label:'Platform Fee Rate',           hint:'0.0050 = 0.50%' },
+                      { key:'secz_levy_rate',             label:'SECZ Levy Rate',              hint:'0.0032 = 0.32%' },
+                      { key:'vat_rate',                   label:'VAT Rate',                    hint:'0.155 = 15.5%' },
+                      { key:'wht_resident_rate',          label:'WHT — Residents',             hint:'0.10 = 10%' },
+                      { key:'wht_non_resident_rate',      label:'WHT — Non-Residents',         hint:'0.15 = 15%' },
+                      { key:'cgt_rate',                   label:'Capital Gains Tax Rate',      hint:'0.20 = 20%' },
+                      { key:'imtt_rate',                  label:'IMTT Rate',                   hint:'0.02 = 2%' },
+                      { key:'beneficial_owner_threshold', label:'Beneficial Owner Threshold',  hint:'0.10 = 10%' },
+                    ].map(s => (
+                      <div key={s.key} className="space-y-1">
+                        <label className="text-xs text-gray-400 block">{s.label}</label>
+                        <p className="text-xs text-gray-600 mb-1">{s.hint}</p>
+                        <div className="flex gap-2">
+                          <input
+                            type="number" step="0.001"
+                            defaultValue={settings[s.key]?.value ?? ''}
+                            id={`tax-${s.key}`}
+                            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
+                          />
+                          <button onClick={() => {
+                            const val = document.getElementById(`tax-${s.key}`)?.value;
+                            if (val) handleSaveSetting(s.key, val);
+                          }} className="px-3 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold">
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                  <label className="text-sm font-semibold text-white block mb-0.5">Compliance Fee (USD)</label>
+                  <p className="text-xs text-gray-500 mb-3">Platform compliance fee charged per tokenisation application.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={settings['compliance_fee_usd']?.value ?? ''}
+                      onChange={e => setSettings(s => ({ ...s, compliance_fee_usd: { ...(s.compliance_fee_usd||{}), value: e.target.value } }))}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                    />
+                    <button
+                      onClick={() => handleSaveSetting('compliance_fee_usd', settings['compliance_fee_usd']?.value ?? '')}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
+                      Save
+                    </button>
+                  </div>
+                  {settings['compliance_fee_usd']?.updated_at && (
+                    <p className="text-xs text-gray-600 mt-2">Last updated: {dt(settings['compliance_fee_usd'].updated_at)}</p>
+                  )}
+                </div>
+              </div>
+              </div>
+            )}
+            {/* Banking tab */}
+            {activeTab === 'banking' && (
+              <div className="bg-slate-800 rounded-b p-6">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+                <h3 className="font-bold text-sm mb-1">🏦 Banking Details</h3>
+                <p className="text-xs text-gray-500 mb-4">Platform bank account used for compliance fee payments and payment reference generation.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {[
+                    { key: 'bank_name',           label: 'Bank Name',           type: 'text', desc: 'Bank for compliance fee payments.' },
+                    { key: 'bank_account_name',   label: 'Account Name',        type: 'text', desc: 'Account name for payments.' },
+                    { key: 'bank_account_number', label: 'Account Number',      type: 'text', desc: 'Bank account number.' },
+                    { key: 'bank_branch',         label: 'Branch',              type: 'text', desc: 'Bank branch name.' },
+                    { key: 'bank_swift_code',     label: 'SWIFT Code',          type: 'text', desc: 'SWIFT/BIC code for international payments.' },
+                    { key: 'bank_reference_prefix', label: 'Payment Ref Prefix', type: 'text', desc: 'Prefix for auto-generated payment references (e.g. TEXZ-APP).' },
+                  ].map(({ key, label, type, desc }) => (
+                    <div key={key} className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+                      <label className="text-sm font-semibold text-white block mb-0.5">{label}</label>
+                      <p className="text-xs text-gray-500 mb-3">{desc}</p>
+                      <div className="flex gap-2">
+                        <input
+                          type={type}
+                          value={settings[key]?.value ?? ''}
+                          onChange={e => setSettings(s => ({ ...s, [key]: { ...(s[key]||{}), value: e.target.value } }))}
+                          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                        />
+                        <button
+                          onClick={() => handleSaveSetting(key, settings[key]?.value ?? '')}
+                          className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
+                          Save
+                        </button>
+                      </div>
+                      {settings[key]?.updated_at && (
+                        <p className="text-xs text-gray-600 mt-2">Last updated: {dt(settings[key].updated_at)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              </div>
+            )}
+            {/* Investor Tiers tab */}
+            {activeTab === 'tiers' && (
+              <div className="bg-slate-800 rounded-b p-6 text-center text-slate-400 text-sm">Coming soon</div>
+            )}
+            {/* Operations tab */}
+            {activeTab === 'operations' && (
+              <div className="bg-slate-800 rounded-b p-6 space-y-4">
           {/* RECONCILIATION PANEL */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4 mt-4">
             <div className="flex items-center justify-between">
@@ -4231,117 +4342,7 @@ export default function AdminDashboard() {
             )}
           </div>
           </div>
-          </div>}
-
-            {/* Tax & Fees tab */}
-            {activeTab === 'tax' && (
-              <div className="bg-slate-800 rounded-b p-6">
-              <div className="space-y-5">
-                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-                  <h3 className="font-bold text-sm mb-1">💰 Tax & Fee Rates</h3>
-                  <p className="text-xs text-gray-500 mb-4">These rates are applied dynamically across all platform calculations. Changes take effect immediately.</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { key:'platform_fee_rate',         label:'Platform Fee Rate',           hint:'0.0050 = 0.50%' },
-                      { key:'secz_levy_rate',             label:'SECZ Levy Rate',              hint:'0.0032 = 0.32%' },
-                      { key:'vat_rate',                   label:'VAT Rate',                    hint:'0.155 = 15.5%' },
-                      { key:'wht_resident_rate',          label:'WHT — Residents',             hint:'0.10 = 10%' },
-                      { key:'wht_non_resident_rate',      label:'WHT — Non-Residents',         hint:'0.15 = 15%' },
-                      { key:'cgt_rate',                   label:'Capital Gains Tax Rate',      hint:'0.20 = 20%' },
-                      { key:'imtt_rate',                  label:'IMTT Rate',                   hint:'0.02 = 2%' },
-                      { key:'beneficial_owner_threshold', label:'Beneficial Owner Threshold',  hint:'0.10 = 10%' },
-                    ].map(s => (
-                      <div key={s.key} className="space-y-1">
-                        <label className="text-xs text-gray-400 block">{s.label}</label>
-                        <p className="text-xs text-gray-600 mb-1">{s.hint}</p>
-                        <div className="flex gap-2">
-                          <input
-                            type="number" step="0.001"
-                            defaultValue={settings[s.key]?.value ?? ''}
-                            id={`tax-${s.key}`}
-                            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
-                          />
-                          <button onClick={() => {
-                            const val = document.getElementById(`tax-${s.key}`)?.value;
-                            if (val) handleSaveSetting(s.key, val);
-                          }} className="px-3 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white font-semibold">
-                            Save
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                  <label className="text-sm font-semibold text-white block mb-0.5">Compliance Fee (USD)</label>
-                  <p className="text-xs text-gray-500 mb-3">Platform compliance fee charged per tokenisation application.</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      value={settings['compliance_fee_usd']?.value ?? ''}
-                      onChange={e => setSettings(s => ({ ...s, compliance_fee_usd: { ...(s.compliance_fee_usd||{}), value: e.target.value } }))}
-                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
-                    />
-                    <button
-                      onClick={() => handleSaveSetting('compliance_fee_usd', settings['compliance_fee_usd']?.value ?? '')}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
-                      Save
-                    </button>
-                  </div>
-                  {settings['compliance_fee_usd']?.updated_at && (
-                    <p className="text-xs text-gray-600 mt-2">Last updated: {dt(settings['compliance_fee_usd'].updated_at)}</p>
-                  )}
-                </div>
               </div>
-              </div>
-            )}
-            {/* Banking tab */}
-            {activeTab === 'banking' && (
-              <div className="bg-slate-800 rounded-b p-6">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-                <h3 className="font-bold text-sm mb-1">🏦 Banking Details</h3>
-                <p className="text-xs text-gray-500 mb-4">Platform bank account used for compliance fee payments and payment reference generation.</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {[
-                    { key: 'bank_name',           label: 'Bank Name',           type: 'text', desc: 'Bank for compliance fee payments.' },
-                    { key: 'bank_account_name',   label: 'Account Name',        type: 'text', desc: 'Account name for payments.' },
-                    { key: 'bank_account_number', label: 'Account Number',      type: 'text', desc: 'Bank account number.' },
-                    { key: 'bank_branch',         label: 'Branch',              type: 'text', desc: 'Bank branch name.' },
-                    { key: 'bank_swift_code',     label: 'SWIFT Code',          type: 'text', desc: 'SWIFT/BIC code for international payments.' },
-                    { key: 'bank_reference_prefix', label: 'Payment Ref Prefix', type: 'text', desc: 'Prefix for auto-generated payment references (e.g. TEXZ-APP).' },
-                  ].map(({ key, label, type, desc }) => (
-                    <div key={key} className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
-                      <label className="text-sm font-semibold text-white block mb-0.5">{label}</label>
-                      <p className="text-xs text-gray-500 mb-3">{desc}</p>
-                      <div className="flex gap-2">
-                        <input
-                          type={type}
-                          value={settings[key]?.value ?? ''}
-                          onChange={e => setSettings(s => ({ ...s, [key]: { ...(s[key]||{}), value: e.target.value } }))}
-                          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
-                        />
-                        <button
-                          onClick={() => handleSaveSetting(key, settings[key]?.value ?? '')}
-                          className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
-                          Save
-                        </button>
-                      </div>
-                      {settings[key]?.updated_at && (
-                        <p className="text-xs text-gray-600 mt-2">Last updated: {dt(settings[key].updated_at)}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              </div>
-            )}
-            {/* Investor Tiers tab */}
-            {activeTab === 'tiers' && (
-              <div className="bg-slate-800 rounded-b p-6 text-center text-slate-400 text-sm">Coming soon</div>
-            )}
-            {/* Operations tab */}
-            {activeTab === 'operations' && (
-              <div className="bg-slate-800 rounded-b p-6 text-center text-slate-400 text-sm">Coming soon</div>
             )}
             {/* Super Admin tab */}
             {JSON.parse(localStorage.getItem('user')||'{}')?.role === 'SUPER_ADMIN' && activeTab === 'superadmin' && (
