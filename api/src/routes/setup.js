@@ -1,3 +1,10 @@
+/*
+ * DEVELOPMENT ONLY — NOT MOUNTED IN PRODUCTION
+ * This file is intentionally not imported in app.js.
+ * To use locally: temporarily uncomment the mount in
+ * app.js. Never commit that change to main branch.
+ */
+
 // api/src/routes/setup.js
 // One-time database setup endpoint
 // Hit GET /api/setup/init?secret=tokenequityx-setup-2024 to create all tables

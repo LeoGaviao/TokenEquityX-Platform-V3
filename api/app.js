@@ -69,7 +69,9 @@ app.use('/api/auditor',    require('./src/routes/auditor'));
 app.use('/api/admin',      require('./src/routes/admin'));
 app.use('/api/pipeline',   require('./src/routes/pipeline'));
 app.use('/api/submissions', require('./src/routes/submissions'));
-app.use('/api/setup',      require('./src/routes/setup'));
+// SETUP ROUTES REMOVED — DO NOT RE-ENABLE IN PRODUCTION
+// See api/src/routes/setup.js — kept for local dev only
+// app.use('/api/setup',      require('./src/routes/setup'));
 app.use('/api/investor',   require('./src/routes/investor'));
 
 app.use('/api/bourse', require('./src/routes/bourse'));
