@@ -6,6 +6,7 @@ const { requireRole }  = require('../middleware/roles');
 const upload           = require('../middleware/upload');
 const { v4: uuidv4 }   = require('uuid');
 const { sendMessage }  = require('../utils/messenger');
+const blockchain       = require('../blockchain');
 
 // POST /api/kyc/submit — investor submits KYC
 router.post('/submit', authenticate, upload.any(), async (req, res) => {
@@ -335,9 +336,14 @@ router.put('/approve/:kycId',
 
       await conn.commit();
 
-      const [userRows] = await db.execute('SELECT email, full_name, role FROM users WHERE id = ?', [records[0].user_id]);
+      const [userRows] = await db.execute('SELECT email, full_name, wallet_address, role FROM users WHERE id = ?', [records[0].user_id]);
       const approvedUser = userRows[0];
       const userRole = approvedUser?.role || 'INVESTOR';
+
+      if (approvedUser?.wallet_address) {
+        blockchain.approveKYCOnChain(approvedUser.wallet_address)
+          .catch(e => console.error('[BLOCKCHAIN] approveKYCOnChain skipped:', e.message));
+      }
 
       const platformMessages = {
         INVESTOR:        'Your KYC has been approved. You can now deposit funds and start investing.',
@@ -436,9 +442,14 @@ router.put('/reject/:kycId',
 
       await conn.commit();
 
-      const [rejectedUserRows] = await db.execute('SELECT email, full_name, role FROM users WHERE id = ?', [records[0].user_id]);
+      const [rejectedUserRows] = await db.execute('SELECT email, full_name, wallet_address, role FROM users WHERE id = ?', [records[0].user_id]);
       const rejectedUser = rejectedUserRows[0];
       const userRole = rejectedUser?.role || 'INVESTOR';
+
+      if (rejectedUser?.wallet_address) {
+        blockchain.revokeKYCOnChain(rejectedUser.wallet_address)
+          .catch(e => console.error('[BLOCKCHAIN] revokeKYCOnChain skipped:', e.message));
+      }
 
       const portalDashboard = {
         INVESTOR:        'investor dashboard',

@@ -5,7 +5,8 @@ const { requireRole }  = require('../middleware/roles');
 const { v4: uuidv4 }   = require('uuid');
 const { calculateValuation } = require('../services/valuation');
 const { generateDataHash }   = require('../services/dataHash');
-const mailer = require('../utils/mailer');
+const mailer      = require('../utils/mailer');
+const blockchain  = require('../blockchain');
 
 // GET /api/auditor/queue
 router.get('/queue',
@@ -112,6 +113,8 @@ router.put('/data-submissions/:id/approve',
           UPDATE tokens SET oracle_price = ?, current_price_usd = ?, updated_at = NOW()
           WHERE id = ?
         `, [pricePerToken.toFixed(6), pricePerToken.toFixed(6), sub.token_id]);
+        blockchain.updatePriceOnChain(sub.token_symbol, pricePerToken)
+          .catch(e => console.error('[BLOCKCHAIN] updatePriceOnChain skipped:', e.message));
 
         // 6. Record in oracle_prices with data hash
         try {

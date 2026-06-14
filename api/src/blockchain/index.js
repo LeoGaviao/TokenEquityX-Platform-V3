@@ -20,27 +20,22 @@ function isDeployed() {
 // ── High-level KYC helpers used by API routes ─────────────────────────────────
 async function approveKYCOnChain(walletAddress) {
   const kyc = contracts.kycManager(true);
-  const tx  = await kyc.setKYCStatus(walletAddress, true);
+  // approveKYC calls complianceRegistry.approveWallet internally — one tx is enough
+  const tx = await kyc.approveKYC(walletAddress, 'RETAIL', 'ZW', 365);
   await tx.wait();
-  const registry = contracts.complianceRegistry(true);
-  const tx2 = await registry.whitelist(walletAddress);
-  await tx2.wait();
-  return { txHash: tx.hash, txHash2: tx2.hash };
+  return { txHash: tx.hash };
 }
 
 async function revokeKYCOnChain(walletAddress) {
-  const kyc  = contracts.kycManager(true);
-  const tx   = await kyc.setKYCStatus(walletAddress, false);
+  const kyc = contracts.kycManager(true);
+  const tx  = await kyc.revokeKYC(walletAddress, 'Compliance revocation');
   await tx.wait();
-  const registry = contracts.complianceRegistry(true);
-  const tx2  = await registry.blacklist(walletAddress);
-  await tx2.wait();
-  return { txHash: tx.hash, txHash2: tx2.hash };
+  return { txHash: tx.hash };
 }
 
 async function isKYCApprovedOnChain(walletAddress) {
   const kyc = contracts.kycManager();
-  return kyc.isKYCApproved(walletAddress);
+  return kyc.isKYCValid(walletAddress);
 }
 
 // ── High-level oracle helper ───────────────────────────────────────────────────

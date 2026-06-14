@@ -3,6 +3,7 @@ const db     = require('../db/pool');
 const { authenticate } = require('../middleware/auth');
 const { requireRole }  = require('../middleware/roles');
 const { sendMessage }  = require('../utils/messenger');
+const blockchain       = require('../blockchain');
 
 // GET /api/entity-kyc/my — get current issuer's entity KYC
 router.get('/my', authenticate, async (req, res) => {
@@ -138,7 +139,11 @@ router.put('/:id/approve', authenticate, requireRole('ADMIN','COMPLIANCE_OFFICER
     // FIX 2.4 — send external email confirming KYC approval
     try {
       const { notifyIssuerEntityKycApproved } = require('../utils/mailer');
-      const [kycApproveRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [kyc.user_id]);
+      const [kycApproveRows] = await db.execute('SELECT email, full_name, wallet_address FROM users WHERE id = ?', [kyc.user_id]);
+      if (kycApproveRows[0]?.wallet_address) {
+        blockchain.approveKYCOnChain(kycApproveRows[0].wallet_address)
+          .catch(e => console.error('[BLOCKCHAIN] entity approveKYCOnChain skipped:', e.message));
+      }
       if (kycApproveRows[0]?.email) {
         notifyIssuerEntityKycApproved({
           issuerEmail:        kycApproveRows[0].email,
@@ -184,7 +189,11 @@ router.put('/:id/reject', authenticate, requireRole('ADMIN','COMPLIANCE_OFFICER'
     // FIX 2.5 — send external email confirming KYC rejection with reason
     try {
       const { notifyIssuerEntityKycRejected } = require('../utils/mailer');
-      const [kycRejectRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [kyc.user_id]);
+      const [kycRejectRows] = await db.execute('SELECT email, full_name, wallet_address FROM users WHERE id = ?', [kyc.user_id]);
+      if (kycRejectRows[0]?.wallet_address) {
+        blockchain.revokeKYCOnChain(kycRejectRows[0].wallet_address)
+          .catch(e => console.error('[BLOCKCHAIN] entity revokeKYCOnChain skipped:', e.message));
+      }
       if (kycRejectRows[0]?.email) {
         notifyIssuerEntityKycRejected({
           issuerEmail: kycRejectRows[0].email,

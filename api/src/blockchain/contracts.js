@@ -7,18 +7,22 @@ const { getProvider, getSigner } = require('./config');
 
 const ABI = {
   ComplianceRegistry: [
-    'function isWhitelisted(address investor) view returns (bool)',
-    'function whitelist(address investor)',
-    'function blacklist(address investor)',
-    'event Whitelisted(address indexed investor)',
-    'event Blacklisted(address indexed investor)',
+    'function isApproved(address wallet) view returns (bool)',
+    'function approveWallet(address wallet)',
+    'function revokeWallet(address wallet)',
+    'function approvedAt(address wallet) view returns (uint256)',
+    'event WalletApproved(address indexed wallet, uint256 timestamp)',
+    'event WalletRevoked(address indexed wallet, uint256 timestamp)',
   ],
   KYCManager: [
-    'function isKYCApproved(address investor) view returns (bool)',
-    'function setKYCStatus(address investor, bool approved)',
-    'function getKYCExpiry(address investor) view returns (uint256)',
-    'event KYCApproved(address indexed investor)',
-    'event KYCRevoked(address indexed investor)',
+    'function approveKYC(address wallet, string calldata investorType, string calldata jurisdiction, uint256 validityDays)',
+    'function revokeKYC(address wallet, string calldata reason)',
+    'function rejectKYC(address wallet)',
+    'function isKYCValid(address wallet) view returns (bool)',
+    'function getKYCRecord(address wallet) view returns (tuple(uint8 status, string investorType, uint256 approvedAt, uint256 expiresAt, string jurisdiction))',
+    'event KYCApproved(address indexed wallet, string investorType, uint256 expiresAt)',
+    'event KYCRevoked(address indexed wallet, string reason)',
+    'event KYCRejected(address indexed wallet)',
   ],
   ValuationOracle: [
     'function setPrice(bytes32 tokenSymbol, uint256 priceUSD6) returns (bool)',

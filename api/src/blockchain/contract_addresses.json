@@ -16,5 +16,10 @@
     "AuditLog": "0x349BA6097BCc5D8c76490d99A3840d730aEb978C",
     "AssetTokenImplementation": "0xbc2139f07D7D677fdC10474d335d8870B8725907",
     "PlatformAdmin": "0xa5Dd151bb1E5794C6f3F0811cb237973257079a0"
+  },
+  "config": {
+    "seczTreasury": "0x95A6F1E8E066800A4fA79990b658a90163448f5d",
+    "platformTreasury": "0x95A6F1E8E066800A4fA79990b658a90163448f5d",
+    "treasuryUpdatedAt": "2026-06-14T14:30:00.000Z"
   }
 }
