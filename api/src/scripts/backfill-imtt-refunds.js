@@ -2,12 +2,19 @@
  * One-time backfill: refund IMTT for rejected withdrawals that were processed
  * before the rejection handler was fixed to return the tax.
  *
- * Safe to run multiple times — skips any withdrawal that already has a REFUND
- * transaction with the same reference_id.
+ * Safe to run multiple times — duplicate detection filters specifically on
+ * description LIKE 'IMTT refund%' so generic REFUND rows from other flows
+ * never cause a skip.
  *
  * Usage:
  *   node api/src/scripts/backfill-imtt-refunds.js          # dry-run (shows what would change)
  *   node api/src/scripts/backfill-imtt-refunds.js --apply  # apply the changes
+ *
+ * Production checklist:
+ *   1. Confirm DB_URL/DATABASE_URL env is pointing at production.
+ *   2. Run without --apply first — review every withdrawal listed.
+ *   3. Add --apply only when satisfied with the dry-run output.
+ *   4. Re-run without --apply after to confirm output is "Nothing to do."
  */
 
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
@@ -38,6 +45,7 @@ async function main() {
     LEFT JOIN wallet_transactions refund
       ON refund.reference_id = wr.id
      AND refund.type = 'REFUND'
+     AND refund.description LIKE 'IMTT refund%'
     LEFT JOIN users u ON u.id = wr.user_id
     WHERE wr.status = 'REJECTED'
       AND refund.id IS NULL

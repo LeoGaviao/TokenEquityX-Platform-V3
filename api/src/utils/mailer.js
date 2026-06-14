@@ -1050,6 +1050,50 @@ async function sendReconciliationEmail({ fixId, reason, changes, totalAmount, fi
   return results;
 }
 
+async function sendEscalationNotification({ submissionId, tokenSymbol, pricePerToken, issuerValuation, variance, reason }) {
+  const resend = getResend();
+  if (!resend) return;
+  const html = baseTemplate('⚠️ Valuation Escalation — SECZ Review Required', `
+    <p>A data submission has been automatically escalated due to a valuation variance exceeding 30%.</p>
+    <div class="detail-row"><span>Token</span><span>${tokenSymbol}</span></div>
+    <div class="detail-row"><span>Submission ID</span><span>${submissionId}</span></div>
+    <div class="detail-row"><span>Auditor Price</span><span class="warning">$${Number(pricePerToken).toFixed(4)}</span></div>
+    <div class="detail-row"><span>Issuer Valuation</span><span>$${Number(issuerValuation).toFixed(4)}</span></div>
+    <div class="detail-row"><span>Variance</span><span class="danger">${(Number(variance) * 100).toFixed(1)}%</span></div>
+    <p style="margin-top:16px;font-size:13px;color:#6b7280;">${reason}</p>
+    <p>Log in to the admin panel to override or request resubmission from the issuer.</p>
+    <a href="${PLATFORM}/admin" class="btn btn-gold">Review in Admin Panel →</a>
+  `);
+  return resend.emails.send({
+    from:    FROM,
+    to:      [ADMIN],
+    subject: `[SECZ] Valuation Escalation — ${tokenSymbol} (${(Number(variance) * 100).toFixed(1)}% variance)`,
+    html,
+  });
+}
+
+async function sendIntegrityCheckAlert(report) {
+  const resend = getResend();
+  if (!resend) return;
+  const issues = report.checks.filter(c => c.status !== 'OK');
+  const rows = issues.map(c =>
+    `<div class="detail-row"><span>${c.label}</span><span class="${c.status === 'FAIL' ? 'danger' : 'warning'}">${c.status}${c.count > 0 ? ` (${c.count})` : ''}</span></div>`
+  ).join('');
+  const html = baseTemplate('⚠️ Platform Integrity Alert', `
+    <p>The weekly integrity check found <strong>${issues.length} issue(s)</strong> requiring attention.</p>
+    <div class="detail-row"><span>Overall Status</span><span class="${report.overallStatus === 'FAIL' ? 'danger' : 'warning'}">${report.overallStatus}</span></div>
+    <div class="detail-row"><span>Checks run</span><span>${report.summary.total}</span></div>
+    ${rows}
+    <a href="${PLATFORM}/admin" class="btn" style="margin-top:20px">Review in Admin Panel →</a>
+  `);
+  return resend.emails.send({
+    from:    FROM,
+    to:      [ADMIN],
+    subject: `[Platform] Integrity check — ${report.overallStatus} (${issues.length} issue${issues.length !== 1 ? 's' : ''})`,
+    html,
+  });
+}
+
 module.exports = {
   send,
   sendReconciliationEmail,
@@ -1105,4 +1149,6 @@ module.exports = {
   notifyAdminAuditorDeclarationSubmitted,
   notifyAuditorDeclarationApproved,
   notifyAuditorDeclarationRejected,
+  sendEscalationNotification,
+  sendIntegrityCheckAlert,
 };

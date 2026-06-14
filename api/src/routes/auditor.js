@@ -105,6 +105,27 @@ router.put('/data-submissions/:id/approve',
         const equityValue   = blendedEV - totalDebt + cash;
         const pricePerToken = Math.max(totalSupply > 0 ? equityValue / totalSupply : 1.00, 1.00);
 
+        // 3b. 30% variance escalation — auto-pause if auditor price deviates > 30% from issuer valuation
+        const issuerValuation = Number(dataObj.valuationResult || dataObj.estimated_value || 0);
+        if (issuerValuation > 0) {
+          const variance = Math.abs(pricePerToken - issuerValuation) / issuerValuation;
+          if (variance > 0.30) {
+            const reason = `Auditor price $${pricePerToken.toFixed(2)} differs ${(variance * 100).toFixed(1)}% from issuer valuation $${issuerValuation.toFixed(2)} — exceeds 30% threshold`;
+            await db.execute(
+              `UPDATE data_submissions SET application_status = 'ESCALATED', escalation_reason = ?, escalated_at = NOW() WHERE id = ?`,
+              [reason, req.params.id]
+            );
+            mailer.sendEscalationNotification({
+              submissionId: req.params.id, tokenSymbol: sub.token_symbol,
+              pricePerToken, issuerValuation, variance, reason, auditorId: req.user.userId,
+            }).catch(e => console.error('[MAILER] escalation notification skipped:', e.message));
+            return res.status(200).json({
+              success: true, escalated: true, escalationReason: reason,
+              pricePerToken: pricePerToken.toFixed(6),
+            });
+          }
+        }
+
         // 4. Generate data hash for on-chain proof
         const dataHash = generateDataHash(dataObj);
 
@@ -401,6 +422,109 @@ router.put('/declarations/:id/reject',
       }).catch(e => console.error('[MAILER] declaration rejected failed:', e.message));
 
       res.json({ success: true, message: 'Declaration rejected. Auditor must resubmit.' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// PUT /api/auditor/data-submissions/:id/override-escalation
+// Admin overrides a 30% variance escalation and forces oracle price update.
+router.put('/data-submissions/:id/override-escalation',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute(`
+        SELECT ds.*, COALESCE(t.token_symbol, t.symbol) as token_symbol, t.asset_class, t.asset_type,
+               t.total_supply, t.id as token_id, t.sector
+        FROM data_submissions ds
+        JOIN tokens t ON t.id = ds.token_id
+        WHERE ds.id = ? AND ds.application_status = 'ESCALATED'
+      `, [req.params.id]);
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'Escalated submission not found' });
+      }
+
+      const sub = rows[0];
+      let dataObj = {};
+      try { dataObj = typeof sub.data_json === 'string' ? JSON.parse(sub.data_json) : (sub.data_json || {}); } catch {}
+
+      const assetType   = sub.asset_type || sub.asset_class || 'EQUITY';
+      const totalSupply = Number(sub.total_supply) || 1000000;
+
+      const valuationData = {
+        ...dataObj,
+        sector:       sub.sector || dataObj.sector || 'DEFAULT',
+        growthRate:   (Number(dataObj.growthRatePct)   || 15) / 100,
+        discountRate: (Number(dataObj.discountRatePct) || 12) / 100,
+        freeCashFlow: Number(dataObj.freeCashFlow) || (Number(dataObj.revenueTTM) * 0.15) || 0,
+      };
+
+      const { calculateValuation } = require('../services/valuation');
+      const { generateDataHash }   = require('../services/dataHash');
+
+      const result        = calculateValuation(assetType, valuationData);
+      const blendedEV     = result.blended || 0;
+      const equityValue   = blendedEV - (Number(dataObj.totalDebt) || 0) + (Number(dataObj.cash) || 0);
+      const pricePerToken = Math.max(totalSupply > 0 ? equityValue / totalSupply : 1.00, 1.00);
+      const dataHash      = generateDataHash(dataObj);
+
+      await db.execute(
+        `UPDATE data_submissions SET application_status = 'OVERRIDE_APPROVED', escalation_reason = NULL, escalated_at = NULL, updated_at = NOW() WHERE id = ?`,
+        [req.params.id]
+      );
+      await db.execute(
+        `UPDATE tokens SET oracle_price = ?, current_price_usd = ?, updated_at = NOW() WHERE id = ?`,
+        [pricePerToken.toFixed(6), pricePerToken.toFixed(6), sub.token_id]
+      );
+      blockchain.updatePriceOnChain(sub.token_symbol, pricePerToken)
+        .catch(e => console.error('[BLOCKCHAIN] updatePriceOnChain skipped:', e.message));
+
+      try {
+        await db.execute(
+          `INSERT INTO oracle_prices (token_symbol, price, data_hash, set_by, source, status) VALUES (?, ?, ?, ?, 'OVERRIDE_APPROVED', 'APPROVED')`,
+          [sub.token_symbol, pricePerToken.toFixed(6), dataHash, req.user.userId]
+        );
+      } catch {}
+      try {
+        await db.execute(
+          `INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES ('ESCALATION_OVERRIDE', ?, ?, ?)`,
+          [req.user.userId, sub.token_symbol, `Admin overrode 30% variance escalation. Price: $${pricePerToken.toFixed(4)}`]
+        );
+      } catch {}
+
+      res.json({ success: true, pricePerToken: pricePerToken.toFixed(6) });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// PUT /api/auditor/data-submissions/:id/request-resubmission
+// Admin sends an escalated submission back to the issuer for correction.
+router.put('/data-submissions/:id/request-resubmission',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    const { reason } = req.body;
+    if (!reason || reason.trim().length < 5) {
+      return res.status(400).json({ error: 'reason is required (min 5 characters)' });
+    }
+    try {
+      await db.execute(
+        `UPDATE data_submissions SET status = 'PENDING', application_status = 'RESUBMISSION_REQUESTED',
+         escalation_reason = ?, escalated_at = NULL, updated_at = NOW() WHERE id = ? AND application_status = 'ESCALATED'`,
+        [reason.trim(), req.params.id]
+      );
+      try {
+        await db.execute(
+          `INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES ('RESUBMISSION_REQUESTED', ?, ?, ?)`,
+          [req.user.userId, req.params.id, `Resubmission requested: ${reason.trim()}`]
+        );
+      } catch {}
+      res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

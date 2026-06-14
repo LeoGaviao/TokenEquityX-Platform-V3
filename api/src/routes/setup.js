@@ -723,6 +723,8 @@ router.get('/migrate', async (req, res) => {
     `ALTER TABLE tokens ADD COLUMN IF NOT EXISTS sector VARCHAR(100)`,
     `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS auditor_status VARCHAR(20) DEFAULT 'PENDING'`,
     `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS auditor_declined_reason TEXT`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS escalation_reason TEXT`,
+    `ALTER TABLE data_submissions ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`,
     `CREATE TABLE IF NOT EXISTS entity_kyc (
       id                    UUID          NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id               UUID          NOT NULL,

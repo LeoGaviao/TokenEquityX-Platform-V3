@@ -266,6 +266,22 @@ cron.schedule('30 9 * * *', async () => {
     console.error('[CRON] KYC expiry check failed:', err.message);
   }
 });
+// Weekly platform integrity check — Sunday at 06:00
+cron.schedule('0 6 * * 0', async () => {
+  console.log('[CRON] Running weekly platform integrity check...');
+  try {
+    const { runIntegrityChecks }    = require('./src/services/integrityCheck');
+    const { sendIntegrityCheckAlert } = require('./src/utils/mailer');
+    const report = await runIntegrityChecks();
+    console.log(`[CRON] Integrity check: ${report.overallStatus} — ${report.summary.fail} fail, ${report.summary.warn} warn`);
+    if (report.overallStatus !== 'OK') {
+      sendIntegrityCheckAlert(report)
+        .catch(e => console.error('[CRON] sendIntegrityCheckAlert failed:', e.message));
+    }
+  } catch (err) {
+    console.error('[CRON] Integrity check failed:', err.message);
+  }
+});
 } // end require.main === module (cron block)
 
 // ─── 404 HANDLER ──────────────────────────────────────────────────

@@ -1559,6 +1559,8 @@ export default function AdminDashboard() {
   const [adjReversalReason,  setAdjReversalReason]  = useState('');
   const [adjReversalChecked, setAdjReversalChecked] = useState(false);
   const [adjReversalResult,  setAdjReversalResult]  = useState(null);
+  const [integrityReport,    setIntegrityReport]    = useState(null);
+  const [integrityLoading,   setIntegrityLoading]   = useState(false);
   const [spvFees, setSpvFees] = useState([]);
   const [staffList,    setStaffList]    = useState([]);
   const [staffLoading, setStaffLoading] = useState(false);
@@ -1784,7 +1786,7 @@ export default function AdminDashboard() {
             live:     false,
           },
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:'Pending assignment',
-          reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,
+          reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,escalation_reason:s.escalation_reason||null,
           audit_report:s.audit_report?(typeof s.audit_report==='string'?JSON.parse(s.audit_report):s.audit_report):null,
           contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
           docs:(() => { try { const d = typeof s.data_json === 'string' ? JSON.parse(s.data_json) : (s.data_json||{}); const docsObj = d.documents||{}; return Object.entries(docsObj).map(([key,doc])=>({name:doc.name||key,url:doc.url||null,size:doc.size||0,status:'uploaded',key})); } catch { return Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})); }})(),
@@ -1800,7 +1802,7 @@ export default function AdminDashboard() {
           id:s.id,name:`${s.token_symbol} — ${s.entity_name||s.token_symbol}`,symbol:s.token_symbol,asset_class:'Financial Data',
           stages:{spv:true,kyc:true,docs:true,auditor:!!s.assigned_auditor,contract:false,secz:false,offering:false,live:false},
           amount_target:0,amount_raised:0,submitted:s.created_at,analyst:s.assigned_auditor||'Pending assignment',
-          reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,
+          reference:s.reference_number,status:s.status,application_status:s.application_status||'PENDING_REVIEW',fee_status:s.fee_status||'NOT_REQUIRED',assigned_auditor:s.assigned_auditor||null,escalation_reason:s.escalation_reason||null,
           contacts:[{name:'Submitted via platform',role:'Issuer',email:'',phone:''}],
           docs:(() => { try { const d = typeof s.data_json === 'string' ? JSON.parse(s.data_json) : (s.data_json||{}); return (d.documents||[]).map(doc=>({name:doc.name||'Document',url:doc.url||null,size:doc.size||0,status:'uploaded'})); } catch { return Array.from({length:s.document_count||0},(_,i)=>({name:`Document ${i+1}`,status:'uploaded'})); }})(),
           auditor:s.assigned_auditor||'Pending assignment',partner:'None',
@@ -2290,6 +2292,35 @@ export default function AdminDashboard() {
                               {item.application_status === 'REJECTED' && (
                                 <div className="bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2 mb-2">
                                   <p className="text-red-300 text-xs font-bold">❌ Application Rejected</p>
+                                </div>
+                              )}
+                              {item.application_status === 'ESCALATED' && (
+                                <div className="bg-amber-900/20 border border-amber-600/50 rounded-lg px-3 py-2 mb-2 space-y-2">
+                                  <p className="text-amber-300 text-xs font-bold">⚠️ Valuation Escalated — SECZ Review Required</p>
+                                  {item.escalation_reason && <p className="text-gray-400 text-xs">{item.escalation_reason}</p>}
+                                  <div className="flex gap-2">
+                                    <button onClick={async () => {
+                                      if (!window.confirm('Override escalation and force-approve this auditor price?')) return;
+                                      const t = localStorage.getItem('token');
+                                      const r = await fetch(`${API}/auditor/data-submissions/${item.id}/override-escalation`, { method: 'PUT', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } });
+                                      const d = await r.json();
+                                      if (r.ok) { notify('success', `Price $${d.pricePerToken} approved — oracle updated.`); setPipeline(p => p.map(i => i.id === item.id ? { ...i, application_status: 'OVERRIDE_APPROVED' } : i)); }
+                                      else notify('error', d.error || 'Override failed');
+                                    }} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-amber-700 hover:bg-amber-600 text-white">
+                                      ✅ Override &amp; Approve
+                                    </button>
+                                    <button onClick={async () => {
+                                      const reason = window.prompt('Reason for requesting resubmission:');
+                                      if (!reason || reason.trim().length < 5) return;
+                                      const t = localStorage.getItem('token');
+                                      const r = await fetch(`${API}/auditor/data-submissions/${item.id}/request-resubmission`, { method: 'PUT', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) });
+                                      const d = await r.json();
+                                      if (r.ok) { notify('success', 'Resubmission requested.'); setPipeline(p => p.map(i => i.id === item.id ? { ...i, application_status: 'RESUBMISSION_REQUESTED' } : i)); }
+                                      else notify('error', d.error || 'Failed');
+                                    }} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-white">
+                                      🔄 Request Resubmission
+                                    </button>
+                                  </div>
                                 </div>
                               )}
                               {(!item.application_status || item.application_status === 'PENDING') && (
@@ -3327,45 +3358,6 @@ export default function AdminDashboard() {
                 Open Portal →
               </a>
             </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {[
-                  { key: 'applications_meeting_day', label: 'Application Review Day',       type: 'text',   desc: 'Day of week when applications are reviewed (e.g. Tuesday).' },
-                  { key: 'platform_fee_bps',         label: 'Trading Fee (basis points)',   type: 'number', desc: 'Platform trading fee in basis points (e.g. 50 = 0.50%).' },
-                  { key: 'min_investment_usd',        label: 'Minimum Investment (USD)',     type: 'number', desc: 'Minimum investor subscription amount in USD.' },
-                  { key: 'kyc_expiry_days',           label: 'KYC Expiry (days)',            type: 'number', desc: 'Number of days before KYC approval expires and must be renewed.' },
-                  { key: 'max_offering_days',         label: 'Max Offering Duration (days)', type: 'number', desc: 'Maximum number of days a primary offering can remain open.' },
-                  { key: 'tier1_min_investment_usd',         label: 'Min Investment — Tier 1 Retail (USD)',       type: 'number', desc: 'Minimum subscription amount for retail investors.' },
-                  { key: 'tier2_min_investment_usd',         label: 'Min Investment — Tier 2 Corporate (USD)',    type: 'number', desc: 'Minimum subscription amount for corporate investors.' },
-                  { key: 'tier3_min_investment_usd',         label: 'Min Investment — Tier 3 Institution (USD)',  type: 'number', desc: 'Minimum subscription amount for institutional investors.' },
-                  { key: 'premium_trial_end_date',           label: 'Premium Trial End Date',                     type: 'date',   desc: 'All investors get full premium dashboard until this date. After this, individual 30-day trials apply.' },
-                  { key: 'premium_trial_days_new_investors', label: 'New Investor Trial Period (days)',            type: 'number', desc: 'Number of days a new investor gets full premium access from their registration date.' },
-                ].map(({ key, label, type, desc }) => {
-                  const current = settings[key]?.value ?? '';
-                  return (
-                    <div key={key} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                      <label className="text-sm font-semibold text-white block mb-0.5">{label}</label>
-                      <p className="text-xs text-gray-500 mb-3">{desc}</p>
-                      <div className="flex gap-2">
-                        <input
-                          type={type}
-                          value={settings[key]?.value ?? ''}
-                          onChange={e => setSettings(s => ({ ...s, [key]: { ...(s[key]||{}), value: e.target.value } }))}
-                          className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
-                        />
-                        <button
-                          onClick={() => handleSaveSetting(key, settings[key]?.value ?? '')}
-                          className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
-                          Save
-                        </button>
-                      </div>
-                      {settings[key]?.updated_at && (
-                        <p className="text-xs text-gray-600 mt-2">Last updated: {dt(settings[key].updated_at)}</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
             {/* Applications with fee status */}
             <div>
               <h3 className="text-lg font-bold mb-3">Application Fee Status</h3>
@@ -3388,6 +3380,7 @@ export default function AdminDashboard() {
                             item.application_status === 'APPROVED' ? 'bg-blue-900/50 text-blue-300' :
                             item.application_status === 'FEE_CONFIRMED' ? 'bg-green-900/50 text-green-300' :
                             item.application_status === 'REJECTED' ? 'bg-red-900/50 text-red-300' :
+                            item.application_status === 'ESCALATED' ? 'bg-amber-900/50 text-amber-300' :
                             'bg-gray-800 text-gray-400'
                           }`}>{item.application_status || 'PENDING'}</span>
                         </td>
@@ -3674,6 +3667,43 @@ export default function AdminDashboard() {
             {/* Operations tab */}
             {activeTab === 'operations' && (
               <div className="bg-slate-800 rounded-b p-6 space-y-4">
+
+          {/* ── Operational Settings ── */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+            <h3 className="font-bold text-sm mb-1">⚙️ Operational Settings</h3>
+            <p className="text-xs text-gray-500 mb-4">Platform rules applied across onboarding, trading, and KYC workflows.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { key: 'applications_meeting_day', label: 'Application Review Day',       type: 'text',   desc: 'Day of the week when application review meetings are held (e.g. Tuesday).' },
+                { key: 'platform_fee_bps',         label: 'Trading Fee (basis points)',   type: 'number', desc: 'Platform trading fee in basis points (e.g. 50 = 0.50%).' },
+                { key: 'min_investment_usd',        label: 'Minimum Investment (USD)',     type: 'number', desc: 'Minimum investor subscription amount in USD.' },
+                { key: 'kyc_expiry_days',           label: 'KYC Expiry (days)',            type: 'number', desc: 'Number of days before a KYC approval expires and must be renewed.' },
+                { key: 'max_offering_days',         label: 'Max Offering Duration (days)', type: 'number', desc: 'Maximum number of days a primary offering can remain open.' },
+              ].map(({ key, label, type, desc }) => (
+                <div key={key} className="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
+                  <label className="text-sm font-semibold text-white block mb-0.5">{label}</label>
+                  <p className="text-xs text-gray-500 mb-3">{desc}</p>
+                  <div className="flex gap-2">
+                    <input
+                      type={type}
+                      value={settings[key]?.value ?? ''}
+                      onChange={e => setSettings(s => ({ ...s, [key]: { ...(s[key]||{}), value: e.target.value } }))}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-600"
+                    />
+                    <button
+                      onClick={() => handleSaveSetting(key, settings[key]?.value ?? '')}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-700 hover:bg-blue-600 whitespace-nowrap">
+                      Save
+                    </button>
+                  </div>
+                  {settings[key]?.updated_at && (
+                    <p className="text-xs text-gray-600 mt-2">Updated: {dt(settings[key].updated_at)}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* RECONCILIATION PANEL */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4 mt-4">
             <div className="flex items-center justify-between">
@@ -3724,13 +3754,11 @@ export default function AdminDashboard() {
 
             {/* Email status banner — shown after first audit run */}
             {reconAudit && (reconAudit.toolStatus === 'DISABLED' ? (
-              // Email gate temporarily disabled — show warning instead of blocking
-              // TODO: Revert to red blocking banner before sandbox launch
-              <div className="rounded-xl p-3 border border-amber-600 bg-amber-900/20 text-xs text-amber-300 font-medium">
-                ⚠️ Email notifications not configured. Fix will proceed <strong>without email alerts</strong>. Configure{' '}
-                <code className="bg-amber-900/40 px-1 rounded">RECONCILIATION_EMAIL_PRIMARY</code> and{' '}
-                <code className="bg-amber-900/40 px-1 rounded">RECONCILIATION_EMAIL_SECONDARY</code>{' '}
-                in Sensitive Settings before sandbox launch.
+              <div className="rounded-xl p-3 border border-red-600 bg-red-900/20 text-xs text-red-300 font-medium">
+                🔴 Reconciliation fix is <strong>disabled</strong>. Configure{' '}
+                <code className="bg-red-900/40 px-1 rounded">RECONCILIATION_EMAIL_PRIMARY</code> and{' '}
+                <code className="bg-red-900/40 px-1 rounded">RECONCILIATION_EMAIL_SECONDARY</code>{' '}
+                before any ledger adjustments can be made.
               </div>
             ) : reconAudit.emailStatus && !reconAudit.emailStatus.tertiary?.valid ? (
               <div className="rounded-xl p-3 border border-amber-700/60 bg-amber-900/10 text-xs text-amber-300">
@@ -3908,9 +3936,7 @@ export default function AdminDashboard() {
                         ))}
                       </tbody>
                     </table>
-                    {/* Preview Fix button — email gate temporarily disabled, always shown */}
-                    <div className="flex items-center gap-3">
-                      {/* TODO: Restore OPERATIONAL gate before sandbox launch */}
+                    {reconAudit.toolStatus === 'OPERATIONAL' && <div className="flex items-center gap-3">
                       <button onClick={async () => {
                         setReconPreviewLoading(true);
                         setReconPreview(null);
@@ -3929,7 +3955,7 @@ export default function AdminDashboard() {
                         {reconPreviewLoading ? '⏳ Loading preview...' : `🔧 Preview Fix (${reconAudit.orphanedCount} deposit${reconAudit.orphanedCount > 1 ? 's' : ''})`}
                       </button>
                       <p className="text-xs text-gray-500">Preview shows exact changes before you confirm.</p>
-                    </div>
+                    </div>}
                   </>
                 ) : (
                   <p className="text-xs text-gray-500">No orphaned deposits — Fix Variance button not applicable.</p>
@@ -4381,6 +4407,59 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* ── Platform Integrity Check ── */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm">🛡️ Platform Integrity Check</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Runs 7 cross-table assertions. Also runs automatically every Sunday at 06:00 and emails admin if issues are found.</p>
+              </div>
+              <button onClick={async () => {
+                setIntegrityLoading(true);
+                setIntegrityReport(null);
+                const t = localStorage.getItem('token');
+                try {
+                  const r = await fetch(`${API}/admin/integrity-check`, { headers: { Authorization: `Bearer ${t}` } });
+                  const d = await r.json();
+                  if (r.ok) setIntegrityReport(d);
+                  else notify('error', d.error || 'Integrity check failed');
+                } catch { notify('error', 'Network error'); }
+                setIntegrityLoading(false);
+              }} disabled={integrityLoading}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-white disabled:opacity-50 whitespace-nowrap">
+                {integrityLoading ? '⏳ Running...' : '🛡️ Run Check'}
+              </button>
+            </div>
+            {integrityReport && (
+              <div className="space-y-2">
+                <div className={`rounded-xl p-3 border text-xs font-semibold ${
+                  integrityReport.overallStatus === 'OK'   ? 'border-green-700/50 bg-green-900/10 text-green-400' :
+                  integrityReport.overallStatus === 'FAIL' ? 'border-red-600 bg-red-900/20 text-red-300' :
+                                                              'border-amber-600 bg-amber-900/20 text-amber-300'}`}>
+                  {integrityReport.overallStatus === 'OK' ? '✅' : integrityReport.overallStatus === 'FAIL' ? '🔴' : '⚠️'}{' '}
+                  Overall: {integrityReport.overallStatus} — {integrityReport.summary.ok}/{integrityReport.summary.total} checks passed
+                  {integrityReport.summary.fail > 0 && ` · ${integrityReport.summary.fail} FAIL`}
+                  {integrityReport.summary.warn > 0 && ` · ${integrityReport.summary.warn} WARN`}
+                </div>
+                <div className="space-y-1">
+                  {integrityReport.checks.map((c, i) => (
+                    <div key={i} className={`flex items-start justify-between px-3 py-2 rounded-lg text-xs border ${
+                      c.status === 'OK'    ? 'border-green-800/30 bg-green-900/5 text-green-400' :
+                      c.status === 'FAIL'  ? 'border-red-700/40 bg-red-900/10 text-red-300' :
+                      c.status === 'WARN'  ? 'border-amber-700/40 bg-amber-900/10 text-amber-300' :
+                                             'border-gray-700 bg-gray-800/30 text-gray-400'}`}>
+                      <span>{c.label}</span>
+                      <span className="font-semibold ml-4 shrink-0">
+                        {c.status === 'OK' ? '✅ OK' : c.status === 'FAIL' ? `🔴 FAIL (${c.count})` : c.status === 'WARN' ? `⚠️ WARN (${c.count})` : '⚡ ERROR'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-600">Completed: {new Date(integrityReport.completedAt).toLocaleString('en-GB')}</p>
+              </div>
+            )}
           </div>
 
           {/* ── Partner Settings ── */}
