@@ -1,0 +1,20 @@
+{
+  "network": "polygon_mainnet",
+  "chainId": 137,
+  "deployedAt": "2026-06-14T13:58:49.556Z",
+  "deployer": "0x02A6Db3c08fC2ec03160e63661C05D50bB379580",
+  "gasUsedPOL": "5.324532044089235659",
+  "contracts": {
+    "ComplianceRegistry": "0x63e9B40D1e0dA7946039DC7D8B5ca60cfdA0AD9c",
+    "KYCManager": "0xd884dA2d04Bb3F5736dd0b86E4077361AE29ab76",
+    "SPVRegistry": "0x4257FD7D14b2DA4561cCd1b5349ED28cc6b041dd",
+    "ValuationOracle": "0x7b487A90a7cfBF3bb06ad5c71f1FAB54eA12112e",
+    "FeeManager": "0x4D297DB29a25651048601e9df2B8Cab8e45348E1",
+    "TradeEngine": "0x5980e46570AcC1f795C7240f23ab41F98f34E215",
+    "DistributionManager": "0x6E4236824c15dbea77485d6924f788231a400852",
+    "GovernanceContract": "0x10fCF90241035F059bE4b78d068CcaDf40282BFC",
+    "AuditLog": "0x349BA6097BCc5D8c76490d99A3840d730aEb978C",
+    "AssetTokenImplementation": "0xbc2139f07D7D677fdC10474d335d8870B8725907",
+    "PlatformAdmin": "0xa5Dd151bb1E5794C6f3F0811cb237973257079a0"
+  }
+}

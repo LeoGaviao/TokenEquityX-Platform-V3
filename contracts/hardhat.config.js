@@ -1,12 +1,13 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("@openzeppelin/hardhat-upgrades");
 
-const POLYGON_MAINNET_RPC_URL  = process.env.POLYGON_MAINNET_RPC_URL  || "";
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, ".env") });
+
+const POLYGON_MAINNET_RPC_URL  = process.env.POLYGON_MAINNET_RPC_URL  || "https://polygon-rpc.com";
 const POLYGON_TESTNET_RPC_URL  = process.env.POLYGON_TESTNET_RPC_URL  || "";
 const DEPLOYER_PRIVATE_KEY     = process.env.DEPLOYER_PRIVATE_KEY     || "";
 const POLYGONSCAN_API_KEY      = process.env.POLYGONSCAN_API_KEY       || "";
-const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, ".env") });
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
