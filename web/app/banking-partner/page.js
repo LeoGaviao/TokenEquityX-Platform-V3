@@ -25,10 +25,15 @@ export default function BankingPartnerPage() {
   const [whtBatches,   setWhtBatches]   = useState([]);
   const [disbursements,setDisbursements]= useState([]);
   const [reconLogs,    setReconLogs]    = useState([]);
+  const [deposits,     setDeposits]     = useState([]);
+  const [withdrawals,  setWithdrawals]  = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [msg,          setMsg]          = useState(null);
   const [statusFilter, setStatusFilter] = useState('PENDING');
+  const [depFilter,    setDepFilter]    = useState('PENDING_CONFIRMATION');
+  const [wdFilter,     setWdFilter]     = useState('PROCESSING');
   const [confirmModal, setConfirmModal] = useState(null);
+  const [actionModal,  setActionModal]  = useState(null);
   const [bankRef,      setBankRef]      = useState('');
   const [refNotes,     setRefNotes]     = useState('');
   const [batchDate,    setBatchDate]    = useState(new Date().toISOString().split('T')[0]);
@@ -53,6 +58,16 @@ export default function BankingPartnerPage() {
     loadSettlements();
   }, [token, statusFilter]);
 
+  useEffect(() => {
+    if (!token) return;
+    loadDeposits(depFilter);
+  }, [token, depFilter]);
+
+  useEffect(() => {
+    if (!token) return;
+    loadWithdrawals(wdFilter);
+  }, [token, wdFilter]);
+
   const hdrs = () => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' });
 
   const loadAll = async () => {
@@ -70,6 +85,22 @@ export default function BankingPartnerPage() {
       if (reconRes.status==='fulfilled'&& Array.isArray(reconRes.value))setReconLogs(reconRes.value);
     } catch {}
     setLoading(false);
+  };
+
+  const loadDeposits = async (status) => {
+    try {
+      const res = await fetch(`${API}/banking-partner/deposits?status=${status||depFilter}`, { headers: hdrs() });
+      const data = await res.json();
+      if (Array.isArray(data)) setDeposits(data);
+    } catch {}
+  };
+
+  const loadWithdrawals = async (status) => {
+    try {
+      const res = await fetch(`${API}/banking-partner/withdrawals?status=${status||wdFilter}`, { headers: hdrs() });
+      const data = await res.json();
+      if (Array.isArray(data)) setWithdrawals(data);
+    } catch {}
   };
 
   const loadSettlements = async () => {
@@ -160,11 +191,13 @@ export default function BankingPartnerPage() {
         {/* Tabs */}
         <div className="flex gap-1 mb-6 bg-gray-900 rounded-xl p-1 w-fit">
           {[
-            { key:'settlements', label:'💳 Settlements' },
-            { key:'disbursements',label:'💸 Disbursements' },
-            { key:'wht',         label:'🏛 WHT Batches' },
+            { key:'deposits',      label:'⬇ Deposits' },
+            { key:'withdrawals',   label:'⬆ Withdrawals' },
+            { key:'settlements',   label:'💳 Settlements' },
+            { key:'disbursements', label:'💸 Disbursements' },
+            { key:'wht',           label:'🏛 WHT Batches' },
             { key:'reconciliation',label:'🔄 Reconciliation' },
-            { key:'batch',       label:'📥 Batch File' },
+            { key:'batch',         label:'📥 Batch File' },
           ].map(t => (
             <button key={t.key} onClick={()=>setTab(t.key)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab===t.key?'text-white':'text-gray-500 hover:text-gray-300'}`}
@@ -173,6 +206,139 @@ export default function BankingPartnerPage() {
             </button>
           ))}
         </div>
+
+        {/* DEPOSITS TAB */}
+        {tab==='deposits' && (
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              {['PENDING_CONFIRMATION','CONFIRMED','REJECTED'].map(s => (
+                <button key={s} onClick={()=>setDepFilter(s)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${depFilter===s?'border-yellow-500 text-yellow-400 bg-yellow-900/20':'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
+                  {s.replace('_',' ')}
+                </button>
+              ))}
+            </div>
+            {deposits.length === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
+                <p className="text-3xl mb-2">⬇</p>
+                <p className="text-gray-400">No {depFilter.replace(/_/g,' ').toLowerCase()} deposits.</p>
+              </div>
+            ) : (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-500 text-xs border-b border-gray-800 bg-gray-800/40">
+                      {['Investor','Amount','Currency','Reference','Status','Submitted','Action'].map(h=>(
+                        <th key={h} className="text-left py-3 px-3 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deposits.map((d,i) => (
+                      <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                        <td className="py-3 px-3">
+                          <p className="text-xs font-medium">{d.investor_name||'—'}</p>
+                          <p className="text-xs text-gray-500">{d.investor_email||''}</p>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-green-400">{fmt(d.amount_usd)}</td>
+                        <td className="py-3 px-3 text-xs">{d.currency||'USD'}</td>
+                        <td className="py-3 px-3 font-mono text-xs text-gray-300">{d.reference||d.bank_reference||'—'}</td>
+                        <td className="py-3 px-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLORS[d.status]||'bg-gray-800 text-gray-400 border-gray-700'}`}>{d.status?.replace(/_/g,' ')}</span>
+                        </td>
+                        <td className="py-3 px-3 text-xs text-gray-500">{dt(d.created_at)}</td>
+                        <td className="py-3 px-3">
+                          {d.status==='PENDING_CONFIRMATION' && (
+                            <div className="flex gap-2">
+                              <button onClick={()=>setActionModal({type:'deposit-confirm',item:d})}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-80"
+                                style={{background:NAVY}}>✅ Confirm</button>
+                              <button onClick={async()=>{
+                                const reason = window.prompt('Rejection reason (optional):');
+                                if (reason === null) return;
+                                const res = await fetch(`${API}/banking-partner/deposits/${d.id}/reject`,{method:'PUT',headers:hdrs(),body:JSON.stringify({notes:reason})});
+                                const data = await res.json();
+                                if(res.ok){notify('success','Deposit rejected.');loadDeposits();}else notify('error',data.error);
+                              }} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-900/40 text-red-300 hover:bg-red-900/60">Reject</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* WITHDRAWALS TAB */}
+        {tab==='withdrawals' && (
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              {['PROCESSING','COMPLETED','REJECTED'].map(s => (
+                <button key={s} onClick={()=>setWdFilter(s)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${wdFilter===s?'border-yellow-500 text-yellow-400 bg-yellow-900/20':'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            {withdrawals.length === 0 ? (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
+                <p className="text-3xl mb-2">⬆</p>
+                <p className="text-gray-400">No {wdFilter.toLowerCase()} withdrawals.</p>
+              </div>
+            ) : (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-500 text-xs border-b border-gray-800 bg-gray-800/40">
+                      {['Investor','Amount','Bank Details','Status','Submitted','Action'].map(h=>(
+                        <th key={h} className="text-left py-3 px-3 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {withdrawals.map((w,i) => (
+                      <tr key={i} className="border-b border-gray-800/40 hover:bg-gray-800/20">
+                        <td className="py-3 px-3">
+                          <p className="text-xs font-medium">{w.investor_name||'—'}</p>
+                          <p className="text-xs text-gray-500">{w.investor_email||''}</p>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-amber-400">{fmt(w.amount_usd)}</td>
+                        <td className="py-3 px-3 text-xs">
+                          <p>{w.bank_name||'—'}</p>
+                          <p className="font-mono text-gray-500">{w.account_number||''}</p>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLORS[w.status]||'bg-gray-800 text-gray-400 border-gray-700'}`}>{w.status}</span>
+                          {w.bank_reference && <p className="text-xs text-gray-500 mt-0.5 font-mono">{w.bank_reference}</p>}
+                        </td>
+                        <td className="py-3 px-3 text-xs text-gray-500">{dt(w.created_at)}</td>
+                        <td className="py-3 px-3">
+                          {w.status==='PROCESSING' && (
+                            <div className="flex gap-2">
+                              <button onClick={()=>setActionModal({type:'wd-complete',item:w})}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-80"
+                                style={{background:NAVY}}>✅ Complete</button>
+                              <button onClick={async()=>{
+                                const reason = window.prompt('Rejection reason (optional):');
+                                if (reason === null) return;
+                                const res = await fetch(`${API}/banking-partner/withdrawals/${w.id}/reject`,{method:'PUT',headers:hdrs(),body:JSON.stringify({notes:reason})});
+                                const data = await res.json();
+                                if(res.ok){notify('success',data.message);loadWithdrawals();loadAll();}else notify('error',data.error);
+                              }} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-900/40 text-red-300 hover:bg-red-900/60">Reject</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* SETTLEMENTS TAB */}
         {tab==='settlements' && (
@@ -392,6 +558,62 @@ export default function BankingPartnerPage() {
           </div>
         )}
       </div>
+
+      {/* Deposit Confirm / Withdrawal Complete Modal */}
+      {actionModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md space-y-4">
+            <h3 className="font-bold text-lg">
+              {actionModal.type==='deposit-confirm' ? '✅ Confirm Deposit' : '✅ Complete Withdrawal'}
+            </h3>
+            <div className="bg-gray-800/50 rounded-xl p-4 space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-gray-400">Investor</span><span>{actionModal.item.investor_name||'—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Amount</span>
+                <span className={`font-bold ${actionModal.type==='deposit-confirm'?'text-green-400':'text-amber-400'}`}>{fmt(actionModal.item.amount_usd)}</span>
+              </div>
+              {actionModal.type==='deposit-confirm' && actionModal.item.reference && (
+                <div className="flex justify-between"><span className="text-gray-400">Investor Ref</span><span className="font-mono text-xs">{actionModal.item.reference}</span></div>
+              )}
+              {actionModal.type==='wd-complete' && (
+                <div className="flex justify-between"><span className="text-gray-400">Bank</span><span>{actionModal.item.bank_name||'—'} {actionModal.item.account_number||''}</span></div>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Bank Reference Number *</label>
+              <input value={bankRef} onChange={e=>setBankRef(e.target.value)}
+                placeholder="e.g. STB2026050700123"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500 font-mono"/>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Notes (optional)</label>
+              <input value={refNotes} onChange={e=>setRefNotes(e.target.value)}
+                placeholder="Any notes"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={()=>{setActionModal(null);setBankRef('');setRefNotes('');}}
+                className="flex-1 py-2.5 rounded-xl text-sm border border-gray-700 text-gray-400 hover:bg-gray-800">Cancel</button>
+              <button onClick={async()=>{
+                if (!bankRef) { notify('error','Bank reference is required'); return; }
+                const { id } = actionModal.item;
+                const url = actionModal.type==='deposit-confirm'
+                  ? `${API}/banking-partner/deposits/${id}/confirm`
+                  : `${API}/banking-partner/withdrawals/${id}/complete`;
+                const res  = await fetch(url,{method:'PUT',headers:hdrs(),body:JSON.stringify({bank_reference:bankRef,notes:refNotes})});
+                const data = await res.json();
+                if (res.ok) {
+                  notify('success', data.message);
+                  setActionModal(null); setBankRef(''); setRefNotes('');
+                  if (actionModal.type==='deposit-confirm') loadDeposits();
+                  else { loadWithdrawals(); loadAll(); }
+                } else notify('error', data.error);
+              }} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white" style={{background:NAVY}}>
+                {actionModal.type==='deposit-confirm' ? '✅ Confirm & Credit' : '✅ Mark Completed'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirm Settlement Modal */}
       {confirmModal && (
