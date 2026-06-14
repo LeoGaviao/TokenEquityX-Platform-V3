@@ -266,6 +266,7 @@ function ApplicationsTab({ myApplications, setTab, NAVY, GOLD }) {
     dcf:'Discounted Cash Flow (DCF)', nav:'Net Asset Value (NAV)',
     capRate:'Capitalisation Rate', resourceValuation:'Resource NPV',
     bondPricing:'Bond Present Value', infrastructure:'Infrastructure DCF',
+    agriculture:'Agriculture Blended (Income Cap + Asset)',
   };
 
   return (
@@ -1513,11 +1514,11 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Asset Type</label>
                 <select value={form.assetType} onChange={e=>set('assetType',e.target.value)} className={inputCls}>
-                  {['EQUITY','BOND','REIT','REAL_ESTATE','MINING','INFRASTRUCTURE','OTHER'].map(s=><option key={s}>{s}</option>)}
+                  {['EQUITY','BOND','REIT','REAL_ESTATE','MINING','INFRASTRUCTURE','AGRICULTURE','OTHER'].map(s=><option key={s}>{s}</option>)}
                 </select>
                 <details className="mt-1">
                   <summary className="text-xs text-blue-400 cursor-pointer select-none">ⓘ Which type should I choose?</summary>
-                  <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">EQUITY — private company shares. BOND — fixed-income debt instrument. REIT — diversified property portfolio. REAL_ESTATE — single asset or development. MINING — resource extraction rights. INFRASTRUCTURE — concessions (toll roads, energy, telecoms). This choice determines the valuation model used in Step 6.</p>
+                  <p className="text-xs text-gray-500 mt-1 pl-2 leading-snug">EQUITY — private company shares. BOND — fixed-income debt instrument. REIT — diversified property portfolio. REAL_ESTATE — single asset or development. MINING — resource extraction rights. INFRASTRUCTURE — concessions (toll roads, energy, telecoms). AGRICULTURE — farming, agri-processing, or land under cultivation. This choice determines the valuation model used in Step 6.</p>
                 </details>
               </div>
               <div>
@@ -1987,24 +1988,24 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
             {finAsset === 'AGRICULTURE' && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Annual Revenue (USD)</label>
-                  <input type="number" value={finData.annualRevenue} onChange={e=>setFin('annualRevenue',e.target.value)} className={inputCls} placeholder="e.g. 3500000"/>
-                  <p className="text-xs text-gray-500 mt-1 leading-snug">Last full-year revenue from farming or agri-processing operations.</p>
+                  <label className="text-xs text-gray-400 block mb-1">Revenue TTM (USD)</label>
+                  <input type="number" value={finData.revenueTTM} onChange={e=>setFin('revenueTTM',e.target.value)} className={inputCls} placeholder="e.g. 3500000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Trailing 12-month gross revenue from farming or agri-processing operations.</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Operating Margin (%)</label>
-                  <input type="number" value={finData.operatingMarginPct} onChange={e=>setFin('operatingMarginPct',e.target.value)} className={inputCls} placeholder="e.g. 22"/>
-                  <p className="text-xs text-gray-500 mt-1 leading-snug">Operating profit divided by revenue, as a percentage. Typical range for Zimbabwe commercial agriculture: 15–30%.</p>
+                  <label className="text-xs text-gray-400 block mb-1">Operating Cost Ratio (decimal)</label>
+                  <input type="number" step="0.01" value={finData.operatingCostRatio} onChange={e=>setFin('operatingCostRatio',e.target.value)} className={inputCls} placeholder="e.g. 0.55"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Total operating costs as a fraction of revenue. 0.55 means 55% of revenue is consumed by costs. Typical range for Zimbabwe commercial farms: 0.50–0.70.</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Revenue Growth Rate (%)</label>
-                  <input type="number" value={finData.growthRatePct} onChange={e=>setFin('growthRatePct',e.target.value)} className={inputCls} placeholder="e.g. 12"/>
-                  <p className="text-xs text-gray-500 mt-1 leading-snug">Expected annual revenue growth. Use 3-year historical average if available.</p>
+                  <label className="text-xs text-gray-400 block mb-1">Capitalisation Rate (decimal)</label>
+                  <input type="number" step="0.01" value={finData.capRate} onChange={e=>setFin('capRate',e.target.value)} className={inputCls} placeholder="e.g. 0.08"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Rate used to capitalise net income into an asset value. Default 8% reflects Zimbabwe farmland yield expectations.</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Discount Rate (%)</label>
-                  <input type="number" value={finData.discountRatePct} onChange={e=>setFin('discountRatePct',e.target.value)} className={inputCls} placeholder="e.g. 18"/>
-                  <p className="text-xs text-gray-500 mt-1 leading-snug">Rate used to discount future farm cash flows. Higher than urban real estate to reflect commodity price and climate risk. Typical range: 16–22%.</p>
+                  <label className="text-xs text-gray-400 block mb-1">Total Assets (USD)</label>
+                  <input type="number" value={finData.totalAssets} onChange={e=>setFin('totalAssets',e.target.value)} className={inputCls} placeholder="e.g. 6000000"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Total balance sheet assets including land, equipment, livestock, and crops at current market value.</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 block mb-1">Total Debt (USD)</label>
@@ -2012,9 +2013,22 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                   <p className="text-xs text-gray-500 mt-1 leading-snug">All interest-bearing debt secured against the farming operation or land.</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Cash &amp; Equivalents (USD)</label>
-                  <input type="number" value={finData.cash} onChange={e=>setFin('cash',e.target.value)} className={inputCls} placeholder="e.g. 150000"/>
-                  <p className="text-xs text-gray-500 mt-1 leading-snug">Cash on hand and liquid assets. Used to calculate net debt and enterprise value.</p>
+                  <label className="text-xs text-gray-400 block mb-1">Land Area (Hectares)</label>
+                  <input type="number" value={finData.hectares} onChange={e=>setFin('hectares',e.target.value)} className={inputCls} placeholder="e.g. 250"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Total area under cultivation or managed as farmland. Used for per-hectare benchmarking.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Primary Commodity</label>
+                  <select value={finData.commodity || ''} onChange={e=>setFin('commodity',e.target.value)} className={inputCls}>
+                    <option value="">Select commodity…</option>
+                    {['TOBACCO','MAIZE','WHEAT','SOYA','COTTON','HORTICULTURE','CATTLE','DAIRY','POULTRY','SUGAR','COFFEE','OTHER'].map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Main revenue-generating crop or livestock product.</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Average Yield (tonnes/ha, optional)</label>
+                  <input type="number" step="0.1" value={finData.yieldPerHectare} onChange={e=>setFin('yieldPerHectare',e.target.value)} className={inputCls} placeholder="e.g. 3.5"/>
+                  <p className="text-xs text-gray-500 mt-1 leading-snug">Average annual yield per hectare for the primary commodity. Used for operational benchmarking, not the valuation model.</p>
                 </div>
               </div>
             )}
@@ -2061,7 +2075,7 @@ function TokenisationTab({ notify, entityKyc, setTab }) {
                 REIT:           ['propertyValuation','totalDebt','netOperatingIncome'],
                 MINING:         ['totalResourceTonnes','gradePercent','commodityPricePerTonne','miningCostPerTonne','recoveryRate','mineLifeYears'],
                 INFRASTRUCTURE: ['annualRevenue','operatingMarginPct','contractYears'],
-                AGRICULTURE:    ['annualRevenue','operatingMarginPct','growthRatePct'],
+                AGRICULTURE:    ['revenueTTM','operatingCostRatio','totalAssets'],
               };
               const FIELD_LABELS = {
                 revenueTTM:'Revenue TTM', ebitdaTTM:'EBITDA TTM', freeCashFlow:'Free Cash Flow',

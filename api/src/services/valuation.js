@@ -249,6 +249,34 @@ function infrastructureValuation({
   };
 }
 
+// ─── AGRICULTURE VALUATION ────────────────────────────────────────
+// Income capitalisation (60%) blended with asset-based (40%).
+// Cap rate default 8% — represents Zimbabwe farmland yield expectations.
+
+function agricultureValuation(data) {
+  const revenueTTM         = Number(data.revenueTTM)          || 0;
+  const operatingCostRatio = Number(data.operatingCostRatio)  || 0.55; // 55% default
+  const capRate            = Number(data.capRate)              || 0.08;
+  const totalAssets        = Number(data.totalAssets)          || 0;
+  const totalDebt          = Number(data.totalDebt)            || 0;
+
+  const annualNetIncome    = revenueTTM * (1 - operatingCostRatio);
+  const incomeValue        = capRate > 0 ? Math.round(annualNetIncome / capRate) : 0;
+  const assetValue         = Math.max(0, Math.round(totalAssets - totalDebt));
+
+  const enterpriseValue = Math.round(incomeValue * 0.6 + assetValue * 0.4);
+
+  return {
+    enterpriseValue,
+    incomeCapitalisationValue: incomeValue,
+    assetBasedValue:           assetValue,
+    annualNetIncome:           Math.round(annualNetIncome),
+    capRate,
+    operatingCostRatio,
+    method: 'AGRICULTURE_BLENDED',
+  };
+}
+
 // ─── BLENDED VALUATION ────────────────────────────────────────────
 
 function blendModels(models) {
@@ -296,6 +324,11 @@ function calculateValuation(assetType, data) {
     const infra = data.annualRevenue ? infrastructureValuation(data) : null;
     blended = infra?.enterpriseValue || 0;
     models  = { infrastructure: infra };
+
+  } else if (type === 'AGRICULTURE') {
+    const agri = (data.revenueTTM || data.totalAssets) ? agricultureValuation(data) : null;
+    blended = agri?.enterpriseValue || 0;
+    models  = { agriculture: agri };
 
   } else if (type === 'BOND') {
     const bond = data.faceValue ? bondPricing(data) : null;
