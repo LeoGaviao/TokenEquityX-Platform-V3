@@ -1,8 +1,9 @@
 const { v4: uuidv4 }        = require('uuid');
 const logger                = require('../utils/logger');
 const ws                    = require('./websocket');
-const { getNumericSetting }           = require('../utils/platformSettings');
-const { createSettlementInstruction } = require('../utils/settlement');
+const { getNumericSetting }              = require('../utils/platformSettings');
+const { createSettlementInstruction }    = require('../utils/settlement');
+const { accruePartnerCommission }        = require('../utils/partnerCommission');
 
 async function matchOrders(tokenId, db) {
   try {
@@ -401,6 +402,10 @@ async function matchOrders(tokenId, db) {
           });
 
           await conn.commit();
+
+          // Accrue partner commissions outside the transaction (non-fatal)
+          accruePartnerCommission(buy.user_id, sell.user_id, totalValue, db)
+            .catch(e => logger.warn('Partner commission accrual skipped', { error: e.message }));
 
           // Update in-memory state for next iteration
           buy.filled_qty  = newBuyFilled;

@@ -1006,6 +1006,11 @@ router.get('/migrate', async (req, res) => {
     `INSERT INTO platform_settings (key, value, description)
      VALUES ('ipl_rate', '0.00025', 'Investor Protection Levy rate per side (SECZ regulatory — 0.025%)')
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+
+    // ── Partner network: commission rate ──────────────────────────────────
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES ('partner_commission_rate', '0.001', 'Partner referral commission rate on matched trades (0.001 = 0.1%)')
+     ON CONFLICT (key) DO NOTHING`,
   ];
   const results = [];
   for (const sql of migrations) {

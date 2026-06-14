@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const db     = require('../db/pool');
-const { authenticate }              = require('../middleware/auth');
-const { sendMessage }               = require('../utils/messenger');
-const { getNumericSetting }         = require('../utils/platformSettings');
+const { authenticate }                = require('../middleware/auth');
+const { sendMessage }                 = require('../utils/messenger');
+const { getNumericSetting }           = require('../utils/platformSettings');
 const { createSettlementInstruction } = require('../utils/settlement');
+const { accruePartnerCommission }     = require('../utils/partnerCommission');
 
 // ── GET /api/p2p — list open offers, optionally filter by symbol
 router.get('/', authenticate, async (req, res) => {
@@ -329,6 +330,10 @@ router.put('/:id/accept', authenticate, async (req, res) => {
     }).catch(() => {});
 
     await conn.commit();
+
+    // Non-fatal partner commission accrual (outside transaction so it never rolls back a trade)
+    accruePartnerCommission(req.user.userId, offer.seller_id, total, db)
+      .catch(e => console.error('Partner commission accrual skipped:', e.message));
 
     // External email to seller
     try {
