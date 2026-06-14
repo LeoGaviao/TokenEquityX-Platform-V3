@@ -877,4 +877,21 @@ router.get('/integrity-check',
   }
 );
 
+// GET /api/admin/usdc-report?year=2026&month=6
+router.get('/usdc-report',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { generateUsdcMonthlyReport } = require('../services/usdcReporting');
+      const year  = req.query.year  ? parseInt(req.query.year)  : undefined;
+      const month = req.query.month ? parseInt(req.query.month) : undefined;
+      const report = await generateUsdcMonthlyReport(year, month);
+      res.json(report);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;

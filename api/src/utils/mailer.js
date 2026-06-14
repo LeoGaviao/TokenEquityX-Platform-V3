@@ -332,14 +332,23 @@ async function notifyIssuerComplianceFeeInvoice({
     `));
 }
 
-async function notifyUserWelcome({ userEmail, userName, role }) {
+async function notifyUserWelcome({ userEmail, userName, role, hasWallet = false }) {
   const dashboardPath = role === 'ISSUER' ? '/issuer' : role === 'AUDITOR' ? '/auditor' : '/investor';
+  const walletPrompt = !hasWallet && role === 'INVESTOR' ? `
+      <div style="margin:20px 0;padding:14px 16px;background:#fffbeb;border-left:4px solid #d97706;border-radius:4px;">
+        <strong style="color:#92400e;">Connect your MetaMask wallet (recommended)</strong>
+        <p style="margin:6px 0 0;color:#78350f;font-size:13px;">
+          A connected wallet enables on-chain settlement, USDC transactions, and token transfers.
+          You can link your wallet at any time from <strong>Profile → Security → Wallet Settings</strong>.
+        </p>
+      </div>` : '';
   return send(userEmail, `Welcome to TokenEquityX — Africa's Digital Capital Market`,
     baseTemplate('Welcome to TokenEquityX', `
       <p>Dear ${userName},</p>
       <p>Your account has been created successfully on Africa's first regulated tokenised securities marketplace.</p>
       <div class="detail-row"><span>Email</span><span>${userEmail}</span></div>
       <div class="detail-row"><span>Role</span><span>${role || 'INVESTOR'}</span></div>
+      ${walletPrompt}
       <p style="margin-top:16px;">Please log in and complete your profile to get started.</p>
       <a href="${PLATFORM}${dashboardPath}" class="btn btn-gold">Go to Your Dashboard &rarr;</a>
     `));
@@ -1094,6 +1103,94 @@ async function sendIntegrityCheckAlert(report) {
   });
 }
 
+// ── USDC Supervised Pilot email templates (SI 99 of 2026) ──────────────────
+
+async function notifyUsdcDepositInitiated({ investorEmail, investorName, amount, txHash, omnibusWallet, depositId }) {
+  if (!investorEmail) return;
+  return send(investorEmail, `USDC Deposit Received — ${amount.toFixed(2)} USDC`,
+    baseTemplate('USDC Deposit Received', `
+      <p>Dear ${investorName},</p>
+      <p>Your USDC deposit has been received and is pending admin verification on Polygon PoS.</p>
+      <div class="detail-row"><span>Amount</span><span>${amount.toFixed(2)} USDC</span></div>
+      <div class="detail-row"><span>Transaction Hash</span><span style="font-family:monospace;font-size:12px;">${txHash}</span></div>
+      ${omnibusWallet ? `<div class="detail-row"><span>Omnibus Wallet</span><span style="font-family:monospace;font-size:12px;">${omnibusWallet.slice(0,8)}…${omnibusWallet.slice(-6)}</span></div>` : ''}
+      <div class="detail-row"><span>Deposit ID</span><span>${depositId}</span></div>
+      <p style="margin-top:16px;font-size:13px;color:#6b7280;">Your balance will be credited within 4 business hours once the on-chain transaction is verified.</p>
+      <p style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;margin-top:16px;">This transaction is processed under the TokenEquityX USDC Supervised Pilot in accordance with Statutory Instrument 99 of 2026.</p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Wallet &rarr;</a>
+    `));
+}
+
+async function notifyUsdcDepositConfirmed({ investorEmail, investorName, amount, depositId }) {
+  if (!investorEmail) return;
+  return send(investorEmail, `USDC Deposit Confirmed — ${amount.toFixed(2)} USDC`,
+    baseTemplate('USDC Deposit Confirmed', `
+      <p>Dear ${investorName},</p>
+      <p>Your USDC deposit has been verified and credited to your wallet.</p>
+      <div class="detail-row"><span>Amount Credited</span><span class="success">${amount.toFixed(2)} USDC</span></div>
+      <div class="detail-row"><span>Deposit ID</span><span>${depositId}</span></div>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Wallet &rarr;</a>
+    `));
+}
+
+async function notifyUsdcWithdrawalInitiated({ investorEmail, investorName, amount, netAmount, imttAmount, imttRate, isResident, destinationWallet, withdrawalId }) {
+  if (!investorEmail) return;
+  const imttLine = isResident
+    ? `<div class="detail-row"><span>IMTT Withheld (${(imttRate*100).toFixed(0)}%)</span><span class="warning">${imttAmount.toFixed(6)} USDC</span></div>`
+    : `<div class="detail-row"><span>IMTT</span><span>Not applicable (international investor)</span></div>`;
+  return send(investorEmail, `USDC Withdrawal Requested — ${amount.toFixed(2)} USDC`,
+    baseTemplate('USDC Withdrawal Requested', `
+      <p>Dear ${investorName},</p>
+      <p>Your USDC withdrawal request has been received and will be processed within 1 business day.</p>
+      <div class="detail-row"><span>Requested</span><span>${amount.toFixed(2)} USDC</span></div>
+      ${imttLine}
+      <div class="detail-row"><span>Net to Wallet</span><span>${netAmount.toFixed(6)} USDC</span></div>
+      <div class="detail-row"><span>Destination</span><span style="font-family:monospace;font-size:12px;">${destinationWallet.slice(0,8)}…${destinationWallet.slice(-6)}</span></div>
+      <div class="detail-row"><span>Withdrawal ID</span><span>${withdrawalId}</span></div>
+      <p style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;margin-top:16px;">This transaction is processed under the TokenEquityX USDC Supervised Pilot in accordance with Statutory Instrument 99 of 2026.</p>
+    `));
+}
+
+async function notifyUsdcWithdrawalCompleted({ investorEmail, investorName, netAmount, txHash, destinationWallet, withdrawalId }) {
+  if (!investorEmail) return;
+  return send(investorEmail, `USDC Withdrawal Completed — ${netAmount.toFixed(6)} USDC`,
+    baseTemplate('USDC Withdrawal Completed', `
+      <p>Dear ${investorName},</p>
+      <p>Your USDC withdrawal has been processed on Polygon PoS.</p>
+      <div class="detail-row"><span>Amount Sent</span><span class="success">${netAmount.toFixed(6)} USDC</span></div>
+      ${txHash ? `<div class="detail-row"><span>Transaction Hash</span><span style="font-family:monospace;font-size:12px;">${txHash}</span></div>` : ''}
+      <div class="detail-row"><span>Destination</span><span style="font-family:monospace;font-size:12px;">${destinationWallet.slice(0,8)}…${destinationWallet.slice(-6)}</span></div>
+      <div class="detail-row"><span>Withdrawal ID</span><span>${withdrawalId}</span></div>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Transaction History &rarr;</a>
+    `));
+}
+
+async function notifyUsdcMonthlyReport(report) {
+  const resend = getResend();
+  if (!resend) return;
+  const html = baseTemplate('Monthly USDC Pilot Report — RBZ Submission', `
+    <p>TokenEquityX monthly USDC supervised pilot report for RBZ submission.</p>
+    <div class="detail-row"><span>Period</span><span>${report.period_year}-${String(report.period_month).padStart(2,'0')}</span></div>
+    <div class="detail-row"><span>Regulatory Basis</span><span>${report.regulatory_basis}</span></div>
+    <div class="detail-row"><span>Deposits (count)</span><span>${report.deposits.count}</span></div>
+    <div class="detail-row"><span>Deposits (total)</span><span>${report.deposits.total_usdc.toFixed(2)} USDC</span></div>
+    <div class="detail-row"><span>Withdrawals (count)</span><span>${report.withdrawals.count}</span></div>
+    <div class="detail-row"><span>Withdrawals (total)</span><span>${report.withdrawals.total_usdc.toFixed(2)} USDC</span></div>
+    <div class="detail-row"><span>IMTT Collected</span><span>${report.withdrawals.imtt_collected.toFixed(6)} USDC</span></div>
+    <div class="detail-row"><span>Active Investors</span><span>${report.active_investors}</span></div>
+    <div class="detail-row"><span>Ledger Total (USDC)</span><span>${report.current_ledger_total_usdc.toFixed(6)} USDC</span></div>
+    ${report.latest_reconciliation ? `<div class="detail-row"><span>Last Recon Status</span><span>${report.latest_reconciliation.status}</span></div>` : ''}
+    <p style="margin-top:16px;font-size:13px;">Please review and forward to the Reserve Bank of Zimbabwe as required under SI 99 of 2026.</p>
+    <a href="${PLATFORM}/admin" class="btn btn-gold">Download Full Report &rarr;</a>
+  `);
+  return resend.emails.send({
+    from:    FROM,
+    to:      [ADMIN],
+    subject: `[RBZ Report] USDC Pilot — ${report.period_year}-${String(report.period_month).padStart(2,'0')}`,
+    html,
+  });
+}
+
 module.exports = {
   send,
   sendReconciliationEmail,
@@ -1151,4 +1248,9 @@ module.exports = {
   notifyAuditorDeclarationRejected,
   sendEscalationNotification,
   sendIntegrityCheckAlert,
+  notifyUsdcDepositInitiated,
+  notifyUsdcDepositConfirmed,
+  notifyUsdcWithdrawalInitiated,
+  notifyUsdcWithdrawalCompleted,
+  notifyUsdcMonthlyReport,
 };

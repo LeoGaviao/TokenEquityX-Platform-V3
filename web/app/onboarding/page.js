@@ -138,6 +138,51 @@ const INPUT    = 'w-full bg-[#0D1B2A] border border-[#1A3C5E] rounded px-3 py-2 
 const TEXTAREA = INPUT + ' resize-none';
 
 // ── Helper components ──────────────────────────────────────────────────────
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+
+function WalletPromptBanner({ token, onLinked }) {
+  const [status, setStatus] = useState('');
+  const [linked, setLinked]  = useState(false);
+
+  async function connect() {
+    if (!window.ethereum) { setStatus('MetaMask not detected. You can connect your wallet later from Profile → Security.'); return; }
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const wallet_address = accounts[0];
+      const res = await fetch(`${API_BASE}/auth/link-wallet`, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ wallet_address }),
+      });
+      const data = await res.json();
+      if (res.ok) { setLinked(true); setStatus(''); onLinked(wallet_address); }
+      else setStatus(data.error || 'Failed to link wallet.');
+    } catch { setStatus('MetaMask connection failed. You can try again from your profile.'); }
+  }
+
+  if (linked) {
+    return (
+      <div className="mb-6 flex items-center gap-3 bg-green-900/30 border border-green-700/50 rounded-lg px-4 py-3 text-green-300 text-sm">
+        <span>🦊</span> MetaMask wallet linked — you're all set for on-chain settlement.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6 bg-amber-900/20 border border-amber-700/40 rounded-lg p-4">
+      <p className="text-amber-300 text-sm font-semibold mb-1">Connect your MetaMask wallet (recommended)</p>
+      <p className="text-amber-400/80 text-xs mb-3">
+        A linked wallet enables USDC deposits, on-chain token transfers, and faster settlement. You can skip this and connect later from your profile.
+      </p>
+      {status && <p className="text-xs text-red-300 mb-2">{status}</p>}
+      <button onClick={connect}
+        className="flex items-center gap-2 px-4 py-2 rounded text-sm font-medium text-white bg-amber-700/60 hover:bg-amber-700 border border-amber-600/50 transition">
+        <span>🦊</span> Connect MetaMask Now
+      </button>
+    </div>
+  );
+}
+
 function FormField({ label, required, children }) {
   return (
     <div>
@@ -663,11 +708,14 @@ export default function OnboardingPage() {
                   ? 'Institutional onboarding requires identity verification for your designated officer, entity registration details, and a copy of your investment mandate. This process typically takes 5–10 minutes.'
                   : "To protect investors and comply with Zimbabwe's AML regulations, we need to verify your identity before you can invest. The process takes about 5 minutes."}
               </p>
-              <div className="grid grid-cols-3 gap-3 mb-8">
+              <div className="grid grid-cols-3 gap-3 mb-6">
                 {['Secure & encrypted', 'Reviewed in 24–48h', 'Required by SECZ'].map(t => (
                   <div key={t} className="bg-[#1A3C5E]/40 rounded-lg p-3 text-gray-400 text-xs">{t}</div>
                 ))}
               </div>
+              {role === 'INVESTOR' && !user?.wallet_address && (
+                <WalletPromptBanner token={localStorage.getItem('token')} onLinked={(addr) => setUser(u => ({ ...u, wallet_address: addr }))} />
+              )}
               <NavButtons {...navProps} onBack={backFn} nextLabel="Get Started →" />
             </div>
           )}

@@ -1,7 +1,39 @@
 // api/src/routes/wallet/index.js
-// Complete wallet management route
-// Handles: balance, deposits, withdrawals, admin confirmation/processing
-// Emails sent on every state change via mailer.js
+// ═══════════════════════════════════════════════════════════════════════════
+// WALLET API — TokenEquityX V3
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// FIAT (USD) ENDPOINTS
+//   GET  /api/wallet/balance              Investor wallet balances (USD + USDC)
+//   POST /api/wallet/deposit              Submit fiat deposit request (reference number)
+//   GET  /api/wallet/deposits             Investor's fiat deposit history
+//   POST /api/wallet/withdraw             Submit fiat withdrawal request
+//   GET  /api/wallet/withdrawals          Investor's fiat withdrawal history
+//
+// USDC SUPERVISED PILOT ENDPOINTS (SI 99 of 2026)
+//   Requires: usdc_pilot_enabled = true in platform_settings
+//   GET  /api/wallet/usdc/balance         Investor's USDC balance (Polygon PoS)
+//   POST /api/wallet/usdc/deposit         Submit USDC deposit intent + on-chain tx hash
+//   POST /api/wallet/usdc/withdraw        Request USDC withdrawal; IMTT withheld for ZW residents
+//
+// ADMIN ENDPOINTS (ADMIN role required)
+//   GET  /api/wallet/admin/deposits       All deposit requests (paginated, filterable)
+//   POST /api/wallet/admin/confirm/:id    Confirm a fiat deposit (credit USD balance)
+//   POST /api/wallet/admin/reject/:id     Reject a deposit request
+//   GET  /api/wallet/admin/withdrawals    All withdrawal requests
+//   POST /api/wallet/admin/process/:id    Mark withdrawal as PROCESSING
+//   POST /api/wallet/admin/complete/:id   Complete withdrawal (debit USD balance)
+//   POST /api/wallet/admin/reject-withdrawal/:id  Reject a withdrawal
+//   GET  /api/wallet/admin/transactions   All wallet transactions (paginated, type filter)
+//
+// NOTES
+//   - All amounts are in USD or USDC; never mixed in one request.
+//   - IMTT on USDC withdrawals applies to Zimbabwe residents only
+//     (country_of_residence='ZW' or nationality='ZW' in approved KYC record).
+//   - USDC contract: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 (Polygon PoS)
+//   - Kill switch: set usdc_pilot_enabled='false' in platform_settings to
+//     disable all USDC endpoints instantly (HTTP 503 returned to caller).
+// ═══════════════════════════════════════════════════════════════════════════
 
 const router  = require('express').Router();
 const db      = require('../../db/pool');
@@ -802,5 +834,226 @@ router.get('/admin/transactions',
     }
   }
 );
+
+// ════════════════════════════════════════════════════════
+// USDC SUPERVISED PILOT — SI 99 of 2026
+// Kill switch: usdc_pilot_enabled platform setting must be TRUE.
+// Residency-based IMTT: applies only to Zimbabwe-resident investors
+// (country_of_residence = 'ZW' or nationality = 'ZW').
+// ════════════════════════════════════════════════════════
+
+const { requireUsdcEnabled } = require('../../middleware/usdcPilot');
+
+// Helper: determine if investor is Zimbabwe-resident (IMTT applies)
+async function isZimbabweResident(userId) {
+  const [rows] = await db.execute(
+    `SELECT country_of_residence, nationality FROM kyc_records
+     WHERE user_id = ? AND status = 'APPROVED'
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId]
+  );
+  if (rows.length === 0) return false;
+  const r = rows[0];
+  return (r.country_of_residence || '').toUpperCase() === 'ZW' ||
+         (r.nationality || '').toUpperCase() === 'ZW';
+}
+
+// POST /api/wallet/usdc/deposit — investor submits USDC deposit intent
+// The investor sends USDC on-chain to the omnibus wallet; this records the intent.
+router.post('/usdc/deposit', authenticate, requireUsdcEnabled, async (req, res) => {
+  try {
+    const { amount_usdc, tx_hash, notes } = req.body;
+    if (!amount_usdc || !tx_hash)
+      return res.status(400).json({ error: 'amount_usdc and tx_hash are required' });
+
+    const amt = parseFloat(amount_usdc);
+    if (isNaN(amt) || amt <= 0)
+      return res.status(400).json({ error: 'amount_usdc must be a positive number' });
+
+    const [minRows] = await db.execute(
+      "SELECT value FROM platform_settings WHERE key = 'usdc_deposit_min_usd'"
+    );
+    const minUsd = parseFloat(minRows[0]?.value || 50);
+    if (amt < minUsd)
+      return res.status(400).json({ error: `Minimum USDC deposit is ${minUsd} USDC` });
+
+    // Validate tx_hash format (Polygon tx hash)
+    if (!/^0x[0-9a-fA-F]{64}$/.test(tx_hash))
+      return res.status(400).json({ error: 'Invalid transaction hash format' });
+
+    // Check for duplicate tx_hash submission
+    const [dupRows] = await db.execute(
+      "SELECT id FROM deposit_requests WHERE reference = ? AND status != 'REJECTED'",
+      [tx_hash]
+    );
+    if (dupRows.length > 0)
+      return res.status(409).json({ error: 'This transaction hash has already been submitted' });
+
+    const [omniRows] = await db.execute(
+      "SELECT value FROM platform_settings WHERE key = 'usdc_omnibus_wallet'"
+    );
+    const omnibusWallet = omniRows[0]?.value || '';
+
+    const depositId = uuidv4();
+    await db.execute(
+      `INSERT INTO deposit_requests (id, user_id, amount_usd, reference, notes, status, currency, tx_hash)
+       VALUES (?, ?, ?, ?, ?, 'PENDING', 'USDC', ?)`,
+      [depositId, req.user.userId, amt, tx_hash, notes || null, tx_hash]
+    );
+
+    const [users] = await db.execute('SELECT full_name, email, wallet_address FROM users WHERE id = ?', [req.user.userId]);
+    const investor = users[0] || {};
+
+    mailer.notifyUsdcDepositInitiated({
+      investorEmail: investor.email,
+      investorName:  investor.full_name || 'Investor',
+      amount:        amt,
+      txHash:        tx_hash,
+      omnibusWallet,
+      depositId,
+    }).catch(e => console.error('[MAILER] notifyUsdcDepositInitiated failed:', e.message));
+
+    sendMessage({
+      recipientId: req.user.userId,
+      subject:     `💵 USDC Deposit Received — ${amt.toFixed(2)} USDC`,
+      body:        `Your USDC deposit of ${amt.toFixed(2)} USDC has been received.\n\nTransaction: ${tx_hash}\nDeposit ID: ${depositId}\n\nAdmin will verify the on-chain transaction and credit your balance. This typically takes 1–4 business hours.\n\nThis is a supervised pilot under Statutory Instrument 99 of 2026.`,
+      type:        'SYSTEM',
+      category:    'WALLET',
+      referenceId: depositId,
+    }).catch(() => {});
+
+    res.json({
+      success:   true,
+      depositId,
+      status:    'PENDING',
+      currency:  'USDC',
+      amount:    amt,
+      tx_hash,
+      message:   'USDC deposit submitted. Admin will verify the on-chain transaction and credit your balance within 4 business hours.',
+      regulatory_notice: 'This transaction is processed under the TokenEquityX USDC supervised pilot (SI 99 of 2026). USDC is held in a custodial omnibus wallet pending RBZ reporting requirements.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'USDC deposit failed: ' + err.message });
+  }
+});
+
+// POST /api/wallet/usdc/withdraw — investor requests USDC withdrawal
+// Residency-based IMTT: 2% withheld for Zimbabwe-resident investors.
+router.post('/usdc/withdraw', authenticate, requireUsdcEnabled, async (req, res) => {
+  try {
+    const { amount_usdc, destination_wallet, notes } = req.body;
+    if (!amount_usdc || !destination_wallet)
+      return res.status(400).json({ error: 'amount_usdc and destination_wallet are required' });
+
+    if (!/^0x[0-9a-fA-F]{40}$/.test(destination_wallet))
+      return res.status(400).json({ error: 'Invalid destination wallet address' });
+
+    const amt = parseFloat(amount_usdc);
+    if (isNaN(amt) || amt <= 0)
+      return res.status(400).json({ error: 'amount_usdc must be a positive number' });
+
+    const [minRows] = await db.execute(
+      "SELECT value FROM platform_settings WHERE key = 'usdc_withdrawal_min_usd'"
+    );
+    const minUsd = parseFloat(minRows[0]?.value || 50);
+    if (amt < minUsd)
+      return res.status(400).json({ error: `Minimum USDC withdrawal is ${minUsd} USDC` });
+
+    // Check USDC balance
+    const [walRows] = await db.execute(
+      'SELECT balance_usdc FROM investor_wallets WHERE user_id = ?', [req.user.userId]
+    );
+    const balanceUsdc = parseFloat(walRows[0]?.balance_usdc || 0);
+    if (balanceUsdc < amt)
+      return res.status(400).json({ error: `Insufficient USDC balance. Available: ${balanceUsdc.toFixed(2)} USDC` });
+
+    // Determine IMTT applicability (Zimbabwe residents only)
+    const [imttRows] = await db.execute(
+      "SELECT value FROM platform_settings WHERE key = 'usdc_imtt_rate'"
+    );
+    const imttRate   = parseFloat(imttRows[0]?.value || 0.02);
+    const isResident = await isZimbabweResident(req.user.userId);
+    const imttAmount = isResident ? parseFloat((amt * imttRate).toFixed(6)) : 0;
+    const netAmount  = parseFloat((amt - imttAmount).toFixed(6));
+
+    const withdrawalId = uuidv4();
+
+    // Reserve balance while pending
+    await db.execute(
+      `UPDATE investor_wallets SET balance_usdc = balance_usdc - ?, reserved_usd = reserved_usd + ? WHERE user_id = ?`,
+      [amt, amt, req.user.userId]
+    );
+
+    await db.execute(
+      `INSERT INTO withdrawal_requests (id, user_id, amount_usd, bank_name, account_name, account_number, notes, status, currency, destination_wallet, imtt_amount, net_amount)
+       VALUES (?, ?, ?, 'USDC_POLYGON', ?, ?, ?, 'PENDING', 'USDC', ?, ?, ?)`,
+      [withdrawalId, req.user.userId, amt, destination_wallet, destination_wallet, notes || null, destination_wallet, imttAmount, netAmount]
+    );
+
+    // Record IMTT deduction if applicable
+    if (imttAmount > 0) {
+      await db.execute(
+        `INSERT INTO wallet_transactions (id, user_id, type, amount, description, reference_id, created_at)
+         VALUES (gen_random_uuid(), ?, 'IMTT', ?, ?, ?, NOW())`,
+        [req.user.userId, imttAmount, `IMTT on USDC withdrawal (2% — SI 99 of 2026, Finance Act)`, withdrawalId]
+      );
+    }
+
+    const [users] = await db.execute('SELECT full_name, email FROM users WHERE id = ?', [req.user.userId]);
+    const investor = users[0] || {};
+
+    mailer.notifyUsdcWithdrawalInitiated({
+      investorEmail:   investor.email,
+      investorName:    investor.full_name || 'Investor',
+      amount:          amt,
+      netAmount,
+      imttAmount,
+      imttRate,
+      isResident,
+      destinationWallet: destination_wallet,
+      withdrawalId,
+    }).catch(e => console.error('[MAILER] notifyUsdcWithdrawalInitiated failed:', e.message));
+
+    sendMessage({
+      recipientId: req.user.userId,
+      subject:     `💸 USDC Withdrawal Requested — ${amt.toFixed(2)} USDC`,
+      body:        `Your USDC withdrawal request has been received.\n\nRequested: ${amt.toFixed(2)} USDC\n${imttAmount > 0 ? `IMTT (${(imttRate * 100).toFixed(0)}%): ${imttAmount.toFixed(6)} USDC\n` : ''}Net to wallet: ${netAmount.toFixed(6)} USDC\nDestination: ${destination_wallet}\nWithdrawal ID: ${withdrawalId}\n\nAdmin will process the on-chain transfer within 1 business day.`,
+      type:        'SYSTEM',
+      category:    'WALLET',
+      referenceId: withdrawalId,
+    }).catch(() => {});
+
+    res.json({
+      success:        true,
+      withdrawalId,
+      status:         'PENDING',
+      currency:       'USDC',
+      amount_usdc:    amt,
+      imtt_amount:    imttAmount,
+      imtt_applies:   isResident,
+      net_usdc:       netAmount,
+      destination:    destination_wallet,
+      message:        'USDC withdrawal request submitted. Admin will process the on-chain transfer within 1 business day.',
+      regulatory_notice: isResident
+        ? `IMTT of ${(imttRate * 100).toFixed(0)}% (${imttAmount.toFixed(6)} USDC) has been withheld in accordance with the Finance Act and SI 99 of 2026.`
+        : 'IMTT does not apply to international investors.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'USDC withdrawal failed: ' + err.message });
+  }
+});
+
+// GET /api/wallet/usdc/balance — investor's USDC balance
+router.get('/usdc/balance', authenticate, requireUsdcEnabled, async (req, res) => {
+  try {
+    const [rows] = await db.execute(
+      'SELECT balance_usdc FROM investor_wallets WHERE user_id = ?', [req.user.userId]
+    );
+    const balance = parseFloat(rows[0]?.balance_usdc || 0);
+    res.json({ balance_usdc: balance, currency: 'USDC', network: 'Polygon PoS' });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not fetch USDC balance: ' + err.message });
+  }
+});
 
 module.exports = router;

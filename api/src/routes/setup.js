@@ -1013,6 +1013,36 @@ router.get('/migrate', async (req, res) => {
     `INSERT INTO platform_settings (key, value, description)
      VALUES ('partner_commission_rate', '0.001', 'Partner referral commission rate on matched trades (0.001 = 0.1%)')
      ON CONFLICT (key) DO NOTHING`,
+
+    // ── USDC Supervised Pilot column additions ────────────────────────────
+    `ALTER TABLE deposit_requests    ADD COLUMN IF NOT EXISTS currency            VARCHAR(10)   DEFAULT 'USD'`,
+    `ALTER TABLE deposit_requests    ADD COLUMN IF NOT EXISTS tx_hash             VARCHAR(66)`,
+    `ALTER TABLE withdrawal_requests ADD COLUMN IF NOT EXISTS currency            VARCHAR(10)   DEFAULT 'USD'`,
+    `ALTER TABLE withdrawal_requests ADD COLUMN IF NOT EXISTS destination_wallet  VARCHAR(42)`,
+    `ALTER TABLE withdrawal_requests ADD COLUMN IF NOT EXISTS imtt_amount         NUMERIC(20,8) DEFAULT 0`,
+    `ALTER TABLE withdrawal_requests ADD COLUMN IF NOT EXISTS net_amount          NUMERIC(20,8)`,
+
+    // ── USDC Supervised Pilot (SI 99 of 2026) ─────────────────────────────
+    // Kill switch — remains FALSE until formal RBZ written confirmation received
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES ('usdc_pilot_enabled', 'false', 'USDC supervised pilot kill switch (SI 99 of 2026). Set TRUE only after formal RBZ written confirmation is received.')
+     ON CONFLICT (key) DO NOTHING`,
+
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES ('usdc_omnibus_wallet', '', 'Circle USDC omnibus custodial wallet address on Polygon PoS (contract: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359)')
+     ON CONFLICT (key) DO NOTHING`,
+
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES ('usdc_deposit_min_usd', '50', 'Minimum USDC deposit amount in USD equivalent')
+     ON CONFLICT (key) DO NOTHING`,
+
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES ('usdc_withdrawal_min_usd', '50', 'Minimum USDC withdrawal amount in USD equivalent')
+     ON CONFLICT (key) DO NOTHING`,
+
+    `INSERT INTO platform_settings (key, value, description)
+     VALUES ('usdc_imtt_rate', '0.02', 'IMTT rate applied to USDC withdrawals for Zimbabwe-resident investors (2% per Finance Act)')
+     ON CONFLICT (key) DO NOTHING`,
   ];
   const results = [];
   for (const sql of migrations) {

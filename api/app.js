@@ -266,6 +266,28 @@ cron.schedule('30 9 * * *', async () => {
     console.error('[CRON] KYC expiry check failed:', err.message);
   }
 });
+// Monthly USDC RBZ report — 1st of each month at 08:00
+cron.schedule('0 8 1 * *', async () => {
+  console.log('[CRON] Generating monthly USDC RBZ report...');
+  try {
+    const [pilotRows] = await require('./src/db/pool').execute(
+      "SELECT value FROM platform_settings WHERE key = 'usdc_pilot_enabled'"
+    );
+    if (pilotRows[0]?.value !== 'true') {
+      console.log('[CRON] USDC pilot disabled — skipping monthly RBZ report');
+      return;
+    }
+    const { generateUsdcMonthlyReport } = require('./src/services/usdcReporting');
+    const { notifyUsdcMonthlyReport }   = require('./src/utils/mailer');
+    const report = await generateUsdcMonthlyReport();
+    console.log(`[CRON] USDC monthly report: ${report.deposits.count} deposits, ${report.withdrawals.count} withdrawals, ${report.active_investors} active investors`);
+    notifyUsdcMonthlyReport(report)
+      .catch(e => console.error('[CRON] notifyUsdcMonthlyReport failed:', e.message));
+  } catch (err) {
+    console.error('[CRON] USDC monthly report failed:', err.message);
+  }
+});
+
 // Weekly platform integrity check — Sunday at 06:00
 cron.schedule('0 6 * * 0', async () => {
   console.log('[CRON] Running weekly platform integrity check...');

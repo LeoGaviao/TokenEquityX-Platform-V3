@@ -16,6 +16,9 @@ router.get('/public', async (req, res) => {
     'tier2_min_investment_usd',
     'tier3_min_investment_usd',
     'premium_trial_days_new_investors',
+    'usdc_pilot_enabled',
+    'usdc_deposit_min_usd',
+    'usdc_withdrawal_min_usd',
   ];
   try {
     const [rows] = await db.execute(

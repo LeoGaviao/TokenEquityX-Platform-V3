@@ -55,15 +55,33 @@ function makeToken(user) {
 // ── POST /api/auth/signup ────────────────────────────────────────
 // Public signup: name + email + password
 // Role is set in the next step (role-select)
+const EMAIL_REGEX  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
+
 router.post('/signup', signupLimiter, async (req, res) => {
   try {
-    const { full_name, email, password } = req.body;
+    const { full_name, email, password, wallet_address } = req.body;
 
-    if (!full_name || !email || !password)
+    if (!full_name || !full_name.trim())
+      return res.status(400).json({ error: 'Full name is required' });
+    if (!email || !password)
       return res.status(400).json({ error: 'Name, email and password are required' });
+
+    if (!EMAIL_REGEX.test(email))
+      return res.status(400).json({ error: 'Please enter a valid email address' });
 
     if (password.length < 8)
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+    if (wallet_address) {
+      if (!WALLET_REGEX.test(wallet_address))
+        return res.status(400).json({ error: 'Invalid wallet address format (must be 0x followed by 40 hex characters)' });
+      const [walletTaken] = await db.execute(
+        'SELECT id FROM users WHERE wallet_address = ?', [wallet_address]
+      );
+      if (walletTaken.length > 0)
+        return res.status(409).json({ error: 'This wallet address is already linked to another account' });
+    }
 
     // Check email not already used
     const [existing] = await db.execute(
@@ -76,9 +94,9 @@ router.post('/signup', signupLimiter, async (req, res) => {
     const password_hash = await bcrypt.hash(password, 12);
 
     await db.execute(
-      `INSERT INTO users (id, wallet, role, kyc_status, email, full_name, password_hash, is_active, onboarding_complete)
-       VALUES (?, ?, 'INVESTOR', 'PENDING', ?, ?, ?, TRUE, FALSE)`,
-      [id, `email_${id.slice(0,8)}`, email.toLowerCase(), full_name, password_hash]
+      `INSERT INTO users (id, wallet, role, kyc_status, email, full_name, password_hash, is_active, onboarding_complete, wallet_address)
+       VALUES (?, ?, 'INVESTOR', 'PENDING', ?, ?, ?, TRUE, FALSE, ?)`,
+      [id, `email_${id.slice(0,8)}`, email.toLowerCase(), full_name.trim(), password_hash, wallet_address || null]
     );
 
     const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [id]);
@@ -217,6 +235,7 @@ router.post('/role-select', authenticate, async (req, res) => {
         userEmail: user.email,
         userName:  user.full_name,
         role,
+        hasWallet: !!user.wallet_address,
       });
     } catch (e) {
       console.error('[MAILER] notifyUserWelcome investor failed:', e.message);
@@ -280,36 +299,80 @@ router.get('/me', authenticate, async (req, res) => {
 });
 
 // ── POST /api/auth/connect-wallet ───────────────────────────────
-// Existing MetaMask users — keep working as before
+// MetaMask login — looks up account by wallet_address. Does NOT auto-create accounts.
+// If no account found, returns { requires_registration: true } to redirect user to signup.
 router.post('/connect-wallet', walletConnectLimiter, async (req, res) => {
   try {
-    const { wallet, signature } = req.body;
+    const { wallet } = req.body;
     if (!wallet) return res.status(400).json({ error: 'Wallet address required' });
+    if (!WALLET_REGEX.test(wallet))
+      return res.status(400).json({ error: 'Invalid wallet address format' });
 
-    let [rows] = await db.execute('SELECT * FROM users WHERE wallet = ?', [wallet]);
-    let user;
+    const [rows] = await db.execute(
+      'SELECT * FROM users WHERE wallet_address = ? AND is_active = TRUE', [wallet]
+    );
 
     if (rows.length === 0) {
-      // Auto-register new wallet user
-      const id = uuidv4();
-      await db.execute(
-        `INSERT INTO users (id, wallet, role, kyc_status, is_active)
-         VALUES (?, ?, 'INVESTOR', 'PENDING', TRUE)`,
-        [id, wallet]
-      );
-      [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [id]);
+      return res.status(404).json({
+        requires_registration: true,
+        wallet_address: wallet,
+        message: 'No account found for this wallet. Please register using your email and password, then connect your wallet from your profile settings.',
+      });
     }
-    user = rows[0];
-    await db.execute('UPDATE users SET last_login = NOW(), wallet_address = ? WHERE id = ?', [wallet, user.id]);
+
+    const user = rows[0];
+    await db.execute('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
 
     const token = makeToken(user);
     res.json({
       token,
-      user: { id: user.id, role: user.role, wallet: user.wallet, kyc_status: user.kyc_status }
+      user: {
+        id: user.id, role: user.role, wallet: user.wallet,
+        wallet_address: user.wallet_address, kyc_status: user.kyc_status,
+        full_name: user.full_name, onboarding_complete: user.onboarding_complete,
+      }
     });
   } catch (err) {
     console.error('Wallet connect error:', err);
     res.status(500).json({ error: 'Wallet connection failed' });
+  }
+});
+
+// ── POST /api/auth/link-wallet ───────────────────────────────────
+// Authenticated: link a MetaMask wallet_address to the current email account.
+router.post('/link-wallet', authenticate, async (req, res) => {
+  try {
+    const { wallet_address } = req.body;
+    if (!wallet_address)
+      return res.status(400).json({ error: 'wallet_address is required' });
+    if (!WALLET_REGEX.test(wallet_address))
+      return res.status(400).json({ error: 'Invalid wallet address format' });
+
+    const [taken] = await db.execute(
+      'SELECT id FROM users WHERE wallet_address = ? AND id != ?', [wallet_address, req.user.userId]
+    );
+    if (taken.length > 0)
+      return res.status(409).json({ error: 'This wallet address is already linked to another account' });
+
+    await db.execute(
+      'UPDATE users SET wallet_address = ? WHERE id = ?', [wallet_address, req.user.userId]
+    );
+    res.json({ success: true, wallet_address, message: 'Wallet linked successfully' });
+  } catch (err) {
+    console.error('Link wallet error:', err);
+    res.status(500).json({ error: 'Failed to link wallet' });
+  }
+});
+
+// ── DELETE /api/auth/link-wallet ─────────────────────────────────
+// Authenticated: unlink wallet_address from the current account.
+router.delete('/link-wallet', authenticate, async (req, res) => {
+  try {
+    await db.execute('UPDATE users SET wallet_address = NULL WHERE id = ?', [req.user.userId]);
+    res.json({ success: true, message: 'Wallet unlinked successfully' });
+  } catch (err) {
+    console.error('Unlink wallet error:', err);
+    res.status(500).json({ error: 'Failed to unlink wallet' });
   }
 });
 

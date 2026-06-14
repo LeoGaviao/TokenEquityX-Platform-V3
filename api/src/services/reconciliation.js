@@ -2,6 +2,26 @@ const db = require('../db/pool');
 const { sendMessage } = require('../utils/messenger');
 const { getSetting } = require('../utils/platformSettings');
 
+// USDC ERC-20 contract on Polygon PoS (Circle native USDC)
+const USDC_CONTRACT = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+const USDC_DECIMALS = 6;
+// Minimal ERC-20 balanceOf ABI
+const ERC20_ABI = ['function balanceOf(address owner) view returns (uint256)'];
+
+async function fetchOnChainUsdcBalance(omnibusWallet) {
+  try {
+    const { ethers } = require('ethers');
+    const rpcUrl = process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com';
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const contract = new ethers.Contract(USDC_CONTRACT, ERC20_ABI, provider);
+    const raw = await contract.balanceOf(omnibusWallet);
+    return parseFloat(ethers.formatUnits(raw, USDC_DECIMALS));
+  } catch (err) {
+    console.error('[RECONCILIATION] On-chain USDC fetch failed:', err.message);
+    return null;
+  }
+}
+
 const TOLERANCE = 0.01;
 
 async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
@@ -14,11 +34,22 @@ async function runReconciliation(trigger = 'SCHEDULED', performedBy = null) {
     const omnibusWallet    = settingRows[0]?.value || '';
     const [usdcLedgerRows] = await db.execute('SELECT COALESCE(SUM(balance_usdc), 0) as total FROM investor_wallets');
     const usdcLedgerTotal  = parseFloat(usdcLedgerRows[0]?.total || 0);
-    const usdcOnChain      = usdcLedgerTotal; // placeholder until Polygon integration
-    const usdcVariance     = usdcOnChain - usdcLedgerTotal;
-    const usdcNotes        = omnibusWallet
-      ? `Omnibus wallet: ${omnibusWallet.slice(0,8)}...${omnibusWallet.slice(-6)} — on-chain query pending Polygon integration`
-      : 'Omnibus wallet not configured — on-chain check skipped';
+
+    let usdcOnChain = usdcLedgerTotal; // fallback: mirror ledger if chain unavailable
+    let usdcNotes;
+    if (!omnibusWallet) {
+      usdcNotes = 'Omnibus wallet not configured — on-chain check skipped';
+    } else {
+      const chainBalance = await fetchOnChainUsdcBalance(omnibusWallet);
+      if (chainBalance !== null) {
+        usdcOnChain = chainBalance;
+        usdcNotes   = `On-chain: ${chainBalance.toFixed(6)} USDC | Ledger: ${usdcLedgerTotal.toFixed(6)} USDC | Wallet: ${omnibusWallet.slice(0,8)}…${omnibusWallet.slice(-6)}`;
+      } else {
+        usdcNotes = `On-chain query failed (RPC error) — ledger mirrored. Wallet: ${omnibusWallet.slice(0,8)}…${omnibusWallet.slice(-6)}`;
+      }
+    }
+
+    const usdcVariance = usdcOnChain - usdcLedgerTotal;
 
     let usdcStatus = 'OK';
     if (Math.abs(usdcVariance) > 100)       usdcStatus = 'CRITICAL';

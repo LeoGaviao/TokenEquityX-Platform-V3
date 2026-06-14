@@ -62,14 +62,18 @@ export default function InvestorDashboard() {
   const wsRef = useRef(null);
 
   // ── Wallet state
-  const [wallet,        setWallet]        = useState({ balance_usd:0, reserved_usd:0, available_usd:0, balance_usdc:0, settlement_rail:'FIAT' });
-  const [railSaving,    setRailSaving]    = useState(false);
-  const [walletTxns,    setWalletTxns]    = useState([]);
-  const [depositForm,   setDepositForm]   = useState({ amount_usd:'', reference:'', notes:'' });
-  const [withdrawForm,  setWithdrawForm]  = useState({ amount_usd:'', bank_name:'', account_name:'', account_number:'', branch_code:'' });
-  const [walletTab,     setWalletTab]     = useState('overview');
-  const [walletMsg,     setWalletMsg]     = useState(null);
-  const [walletLoading, setWalletLoading] = useState(false);
+  const [wallet,           setWallet]           = useState({ balance_usd:0, reserved_usd:0, available_usd:0, balance_usdc:0, settlement_rail:'FIAT' });
+  const [railSaving,       setRailSaving]       = useState(false);
+  const [walletTxns,       setWalletTxns]       = useState([]);
+  const [depositForm,      setDepositForm]       = useState({ amount_usd:'', reference:'', notes:'' });
+  const [withdrawForm,     setWithdrawForm]      = useState({ amount_usd:'', bank_name:'', account_name:'', account_number:'', branch_code:'' });
+  const [walletTab,        setWalletTab]         = useState('overview');
+  const [walletMsg,        setWalletMsg]         = useState(null);
+  const [walletLoading,    setWalletLoading]     = useState(false);
+  const [usdcPilotEnabled, setUsdcPilotEnabled]  = useState(false);
+  const [usdcForm,         setUsdcForm]          = useState({ mode:'deposit', amount:'', tx_hash:'', destination:'' });
+  const [usdcMsg,          setUsdcMsg]           = useState(null);
+  const [usdcLoading,      setUsdcLoading]       = useState(false);
 
   // ── Trade state
   const [tradeSymbol,  setTradeSymbol]  = useState('');
@@ -264,6 +268,11 @@ export default function InvestorDashboard() {
       fetch(`${API}/wallet/balance`, {
         headers:{ Authorization:`Bearer ${token}` }
       }).then(r=>r.json()).then(d=>{ if(d.balance_usd!==undefined) setWallet(d); }).catch(()=>{});
+
+      fetch(`${API}/settings/public`)
+        .then(r=>r.json())
+        .then(d=>{ if(d.usdc_pilot_enabled==='true') setUsdcPilotEnabled(true); })
+        .catch(()=>{});
 
       // Load settlement rail preference
       fetch(`${API}/wallet/settlement-rail`, {
@@ -668,11 +677,61 @@ export default function InvestorDashboard() {
                           <span className="text-white">Polygon PoS</span>
                         </div>
                       </div>
-                      <div className="mt-3">
-                        <div className="bg-purple-900/20 border border-purple-800/40 rounded-lg p-2 text-xs text-purple-300">
-                          ⚡ USDC funding requires RBZ Exchange Control approval — coming soon
+                      {usdcPilotEnabled ? (
+                        <div className="mt-3 space-y-2">
+                          {usdcMsg && (
+                            <div className={`text-xs rounded px-3 py-2 ${usdcMsg.ok ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-300'}`}>{usdcMsg.text}</div>
+                          )}
+                          {usdcForm.mode === 'deposit' ? (
+                            <div className="space-y-2">
+                              <input type="number" min="50" step="0.01" placeholder="Amount (USDC)"
+                                value={usdcForm.amount} onChange={e=>setUsdcForm(f=>({...f,amount:e.target.value}))}
+                                className="w-full bg-gray-900 border border-purple-800/50 rounded px-3 py-2 text-sm text-white"/>
+                              <input type="text" placeholder="On-chain tx hash (0x...)"
+                                value={usdcForm.tx_hash} onChange={e=>setUsdcForm(f=>({...f,tx_hash:e.target.value}))}
+                                className="w-full bg-gray-900 border border-purple-800/50 rounded px-3 py-2 text-sm text-white font-mono text-xs"/>
+                              <button disabled={usdcLoading||!usdcForm.amount||!usdcForm.tx_hash} onClick={async()=>{
+                                setUsdcLoading(true); setUsdcMsg(null);
+                                const r=await fetch(`${API}/wallet/usdc/deposit`,{method:'POST',headers:{Authorization:`Bearer ${localStorage.getItem('token')}`,'Content-Type':'application/json'},body:JSON.stringify({amount_usdc:usdcForm.amount,tx_hash:usdcForm.tx_hash})});
+                                const d=await r.json();
+                                if(r.ok){setUsdcMsg({ok:true,text:'Deposit submitted — admin will confirm within 4 hours.'});setUsdcForm(f=>({...f,amount:'',tx_hash:''}));}
+                                else setUsdcMsg({ok:false,text:d.error||'Deposit failed'});
+                                setUsdcLoading(false);
+                              }} className="w-full bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded transition">
+                                {usdcLoading?'Submitting…':'Submit USDC Deposit'}
+                              </button>
+                              <button onClick={()=>setUsdcForm(f=>({...f,mode:'withdraw'}))} className="w-full text-xs text-purple-400 hover:text-purple-300">Switch to Withdraw →</button>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <input type="number" min="50" step="0.01" placeholder="Amount (USDC)"
+                                value={usdcForm.amount} onChange={e=>setUsdcForm(f=>({...f,amount:e.target.value}))}
+                                className="w-full bg-gray-900 border border-purple-800/50 rounded px-3 py-2 text-sm text-white"/>
+                              <input type="text" placeholder="Destination wallet (0x...)"
+                                value={usdcForm.destination} onChange={e=>setUsdcForm(f=>({...f,destination:e.target.value}))}
+                                className="w-full bg-gray-900 border border-purple-800/50 rounded px-3 py-2 text-sm text-white font-mono text-xs"/>
+                              <button disabled={usdcLoading||!usdcForm.amount||!usdcForm.destination} onClick={async()=>{
+                                setUsdcLoading(true); setUsdcMsg(null);
+                                const r=await fetch(`${API}/wallet/usdc/withdraw`,{method:'POST',headers:{Authorization:`Bearer ${localStorage.getItem('token')}`,'Content-Type':'application/json'},body:JSON.stringify({amount_usdc:usdcForm.amount,destination_wallet:usdcForm.destination})});
+                                const d=await r.json();
+                                if(r.ok){setUsdcMsg({ok:true,text:`Withdrawal requested. Net: ${d.net_usdc} USDC${d.imtt_applies?' (IMTT withheld)':''}`});setUsdcForm(f=>({...f,amount:'',destination:''}));}
+                                else setUsdcMsg({ok:false,text:d.error||'Withdrawal failed'});
+                                setUsdcLoading(false);
+                              }} className="w-full bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded transition">
+                                {usdcLoading?'Submitting…':'Request USDC Withdrawal'}
+                              </button>
+                              <button onClick={()=>setUsdcForm(f=>({...f,mode:'deposit'}))} className="w-full text-xs text-purple-400 hover:text-purple-300">Switch to Deposit →</button>
+                            </div>
+                          )}
+                          <p className="text-xs text-gray-600 pt-1">Supervised pilot — Statutory Instrument 99 of 2026</p>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="mt-3">
+                          <div className="bg-purple-900/20 border border-purple-800/40 rounded-lg p-2 text-xs text-purple-300">
+                            ⚡ USDC supervised pilot pending RBZ activation (SI 99 of 2026)
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

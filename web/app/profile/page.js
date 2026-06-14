@@ -5,6 +5,90 @@ import { useRouter } from 'next/navigation';
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 const GOLD = '#C8972B';
 
+function WalletSettings({ user, token, flash, onUpdate }) {
+  const [working, setWorking] = useState(false);
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      flash('MetaMask not detected. Please install MetaMask to connect a wallet.', false);
+      return;
+    }
+    setWorking(true);
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const wallet_address = accounts[0];
+      const res = await fetch(`${API}/auth/link-wallet`, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ wallet_address }),
+      });
+      const data = await res.json();
+      if (res.ok) { flash('MetaMask wallet linked successfully.'); onUpdate(); }
+      else flash(data.error || 'Failed to link wallet.', false);
+    } catch { flash('MetaMask connection failed. Please try again.', false); }
+    setWorking(false);
+  }
+
+  async function removeWallet() {
+    if (!confirm('Remove your linked wallet? You can re-connect at any time.')) return;
+    setWorking(true);
+    try {
+      const res = await fetch(`${API}/auth/link-wallet`, {
+        method:  'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) { flash('Wallet unlinked.'); onUpdate(); }
+      else flash(data.error || 'Failed to unlink wallet.', false);
+    } catch { flash('Network error.', false); }
+    setWorking(false);
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <h2 className="font-bold text-white text-base mb-4">Wallet Settings</h2>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center py-2 border-b border-gray-800">
+          <span className="text-sm text-gray-400">MetaMask Wallet</span>
+          <span className="text-sm font-mono text-gray-300">
+            {user?.wallet_address
+              ? `${user.wallet_address.slice(0, 8)}…${user.wallet_address.slice(-6)}`
+              : <span className="text-amber-400 text-xs">Not connected</span>}
+          </span>
+        </div>
+        <div className="flex justify-between items-center py-2 border-b border-gray-800">
+          <span className="text-sm text-gray-400">Last Login</span>
+          <span className="text-sm text-gray-300">
+            {user?.last_login ? new Date(user.last_login).toLocaleString('en-GB') : 'N/A'}
+          </span>
+        </div>
+        {!user?.wallet_address ? (
+          <div>
+            <p className="text-xs text-gray-500 mb-3">
+              Connecting a MetaMask wallet enables on-chain settlement, USDC transactions, and token transfers.
+            </p>
+            <button onClick={connectWallet} disabled={working}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white border border-yellow-600/50 hover:border-yellow-500 hover:bg-yellow-900/20 transition disabled:opacity-50">
+              <span>🦊</span> {working ? 'Connecting…' : 'Connect MetaMask Wallet'}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <button onClick={connectWallet} disabled={working}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white border border-blue-600/50 hover:border-blue-500 hover:bg-blue-900/20 transition disabled:opacity-50">
+              <span>🦊</span> {working ? 'Connecting…' : 'Change Wallet'}
+            </button>
+            <button onClick={removeWallet} disabled={working}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-red-400 border border-red-900/50 hover:border-red-700 hover:bg-red-900/20 transition disabled:opacity-50">
+              {working ? 'Removing…' : 'Remove Wallet'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const router  = useRouter();
   const [token, setToken] = useState('');
@@ -321,23 +405,7 @@ export default function ProfilePage() {
                 </form>
               </div>
 
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <h2 className="font-bold text-white text-base mb-4">Wallet & Login</h2>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center py-2 border-b border-gray-800">
-                    <span className="text-sm text-gray-400">Wallet Address</span>
-                    <span className="text-sm text-gray-300 font-mono">
-                      {user?.wallet_address ? `${user.wallet_address.slice(0, 8)}...${user.wallet_address.slice(-6)}` : 'Not set'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-sm text-gray-400">Last Login</span>
-                    <span className="text-sm text-gray-300">
-                      {user?.last_login ? new Date(user.last_login).toLocaleString('en-GB') : 'N/A'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <WalletSettings user={user} token={token} flash={flash} onUpdate={() => fetchProfile(token)} />
             </div>
           )}
 
