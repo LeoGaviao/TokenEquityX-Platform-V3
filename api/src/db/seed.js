@@ -83,7 +83,7 @@ async function seed() {
         INSERT INTO kyc_records
           (id, user_id, full_name, nationality, country,
            investor_tier, status, reviewed_at, expires_at)
-        VALUES (?, ?, ?, 'ZW', ?, ?, 'APPROVED', NOW(), DATE_ADD(NOW(), INTERVAL 1 YEAR))
+        VALUES (?, ?, ?, 'ZW', ?, ?, 'APPROVED', NOW(), NOW() + INTERVAL '1 year')
       `, [uuidv4(), k.userId, k.name, k.country, k.tier]);
     }
     console.log(`✅ Created ${kycData.length} KYC records\n`);
@@ -305,7 +305,7 @@ async function seed() {
       VALUES
         (?, ?, 'Q1 2025 Dividend Approval',
          'Approve payment of $0.15 per share dividend from Q1 2025 profits.',
-         'ORDINARY', 'ACTIVE', 7, NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY),
+         'ORDINARY', 'ACTIVE', 7, NOW(), NOW() + INTERVAL '7 days',
          1500000, 250000, 100000, ?)
     `, [uuidv4(), tokens[0].id, users[1].id]);
 
@@ -317,7 +317,7 @@ async function seed() {
       VALUES
         (?, ?, 'Board Member Appointment — Dr. N. Sibanda',
          'Appointment of Dr. Nkosi Sibanda as independent non-executive director.',
-         'SPECIAL', 'ACTIVE', 14, NOW(), DATE_ADD(NOW(), INTERVAL 14 DAY),
+         'SPECIAL', 'ACTIVE', 14, NOW(), NOW() + INTERVAL '14 days',
          800000, 50000, 25000, ?)
     `, [uuidv4(), tokens[0].id, users[1].id]);
     console.log('✅ Created 2 governance proposals\n');
@@ -330,7 +330,7 @@ async function seed() {
          total_amount_usdc, claim_deadline, status)
       VALUES
         (?, ?, 'DIVIDEND', 'Q4 2024 Annual Dividend',
-         375000.00, DATE_ADD(NOW(), INTERVAL 30 DAY), 'ACTIVE')
+         375000.00, NOW() + INTERVAL '30 days', 'ACTIVE')
     `, [uuidv4(), tokens[0].id]);
 
     await db.execute(`
@@ -339,7 +339,7 @@ async function seed() {
          total_amount_usdc, claim_deadline, status)
       VALUES
         (?, ?, 'DIVIDEND', 'Q4 2024 Property Income Distribution',
-         124000.00, DATE_ADD(NOW(), INTERVAL 30 DAY), 'ACTIVE')
+         124000.00, NOW() + INTERVAL '30 days', 'ACTIVE')
     `, [uuidv4(), tokens[1].id]);
     console.log('✅ Created 2 dividend rounds\n');
 

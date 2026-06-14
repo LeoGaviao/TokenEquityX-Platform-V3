@@ -103,7 +103,7 @@ async function matchOrders(tokenId, db) {
         if (controls.length > 0 && controls[0].daily_volume_cap_usd > 0) {
           const [[volRow]] = await db.execute(`
             SELECT COALESCE(SUM(total_value), 0) as vol FROM trades
-            WHERE token_id = ? AND matched_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            WHERE token_id = ? AND matched_at > NOW() - INTERVAL '24 hours'
           `, [tokenId]);
           if (Number(volRow.vol) + totalValue > Number(controls[0].daily_volume_cap_usd)) {
             logger.warn('Volume cap reached', { tokenId });
@@ -168,7 +168,7 @@ async function matchOrders(tokenId, db) {
         );
         if (buyerHoldings.length === 0) {
           await db.execute(
-            'INSERT INTO token_holdings (id, user_id, token_id, balance, reserved, average_cost_usd) VALUES (uuid(), ?, ?, 0, 0, 0)',
+            'INSERT INTO token_holdings (id, user_id, token_id, balance, reserved, average_cost_usd) VALUES (gen_random_uuid(),?, ?, 0, 0, 0)',
             [buy.user_id, tokenId]
           );
           [buyerHoldings] = await db.execute(
@@ -235,17 +235,17 @@ async function matchOrders(tokenId, db) {
             );
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'TRADE_BUY', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'TRADE_BUY', ?, ?, ?, ?, ?)
             `, [buy.user_id, -totalValue, buyerBalance, parseFloat((buyerBalance - totalValue).toFixed(2)), buy.id,
                `Buy ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)}`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'IMTT', ?, ?, ?, ?, ?)
             `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(2)), parseFloat((buyerBalance - totalValue - imttAmount).toFixed(2)), buy.id,
                `IMTT 2% on $${totalValue.toFixed(2)} trade`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'IPL_FEE', ?, ?, ?, ?, ?)
             `, [buy.user_id, -buyerIPL, parseFloat((buyerBalance - totalValue - imttAmount).toFixed(2)), newBuyerUSD, buy.id,
                `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade`]);
           } else {
@@ -256,17 +256,17 @@ async function matchOrders(tokenId, db) {
             );
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'TRADE_BUY', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'TRADE_BUY', ?, ?, ?, ?, ?)
             `, [buy.user_id, -totalValue, buyerBalance, parseFloat((buyerBalance - totalValue).toFixed(8)), buy.id,
                `Buy ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} [USDC]`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'IMTT', ?, ?, ?, ?, ?)
             `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(8)), parseFloat((buyerBalance - totalValue - imttAmount).toFixed(8)), buy.id,
                `IMTT 2% on $${totalValue.toFixed(2)} trade [USDC]`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'IPL_FEE', ?, ?, ?, ?, ?)
             `, [buy.user_id, -buyerIPL, parseFloat((buyerBalance - totalValue - imttAmount).toFixed(8)), newBuyerUSDC, buy.id,
                `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade [USDC]`]);
           }
@@ -280,22 +280,22 @@ async function matchOrders(tokenId, db) {
             );
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'TRADE_SELL', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'TRADE_SELL', ?, ?, ?, ?, ?)
             `, [sell.user_id, sellerNet, sellerBalance, newSellerUSD, sell.id,
                `Sell ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} (net of fees & CGT)`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'FEE', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'FEE', ?, ?, ?, ?, ?)
             `, [sell.user_id, -totalFees, parseFloat((sellerBalance + totalValue).toFixed(2)), newSellerUSD, sell.id,
                `Fees: platform $${platformFee.toFixed(2)} + SECZ $${seczLevy.toFixed(2)} + VAT $${vatOnPlatformFee.toFixed(2)}`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'CGT', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'CGT', ?, ?, ?, ?, ?)
             `, [sell.user_id, -cgtAmount, parseFloat((sellerBalance + totalValue).toFixed(2)), newSellerUSD, sell.id,
                `CGT 20% on $${capitalGain.toFixed(2)} capital gain`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'IPL_FEE', ?, ?, ?, ?, ?)
             `, [sell.user_id, -sellerIPL, newSellerUSD, parseFloat((newSellerUSD - sellerIPL).toFixed(2)), sell.id,
                `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade`]);
             // Deduct IPL from seller balance (already reflected in sellerNet)
@@ -307,22 +307,22 @@ async function matchOrders(tokenId, db) {
             );
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'TRADE_SELL', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'TRADE_SELL', ?, ?, ?, ?, ?)
             `, [sell.user_id, sellerNet, sellerBalance, newSellerUSDC, sell.id,
                `Sell ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} [USDC, net of fees & CGT]`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'FEE', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'FEE', ?, ?, ?, ?, ?)
             `, [sell.user_id, -totalFees, parseFloat((sellerBalance + totalValue).toFixed(8)), newSellerUSDC, sell.id,
                `Fees [USDC]: platform $${platformFee.toFixed(2)} + SECZ $${seczLevy.toFixed(2)} + VAT $${vatOnPlatformFee.toFixed(2)}`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'CGT', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'CGT', ?, ?, ?, ?, ?)
             `, [sell.user_id, -cgtAmount, parseFloat((sellerBalance + totalValue).toFixed(8)), newSellerUSDC, sell.id,
                `CGT 20% on $${capitalGain.toFixed(2)} capital gain [USDC]`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
+              VALUES (gen_random_uuid(),?, 'IPL_FEE', ?, ?, ?, ?, ?)
             `, [sell.user_id, -sellerIPL, newSellerUSDC, parseFloat((newSellerUSDC - sellerIPL).toFixed(8)), sell.id,
                `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade [USDC]`]);
           }
