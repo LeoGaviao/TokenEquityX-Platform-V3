@@ -4,6 +4,7 @@ const ws                    = require('./websocket');
 const { getNumericSetting }              = require('../utils/platformSettings');
 const { createSettlementInstruction }    = require('../utils/settlement');
 const { accruePartnerCommission }        = require('../utils/partnerCommission');
+const { triggerCDDIfRequired }           = require('./cddService');
 
 async function matchOrders(tokenId, db) {
   try {
@@ -395,6 +396,12 @@ async function matchOrders(tokenId, db) {
           // Accrue partner commissions outside the transaction (non-fatal)
           accruePartnerCommission(buy.user_id, sell.user_id, totalValue, db)
             .catch(e => logger.warn('Partner commission accrual skipped', { error: e.message }));
+
+          // CDD — SI 99 Section 21: check buyer and seller if trade >= USD 1,000
+          triggerCDDIfRequired(db, { userId: buy.user_id,  transactionId: buy.id,  transactionType: 'TRADE_BUY',  amountUsd: totalValue })
+            .catch(e => logger.warn('CDD trigger skipped (buyer)',  { error: e.message }));
+          triggerCDDIfRequired(db, { userId: sell.user_id, transactionId: sell.id, transactionType: 'TRADE_SELL', amountUsd: totalValue })
+            .catch(e => logger.warn('CDD trigger skipped (seller)', { error: e.message }));
 
           // Update in-memory state for next iteration
           buy.filled_qty  = newBuyFilled;

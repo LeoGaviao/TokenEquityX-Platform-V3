@@ -488,6 +488,14 @@ router.put('/deposit/:id/confirm',
         reference:     dep.reference || dep.id,
       }).catch(() => {});
 
+      // CDD — SI 99 Section 21: check on confirmed deposit >= USD 1,000
+      triggerCDDIfRequired(db, {
+        userId:          dep.user_id,
+        transactionId:   dep.id,
+        transactionType: 'DEPOSIT',
+        amountUsd:       parseFloat(dep.amount_usd),
+      }).catch(e => console.error('[CDD] Deposit trigger failed (non-fatal):', e.message));
+
       res.json({
         success:    true,
         newBalance: newBal,

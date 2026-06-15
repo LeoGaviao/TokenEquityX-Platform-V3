@@ -263,6 +263,7 @@ export default function OnboardingPage() {
   // Address
   const [address, setAddress] = useState({
     addressLine1: '', addressLine2: '', city: '', country: '',
+    countryOfResidence: '', sourceOfFunds: '', investmentPurpose: '',
   });
 
   // Documents
@@ -457,8 +458,11 @@ export default function OnboardingPage() {
       fd.append('addressLine1', address.addressLine1.trim());
       fd.append('addressLine2', address.addressLine2.trim());
       fd.append('city',         address.city.trim());
-      fd.append('country',      address.country.trim());
-      fd.append('role',         role);
+      fd.append('country',             address.country.trim());
+      fd.append('countryOfResidence',  (address.countryOfResidence || address.country).trim());
+      fd.append('sourceOfFunds',       address.sourceOfFunds.trim());
+      fd.append('investmentPurpose',   address.investmentPurpose.trim());
+      fd.append('role',                role);
 
       if (idDoc) fd.append('id_doc', idDoc);
 
@@ -819,12 +823,42 @@ export default function OnboardingPage() {
                       onChange={e => setAddress(a => ({...a, city: e.target.value}))}
                       placeholder="City" className={INPUT} />
                   </FormField>
-                  <FormField label="Country" required>
+                  <FormField label="Country of Residence" required>
                     <input type="text" value={address.country}
-                      onChange={e => setAddress(a => ({...a, country: e.target.value}))}
-                      placeholder="Country" className={INPUT} />
+                      onChange={e => setAddress(a => ({...a, country: e.target.value, countryOfResidence: e.target.value}))}
+                      placeholder="e.g. Zimbabwe" className={INPUT} />
                   </FormField>
                 </div>
+                <FormField label="Source of Funds" required>
+                  <select value={address.sourceOfFunds}
+                    onChange={e => setAddress(a => ({...a, sourceOfFunds: e.target.value}))}
+                    className={INPUT}>
+                    <option value="">Select source of funds…</option>
+                    <option value="Employment income">Employment income</option>
+                    <option value="Business income">Business income</option>
+                    <option value="Investment returns">Investment returns</option>
+                    <option value="Inheritance / gift">Inheritance / gift</option>
+                    <option value="Property sale">Property sale</option>
+                    <option value="Pension / retirement funds">Pension / retirement funds</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </FormField>
+                <FormField label="Investment Purpose" required>
+                  <select value={address.investmentPurpose}
+                    onChange={e => setAddress(a => ({...a, investmentPurpose: e.target.value}))}
+                    className={INPUT}>
+                    <option value="">Select investment purpose…</option>
+                    <option value="Capital growth">Capital growth</option>
+                    <option value="Income / dividends">Income / dividends</option>
+                    <option value="Portfolio diversification">Portfolio diversification</option>
+                    <option value="Retirement savings">Retirement savings</option>
+                    <option value="Business investment">Business investment</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </FormField>
+                <p className="text-xs text-gray-500 mt-1">
+                  Required under SI 99 of 2026 (Money Laundering and Proceeds of Crime — VASP Registration Regulations, 2026) for Customer Due Diligence compliance.
+                </p>
               </div>
               <NavButtons {...navProps} />
             </div>

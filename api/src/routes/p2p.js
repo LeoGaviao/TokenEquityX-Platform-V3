@@ -5,6 +5,8 @@ const { sendMessage }                 = require('../utils/messenger');
 const { getNumericSetting }           = require('../utils/platformSettings');
 const { createSettlementInstruction } = require('../utils/settlement');
 const { accruePartnerCommission }     = require('../utils/partnerCommission');
+const { recordTravelRule }            = require('../services/travelRule');
+const { triggerCDDIfRequired }        = require('../services/cddService');
 
 // ── GET /api/p2p — list open offers, optionally filter by symbol
 router.get('/', authenticate, async (req, res) => {
@@ -321,6 +323,27 @@ router.put('/:id/accept', authenticate, async (req, res) => {
     // Non-fatal partner commission accrual (outside transaction so it never rolls back a trade)
     accruePartnerCommission(req.user.userId, offer.seller_id, total, db)
       .catch(e => console.error('Partner commission accrual skipped:', e.message));
+
+    // Travel Rule — SI 99 Part V: record originator/beneficiary for all P2P transfers
+    recordTravelRule(db, {
+      transactionId:     offer.id,
+      transactionType:   'P2P_BUY',
+      originatorUserId:  req.user.userId,
+      beneficiaryWallet: null,
+      beneficiaryName:   offer.seller_name || null,
+      beneficiaryCountry: null,
+      beneficiaryCity:   null,
+      amountUsd:         total,
+      currency:          'USD',
+    }).catch(e => console.error('[TRAVEL_RULE] P2P record failed (non-fatal):', e.message));
+
+    // CDD — SI 99 Section 21: check if transaction >= USD 1,000
+    triggerCDDIfRequired(db, {
+      userId:          req.user.userId,
+      transactionId:   offer.id,
+      transactionType: 'P2P_BUY',
+      amountUsd:       total,
+    }).catch(e => console.error('[CDD] P2P trigger failed (non-fatal):', e.message));
 
     // External email to seller
     try {

@@ -13,6 +13,7 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
   const {
     fullName, dateOfBirth, nationality, idType, idNumber,
     addressLine1, addressLine2, city, country,
+    countryOfResidence, sourceOfFunds, investmentPurpose,
     investorTier, accreditedInvestor,
     corporateDetails, institutionalDetails,
     riskProfile, riskScore, riskAnswers,
@@ -48,6 +49,9 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
             address_line2          = ?,
             city                   = ?,
             country                = ?,
+            country_of_residence   = ?,
+            source_of_funds        = ?,
+            investment_purpose     = ?,
             investor_tier          = ?,
             accredited_investor    = ?,
             status                 = 'PENDING',
@@ -61,6 +65,8 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
       `, [
         fullName, dateOfBirth, nationality, idType, idNumber,
         addressLine1, addressLine2, city, country,
+        countryOfResidence || country || null,
+        sourceOfFunds || null, investmentPurpose || null,
         tier, accreditedInvestor ? true : false,
         riskProfile || null, parseInt(riskScore) || 0, riskJson,
         corpJson, instJson,
@@ -72,13 +78,16 @@ router.post('/submit', authenticate, upload.any(), async (req, res) => {
         INSERT INTO kyc_records
           (id, user_id, full_name, date_of_birth, nationality,
            id_type, id_number, address_line1, address_line2,
-           city, country, investor_tier, accredited_investor, status,
+           city, country, country_of_residence, source_of_funds, investment_purpose,
+           investor_tier, accredited_investor, status,
            risk_profile, risk_score, risk_answers,
            corporate_details, institutional_details)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
       `, [
         kycId, req.user.userId, fullName, dateOfBirth, nationality,
         idType, idNumber, addressLine1, addressLine2, city, country,
+        countryOfResidence || country || null,
+        sourceOfFunds || null, investmentPurpose || null,
         tier, accreditedInvestor ? true : false,
         riskProfile || null, parseInt(riskScore) || 0, riskJson,
         corpJson, instJson,

@@ -1211,6 +1211,34 @@ async function notifyUsdcMonthlyReport(report) {
   });
 }
 
+async function notifySuspiciousActivityReport({ cddId, investorEmail, investorName, transactionType, amountUsd, triggeredAt, reviewerNotes }) {
+  const resend = getResend();
+  if (!resend) return;
+  const complianceEmail = process.env.COMPLIANCE_EMAIL || process.env.ADMIN_EMAIL;
+  if (!complianceEmail) return;
+  const html = baseTemplate('Suspicious Activity Report — CDD Flagged', `
+    <p style="color:#c0392b;font-weight:bold;">⚠️ A CDD check has been flagged for Suspicious Activity Review.</p>
+    <p>This notification is generated automatically under SI 99 of 2026, Section 21(5).<br>
+    A Suspicious Transaction Report (STR) must be filed with the Financial Intelligence Unit (FIU) if warranted.</p>
+    <table style="border-collapse:collapse;width:100%;margin:16px 0;">
+      <tr><td style="padding:6px 12px;background:#f5f5f5;font-weight:bold;">CDD Check ID</td><td style="padding:6px 12px;">${cddId}</td></tr>
+      <tr><td style="padding:6px 12px;background:#f5f5f5;font-weight:bold;">Investor</td><td style="padding:6px 12px;">${investorName || 'Unknown'} &lt;${investorEmail || ''}&gt;</td></tr>
+      <tr><td style="padding:6px 12px;background:#f5f5f5;font-weight:bold;">Transaction Type</td><td style="padding:6px 12px;">${transactionType}</td></tr>
+      <tr><td style="padding:6px 12px;background:#f5f5f5;font-weight:bold;">Amount (USD)</td><td style="padding:6px 12px;">$${parseFloat(amountUsd || 0).toFixed(2)}</td></tr>
+      <tr><td style="padding:6px 12px;background:#f5f5f5;font-weight:bold;">Triggered At</td><td style="padding:6px 12px;">${triggeredAt}</td></tr>
+      <tr><td style="padding:6px 12px;background:#f5f5f5;font-weight:bold;">Reviewer Notes</td><td style="padding:6px 12px;">${reviewerNotes || '—'}</td></tr>
+    </table>
+    <p>Log into the admin panel to review the full transaction history and KYC record before filing an STR.</p>
+    <p style="font-size:12px;color:#888;">Regulatory basis: SI 99 of 2026 — Money Laundering and Proceeds of Crime (VASP Registration) Regulations, 2026. Administered by the Financial Intelligence Unit (FIU), Reserve Bank of Zimbabwe.</p>
+  `);
+  await resend.emails.send({
+    from:    process.env.EMAIL_FROM || 'TokenEquityX <noreply@tokenequityx.com>',
+    to:      complianceEmail,
+    subject: `[SAR ALERT] CDD Flagged — ${investorName || investorEmail} — $${parseFloat(amountUsd || 0).toFixed(2)} ${transactionType}`,
+    html,
+  });
+}
+
 module.exports = {
   send,
   sendReconciliationEmail,
@@ -1274,4 +1302,5 @@ module.exports = {
   notifyUsdcWithdrawalCompleted,
   notifyUsdcPilotSuspended,
   notifyUsdcMonthlyReport,
+  notifySuspiciousActivityReport,
 };

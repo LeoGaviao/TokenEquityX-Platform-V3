@@ -998,4 +998,129 @@ router.get('/debug-holdings',
   }
 );
 
+// ── GET /api/admin/travel-rule — Travel Rule records (SI 99 Part V)
+// Query params: from (ISO date), to (ISO date), user_id, limit (default 50)
+router.get('/travel-rule',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { from, to, user_id, limit = 50 } = req.query;
+      const conditions = [];
+      const params     = [];
+
+      if (from) { conditions.push('tr.created_at >= ?'); params.push(from); }
+      if (to)   { conditions.push('tr.created_at <= ?'); params.push(to + 'T23:59:59Z'); }
+      if (user_id) { conditions.push('tr.originator_user_id = ?'); params.push(user_id); }
+
+      const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+      params.push(Math.min(parseInt(limit) || 50, 200));
+
+      const [rows] = await db.execute(
+        `SELECT tr.*, u.email AS originator_email
+         FROM travel_rule_records tr
+         LEFT JOIN users u ON u.id = tr.originator_user_id
+         ${where}
+         ORDER BY tr.created_at DESC
+         LIMIT ?`,
+        params
+      );
+      res.json({ count: rows.length, records: rows });
+    } catch (err) {
+      console.error('[ADMIN] GET /travel-rule error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── GET /api/admin/cdd — CDD checks queue (SI 99 Section 21)
+// Query params: status (PENDING|CLEARED|FLAGGED), from, to, limit (default 50)
+router.get('/cdd',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { status, from, to, limit = 50 } = req.query;
+      const conditions = [];
+      const params     = [];
+
+      if (status) { conditions.push('c.cdd_status = ?'); params.push(status.toUpperCase()); }
+      if (from)   { conditions.push('c.triggered_at >= ?'); params.push(from); }
+      if (to)     { conditions.push('c.triggered_at <= ?'); params.push(to + 'T23:59:59Z'); }
+
+      const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+      params.push(Math.min(parseInt(limit) || 50, 200));
+
+      const [rows] = await db.execute(
+        `SELECT c.*, u.email, u.full_name
+         FROM cdd_checks c
+         LEFT JOIN users u ON u.id = c.user_id
+         ${where}
+         ORDER BY c.triggered_at DESC
+         LIMIT ?`,
+        params
+      );
+      res.json({ count: rows.length, checks: rows });
+    } catch (err) {
+      console.error('[ADMIN] GET /cdd error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── PUT /api/admin/cdd/:id/clear — mark CDD check as CLEARED
+router.put('/cdd/:id/clear',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { notes } = req.body;
+      const { clearCDDCheck } = require('../services/cddService');
+      await clearCDDCheck(db, req.params.id, req.user.userId, notes);
+      res.json({ success: true, cdd_id: req.params.id, status: 'CLEARED' });
+    } catch (err) {
+      console.error('[ADMIN] PUT /cdd/clear error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── PUT /api/admin/cdd/:id/flag — mark CDD check as FLAGGED (triggers SAR notification)
+router.put('/cdd/:id/flag',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { notes } = req.body;
+      const { flagCDDCheck } = require('../services/cddService');
+      await flagCDDCheck(db, req.params.id, req.user.userId, notes);
+
+      // Fetch CDD record to notify compliance officer
+      const [rows] = await db.execute(
+        `SELECT c.*, u.email, u.full_name
+         FROM cdd_checks c LEFT JOIN users u ON u.id = c.user_id
+         WHERE c.id = ? LIMIT 1`,
+        [req.params.id]
+      );
+      if (rows[0]) {
+        const { notifySuspiciousActivityReport } = require('../utils/mailer');
+        notifySuspiciousActivityReport({
+          cddId:           req.params.id,
+          investorEmail:   rows[0].email,
+          investorName:    rows[0].full_name,
+          transactionType: rows[0].transaction_type,
+          amountUsd:       rows[0].amount_usd,
+          triggeredAt:     rows[0].triggered_at,
+          reviewerNotes:   notes,
+        }).catch(e => console.error('[MAILER] SAR notification failed (non-fatal):', e.message));
+      }
+
+      res.json({ success: true, cdd_id: req.params.id, status: 'FLAGGED' });
+    } catch (err) {
+      console.error('[ADMIN] PUT /cdd/flag error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;
