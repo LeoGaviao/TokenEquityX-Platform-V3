@@ -54,12 +54,12 @@ async function runIntegrityChecks() {
         detail: rows.length > 0 ? `${rows.length} withdrawal request(s) have been PENDING for more than 7 days` : null };
     }),
 
-    check('zero_holdings', 'Token holdings with zero or negative units', async () => {
+    check('zero_holdings', 'Token holdings with zero or negative balance', async () => {
       const [rows] = await db.execute(
-        `SELECT user_id, token_symbol FROM token_holdings WHERE units <= 0`
+        `SELECT user_id, token_id FROM token_holdings WHERE balance <= 0`
       );
       return { status: rows.length === 0 ? 'OK' : 'WARN', count: rows.length,
-        detail: rows.length > 0 ? `${rows.length} holding record(s) have zero or negative units` : null };
+        detail: rows.length > 0 ? `${rows.length} holding record(s) have zero or negative balance` : null };
     }),
 
     check('stale_kyc', 'KYC records pending >14 days', async () => {
