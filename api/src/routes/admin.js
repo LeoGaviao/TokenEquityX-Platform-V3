@@ -878,10 +878,10 @@ router.get('/integrity-check',
 );
 
 // POST /api/admin/run-migrations — execute pending-migrations.sql against the DB
-// One-time use; idempotent. Requires SUPER_ADMIN role.
+// One-time use; idempotent. Remove this endpoint after migrations are confirmed applied.
 router.post('/run-migrations',
   authenticate,
-  requireRole('SUPER_ADMIN'),
+  requireRole('ADMIN'),
   async (req, res) => {
     const fs   = require('fs');
     const path = require('path');
