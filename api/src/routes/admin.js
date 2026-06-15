@@ -1208,4 +1208,250 @@ router.put(
   }
 );
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ZIMRA WHT REMITTANCE ENDPOINTS
+// Income Tax Act [Chapter 23:06] — Quarterly WHT on dividends
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /api/admin/wht/quarters — all quarters with WHT data + remittance status
+router.get(
+  '/wht/quarters',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { listWHTQuarters } = require('../services/zimraWHT');
+      const quarters = await listWHTQuarters(db);
+      res.json(quarters);
+    } catch (err) {
+      console.error('[ADMIN] GET /wht/quarters error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── GET /api/admin/wht/:quarter/csv — download WHT return as CSV
+// NOTE: must be defined BEFORE /:quarter to avoid Express swallowing 'csv' as param
+router.get(
+  '/wht/:quarter/csv',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { generateWHTReturn, generateWHTCSV } = require('../services/zimraWHT');
+      const whtReturn = await generateWHTReturn(db, req.params.quarter);
+      if (whtReturn.distributionCount === 0) {
+        return res.status(404).json({ error: `No WHT distributions found for ${req.params.quarter}` });
+      }
+      const csv      = generateWHTCSV(whtReturn);
+      const filename = `TokenEquityX_WHT_${req.params.quarter}.csv`;
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(csv);
+    } catch (err) {
+      console.error('[ADMIN] GET /wht/csv error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── GET /api/admin/wht/:quarter — full WHT return data for a quarter
+router.get(
+  '/wht/:quarter',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { generateWHTReturn } = require('../services/zimraWHT');
+      const whtReturn = await generateWHTReturn(db, req.params.quarter);
+      // Attach remittance record if it exists
+      const [remRows] = await db.execute(
+        'SELECT * FROM zimra_remittances WHERE quarter = ? LIMIT 1',
+        [req.params.quarter]
+      );
+      res.json({ ...whtReturn, remittance: remRows[0] || null });
+    } catch (err) {
+      console.error('[ADMIN] GET /wht/:quarter error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── POST /api/admin/wht/:quarter/send-report — email report to compliance officer
+router.post(
+  '/wht/:quarter/send-report',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { generateWHTReturn, generateWHTCSV, getQuarterDetails } = require('../services/zimraWHT');
+      const { notifyZimraWHTQuarterlyReport } = require('../utils/mailer');
+
+      const whtReturn = await generateWHTReturn(db, req.params.quarter);
+      if (whtReturn.distributionCount === 0) {
+        return res.status(404).json({ error: `No WHT distributions found for ${req.params.quarter}` });
+      }
+      const csv     = generateWHTCSV(whtReturn);
+      const details = getQuarterDetails(new Date(parseInt(req.params.quarter.split('-')[1]),
+        (parseInt(req.params.quarter.split('-')[0].replace('Q','')) - 1) * 3, 15));
+
+      await notifyZimraWHTQuarterlyReport(whtReturn, csv, details.dueDate);
+
+      // Upsert zimra_remittances record, mark report_sent_at
+      await db.execute(`
+        INSERT INTO zimra_remittances
+          (quarter, tax_year, period_start, period_end, due_date,
+           total_wht_usd, resident_wht, non_resident_wht,
+           distribution_count, investor_count, status,
+           report_generated_at, report_sent_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', NOW(), NOW())
+        ON CONFLICT (quarter) DO UPDATE SET
+          report_sent_at      = NOW(),
+          report_generated_at = COALESCE(zimra_remittances.report_generated_at, NOW()),
+          total_wht_usd       = EXCLUDED.total_wht_usd,
+          resident_wht        = EXCLUDED.resident_wht,
+          non_resident_wht    = EXCLUDED.non_resident_wht,
+          distribution_count  = EXCLUDED.distribution_count,
+          investor_count      = EXCLUDED.investor_count,
+          updated_at          = NOW()
+      `, [
+        req.params.quarter,
+        details.taxYear,
+        whtReturn.periodStart,
+        whtReturn.periodEnd,
+        details.dueDate.toISOString().split('T')[0],
+        whtReturn.totals.totalWHT,
+        whtReturn.totals.residentWHT,
+        whtReturn.totals.nonResidentWHT,
+        whtReturn.distributionCount,
+        whtReturn.investorCount,
+      ]);
+
+      res.json({
+        success: true,
+        quarter: req.params.quarter,
+        totalWHT: whtReturn.totals.totalWHT,
+        message: `WHT report for ${req.params.quarter} emailed to compliance officer.`,
+      });
+    } catch (err) {
+      console.error('[ADMIN] POST /wht/send-report error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── PUT /api/admin/wht/:quarter/mark-filed — record ZIMRA reference after filing
+router.put(
+  '/wht/:quarter/mark-filed',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { zimra_reference, notes } = req.body;
+      if (!zimra_reference) return res.status(400).json({ error: 'zimra_reference is required' });
+
+      const { generateWHTReturn, getQuarterDetails } = require('../services/zimraWHT');
+      const { notifyZimraWHTFiled } = require('../utils/mailer');
+
+      const whtReturn = await generateWHTReturn(db, req.params.quarter);
+      const details   = getQuarterDetails(new Date(parseInt(req.params.quarter.split('-')[1]),
+        (parseInt(req.params.quarter.split('-')[0].replace('Q','')) - 1) * 3, 15));
+
+      await db.execute(`
+        INSERT INTO zimra_remittances
+          (quarter, tax_year, period_start, period_end, due_date,
+           total_wht_usd, resident_wht, non_resident_wht,
+           distribution_count, investor_count,
+           status, zimra_reference, notes, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FILED', ?, ?, NOW())
+        ON CONFLICT (quarter) DO UPDATE SET
+          status          = 'FILED',
+          zimra_reference = EXCLUDED.zimra_reference,
+          notes           = COALESCE(EXCLUDED.notes, zimra_remittances.notes),
+          updated_at      = NOW()
+      `, [
+        req.params.quarter,
+        details.taxYear,
+        whtReturn.periodStart,
+        whtReturn.periodEnd,
+        details.dueDate.toISOString().split('T')[0],
+        whtReturn.totals.totalWHT,
+        whtReturn.totals.residentWHT,
+        whtReturn.totals.nonResidentWHT,
+        whtReturn.distributionCount,
+        whtReturn.investorCount,
+        zimra_reference,
+        notes || null,
+      ]);
+
+      notifyZimraWHTFiled({
+        quarter:       req.params.quarter,
+        zimraReference: zimra_reference,
+        totalWHT:      whtReturn.totals.totalWHT,
+        notes,
+      }).catch(e => console.error('[MAILER] notifyZimraWHTFiled failed:', e.message));
+
+      res.json({ success: true, quarter: req.params.quarter, status: 'FILED', zimra_reference });
+    } catch (err) {
+      console.error('[ADMIN] PUT /wht/mark-filed error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── PUT /api/admin/wht/:quarter/mark-paid — record bank payment details
+router.put(
+  '/wht/:quarter/mark-paid',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const { zimra_reference, payment_date, bank_reference, notes } = req.body;
+      if (!bank_reference) return res.status(400).json({ error: 'bank_reference is required' });
+      if (!payment_date)   return res.status(400).json({ error: 'payment_date is required' });
+
+      const { notifyZimraWHTPaid } = require('../utils/mailer');
+      const [remRows] = await db.execute(
+        'SELECT * FROM zimra_remittances WHERE quarter = ? LIMIT 1',
+        [req.params.quarter]
+      );
+      const rem = remRows[0];
+      if (!rem) return res.status(404).json({ error: `No remittance record for ${req.params.quarter}. Mark as Filed first.` });
+
+      await db.execute(`
+        UPDATE zimra_remittances SET
+          status          = 'PAID',
+          zimra_reference = COALESCE(?, zimra_reference),
+          payment_date    = ?,
+          bank_reference  = ?,
+          paid_by         = ?,
+          notes           = COALESCE(?, notes),
+          updated_at      = NOW()
+        WHERE quarter = ?
+      `, [
+        zimra_reference || null,
+        payment_date,
+        bank_reference,
+        req.user.userId,
+        notes || null,
+        req.params.quarter,
+      ]);
+
+      notifyZimraWHTPaid({
+        quarter:        req.params.quarter,
+        zimraReference: zimra_reference || rem.zimra_reference,
+        bankReference:  bank_reference,
+        paymentDate:    payment_date,
+        totalWHT:       rem.total_wht_usd,
+        notes,
+      }).catch(e => console.error('[MAILER] notifyZimraWHTPaid failed:', e.message));
+
+      res.json({ success: true, quarter: req.params.quarter, status: 'PAID', bank_reference, payment_date });
+    } catch (err) {
+      console.error('[ADMIN] PUT /wht/mark-paid error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;
