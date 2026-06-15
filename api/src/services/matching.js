@@ -52,7 +52,6 @@ async function matchOrders(tokenId, db) {
     const seczLevyRate    = await getNumericSetting('secz_levy_rate', 0.0032);
     const vatRate         = await getNumericSetting('vat_rate', 0.155);
     const cgtRate         = await getNumericSetting('cgt_rate', 0.20);
-    const imttRate        = await getNumericSetting('imtt_rate', 0.02);
     const iplRate         = await getNumericSetting('ipl_rate', 0.00025); // 0.025% per side — SECZ regulatory
 
     const trades = [];
@@ -89,7 +88,7 @@ async function matchOrders(tokenId, db) {
         const seczLevy         = parseFloat((totalValue * seczLevyRate).toFixed(2));
         const vatOnPlatformFee = parseFloat((platformFee * vatRate).toFixed(2));
         const totalFees        = parseFloat((platformFee + seczLevy + vatOnPlatformFee).toFixed(2));
-        const imttAmount       = parseFloat((totalValue * imttRate).toFixed(2));
+        const imttAmount       = 0; // IMTT applies only to bank withdrawals, not ledger trades (SI 99)
         // Investor Protection Levy — 0.025% per side (SECZ regulatory requirement)
         const buyerIPL         = parseFloat((totalValue * iplRate).toFixed(2));
         const sellerIPL        = parseFloat((totalValue * iplRate).toFixed(2));
@@ -240,13 +239,8 @@ async function matchOrders(tokenId, db) {
                `Buy ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)}`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (gen_random_uuid(),?, 'IMTT', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(2)), parseFloat((buyerBalance - totalValue - imttAmount).toFixed(2)), buy.id,
-               `IMTT 2% on $${totalValue.toFixed(2)} trade`]);
-            await conn.execute(`
-              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (gen_random_uuid(),?, 'IPL_FEE', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -buyerIPL, parseFloat((buyerBalance - totalValue - imttAmount).toFixed(2)), newBuyerUSD, buy.id,
+            `, [buy.user_id, -buyerIPL, parseFloat((buyerBalance - totalValue).toFixed(2)), newBuyerUSD, buy.id,
                `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade`]);
           } else {
             const newBuyerUSDC = parseFloat((buyerBalance - buyerDebit).toFixed(8));
@@ -261,13 +255,8 @@ async function matchOrders(tokenId, db) {
                `Buy ${fillQty} ${tokenSymbol} @ $${tradePrice.toFixed(4)} [USDC]`]);
             await conn.execute(`
               INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-              VALUES (gen_random_uuid(),?, 'IMTT', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -imttAmount, parseFloat((buyerBalance - totalValue).toFixed(8)), parseFloat((buyerBalance - totalValue - imttAmount).toFixed(8)), buy.id,
-               `IMTT 2% on $${totalValue.toFixed(2)} trade [USDC]`]);
-            await conn.execute(`
-              INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
               VALUES (gen_random_uuid(),?, 'IPL_FEE', ?, ?, ?, ?, ?)
-            `, [buy.user_id, -buyerIPL, parseFloat((buyerBalance - totalValue - imttAmount).toFixed(8)), newBuyerUSDC, buy.id,
+            `, [buy.user_id, -buyerIPL, parseFloat((buyerBalance - totalValue).toFixed(8)), newBuyerUSDC, buy.id,
                `Investor Protection Levy 0.025% on $${totalValue.toFixed(2)} trade [USDC]`]);
           }
 

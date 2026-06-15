@@ -121,12 +121,11 @@ router.post('/', authenticate, async (req, res) => {
 // P2P Transfer Fee Structure:
 // Platform fee: 0% (no platform fee on P2P transfers — by design to incentivise P2P liquidity)
 // CGT:  20% on seller capital gain (withheld at source, paid to ZIMRA)
-// IMTT:  2% on transfer value (charged to buyer, paid to ZIMRA)
+// IMTT:  0% — not applicable to ledger-to-ledger trades; applies only to bank withdrawals (SI 99)
 // IPL:  0.025% per side — Investor Protection Levy (SECZ regulatory requirement)
 // WHT: not applicable (capital transfer, not income)
 router.put('/:id/accept', authenticate, async (req, res) => {
   const cgtRate  = await getNumericSetting('cgt_rate',  0.20);
-  const imttRate = await getNumericSetting('imtt_rate', 0.02);
   const iplRate  = await getNumericSetting('ipl_rate',  0.00025);
   const conn = await db.getConnection();
   try {
@@ -159,7 +158,7 @@ router.put('/:id/accept', authenticate, async (req, res) => {
     const sellerAvgCost = parseFloat(sellerHoldings[0]?.average_cost_usd || 0);
     const capitalGain   = Math.max(0, (parseFloat(offer.price_per_token) - sellerAvgCost) * qty);
     const cgtAmount     = parseFloat((capitalGain * cgtRate).toFixed(2));
-    const imttAmount    = parseFloat((total * imttRate).toFixed(2));
+    const imttAmount    = 0; // IMTT applies only to bank withdrawals, not ledger trades (SI 99)
     // Investor Protection Levy — 0.025% per side (SECZ regulatory requirement)
     const buyerIPL      = parseFloat((total * iplRate).toFixed(2));
     const sellerIPL     = parseFloat((total * iplRate).toFixed(2));
@@ -178,7 +177,7 @@ router.put('/:id/accept', authenticate, async (req, res) => {
     const available = parseFloat(wallet.balance_usd) - parseFloat(wallet.reserved_usd || 0);
     if (available < buyerDebit) {
       await conn.rollback();
-      return res.status(400).json({ error: `Insufficient balance. You need $${buyerDebit.toFixed(2)} (incl. 2% IMTT) but have $${available.toFixed(2)} available.` });
+      return res.status(400).json({ error: `Insufficient balance. You need $${buyerDebit.toFixed(2)} (incl. IPL) but have $${available.toFixed(2)} available.` });
     }
 
     // Debit buyer wallet (trade value + IMTT)
@@ -203,23 +202,11 @@ router.put('/:id/accept', authenticate, async (req, res) => {
     await conn.execute(`
       INSERT INTO wallet_transactions
         (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
-      VALUES (gen_random_uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
-    `, [
-      req.user.userId,
-      -imttAmount,
-      parseFloat((buyerBalanceBefore - total).toFixed(2)),
-      parseFloat((buyerBalanceBefore - total - imttAmount).toFixed(2)),
-      offer.id,
-      `IMTT 2% on $${total.toFixed(2)} P2P transfer`,
-    ]);
-    await conn.execute(`
-      INSERT INTO wallet_transactions
-        (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
       VALUES (gen_random_uuid(), ?, 'IPL_FEE', ?, ?, ?, ?, ?)
     `, [
       req.user.userId,
       -buyerIPL,
-      parseFloat((buyerBalanceBefore - total - imttAmount).toFixed(2)),
+      parseFloat((buyerBalanceBefore - total).toFixed(2)),
       buyerBalanceAfter,
       offer.id,
       `Investor Protection Levy 0.025% on $${total.toFixed(2)} P2P transfer`,

@@ -44,6 +44,8 @@ const mailer                = require('../../utils/mailer');
 const { sendMessage }       = require('../../utils/messenger');
 const { getNumericSetting }           = require('../../utils/platformSettings');
 const { createSettlementInstruction } = require('../../utils/settlement');
+const { recordTravelRule, getUnhostedWalletFlag } = require('../../services/travelRule');
+const { triggerCDDIfRequired }                    = require('../../services/cddService');
 
 // ════════════════════════════════════════════════════════
 // INVESTOR — BALANCE
@@ -192,15 +194,17 @@ router.post('/withdraw', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'Minimum withdrawal is USD 50' });
   }
 
-  const imttRate      = await getNumericSetting('imtt_rate', 0.02);
-  const imttAmount    = parseFloat((parseFloat(amount_usd) * imttRate).toFixed(2));
+  // IMTT applies only to Zimbabwe-resident investors (SI 99 / Finance Act)
+  const applyIMTT  = await shouldApplyIMTT(req.user.userId);
+  const imttRate   = applyIMTT ? await getNumericSetting('imtt_rate', 0.02) : 0;
+  const imttAmount = parseFloat((parseFloat(amount_usd) * imttRate).toFixed(2));
   const totalRequired = parseFloat((parseFloat(amount_usd) + imttAmount).toFixed(2));
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
-    // Check available balance (must cover withdrawal + IMTT)
+    // Check available balance (must cover withdrawal + IMTT if applicable)
     const [wallets] = await conn.execute(
       'SELECT * FROM investor_wallets WHERE user_id = ?', [req.user.userId]
     );
@@ -213,18 +217,21 @@ router.post('/withdraw', authenticate, async (req, res) => {
     if (available < totalRequired) {
       await conn.rollback();
       return res.status(400).json({
-        error: `Insufficient available balance. Available: $${available.toFixed(2)}, Required: $${totalRequired.toFixed(2)} (withdrawal $${parseFloat(amount_usd).toFixed(2)} + IMTT $${imttAmount.toFixed(2)})`
+        error: applyIMTT
+          ? `Insufficient available balance. Available: $${available.toFixed(2)}, Required: $${totalRequired.toFixed(2)} (withdrawal $${parseFloat(amount_usd).toFixed(2)} + IMTT $${imttAmount.toFixed(2)})`
+          : `Insufficient available balance. Available: $${available.toFixed(2)}, Required: $${parseFloat(amount_usd).toFixed(2)}`
       });
     }
 
     const withdrawalId = uuidv4();
 
-    // Deduct IMTT immediately; reserve withdrawal amount for pending processing
+    // Deduct IMTT if applicable; reserve withdrawal amount for pending processing
     await conn.execute(
       'UPDATE investor_wallets SET balance_usd = balance_usd - ?, reserved_usd = reserved_usd + ?, updated_at = NOW() WHERE user_id = ?',
       [imttAmount, amount_usd, req.user.userId]
     );
 
+    // Always record IMTT transaction — even when zero — for regulatory audit trail
     await conn.execute(`
       INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
       VALUES (gen_random_uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)
@@ -233,7 +240,9 @@ router.post('/withdraw', authenticate, async (req, res) => {
       parseFloat(wallet.balance_usd),
       parseFloat((parseFloat(wallet.balance_usd) - imttAmount).toFixed(2)),
       withdrawalId,
-      `IMTT 2% on $${parseFloat(amount_usd).toFixed(2)} withdrawal`,
+      applyIMTT
+        ? `IMTT (2%) — Zimbabwe resident electronic transfer — $${parseFloat(amount_usd).toFixed(2)} withdrawal`
+        : 'IMTT — Not applicable (international transfer)',
     ]);
 
     await conn.execute(
@@ -276,7 +285,6 @@ router.post('/withdraw', authenticate, async (req, res) => {
       accountNumber: account_number,
     }).catch(e => console.error('[MAILER] notifyInvestorWithdrawalProcessing failed:', e.message));
 
-    // FIX 3.4 — platform message to investor
     sendMessage({
       recipientId: req.user.userId,
       subject:     `💸 Withdrawal Request Submitted — $${parseFloat(amount_usd).toFixed(2)} USD`,
@@ -286,7 +294,6 @@ router.post('/withdraw', authenticate, async (req, res) => {
       referenceId: withdrawalId,
     }).catch(e => console.error('[MESSENGER] withdraw POST sendMessage (investor) failed:', e.message));
 
-    // FIX 3.4 — platform message to admin (system UUID)
     sendMessage({
       recipientId: '00000000-0000-0000-0000-000000000001',
       subject:     `💸 New Withdrawal Request — $${parseFloat(amount_usd).toFixed(2)} from ${investor.full_name || 'Investor'}`,
@@ -296,11 +303,41 @@ router.post('/withdraw', authenticate, async (req, res) => {
       referenceId: withdrawalId,
     }).catch(e => console.error('[MESSENGER] withdraw POST sendMessage (admin) failed:', e.message));
 
+    // Travel Rule — SI 99 of 2026, Part V (non-blocking)
+    recordTravelRule(db, {
+      transactionId:    withdrawalId,
+      transactionType:  'WITHDRAWAL',
+      originatorUserId: req.user.userId,
+      beneficiaryWallet: null,
+      beneficiaryName:  account_name,
+      beneficiaryCountry: 'ZW',
+      beneficiaryCity:  null,
+      amountUsd:        parseFloat(amount_usd),
+      currency:         'USD',
+    }).catch(e => console.error('[TRAVEL_RULE] USD withdrawal record failed:', e.message));
+
+    // CDD — SI 99 s.21 — trigger check if >= USD 1,000 (non-blocking)
+    triggerCDDIfRequired(db, {
+      userId:          req.user.userId,
+      transactionId:   withdrawalId,
+      transactionType: 'WITHDRAWAL',
+      amountUsd:       parseFloat(amount_usd),
+    }).catch(e => console.error('[CDD] USD withdrawal trigger failed:', e.message));
+
+    // Unhosted wallet flag (USDC only — N/A for bank withdrawals)
+    const walletOwnershipRequired = false;
+
     res.json({
       success:      true,
       withdrawalId,
       status:       'PENDING',
+      imtt_applied: applyIMTT,
+      imtt_amount:  imttAmount,
       message:      'Withdrawal request submitted. Funds will be transferred within 2 business days. You will receive an email confirmation when the transfer is complete.',
+      ...(walletOwnershipRequired ? {
+        wallet_ownership_proof_required: true,
+        regulatory_note: 'Transfers to unhosted wallets exceeding USD 1,000 require Wallet Ownership Proof under SI 99 of 2026, Section 20.',
+      } : {}),
     });
   } catch (err) {
     await conn.rollback();
@@ -844,18 +881,24 @@ router.get('/admin/transactions',
 
 const { requireUsdcEnabled } = require('../../middleware/usdcPilot');
 
-// Helper: determine if investor is Zimbabwe-resident (IMTT applies)
-async function isZimbabweResident(userId) {
+// IMTT residency check — SI 99 of 2026 / Finance Act
+// IMTT applies only to electronic transfers WITHIN Zimbabwe or FROM Zimbabwe.
+// Returns true if the investor is Zimbabwe-resident based on approved KYC.
+// Falls back to false (no IMTT) if KYC is missing or not yet approved.
+async function shouldApplyIMTT(userId) {
   const [rows] = await db.execute(
-    `SELECT country_of_residence, nationality FROM kyc_records
-     WHERE user_id = ? AND status = 'APPROVED'
-     ORDER BY created_at DESC LIMIT 1`,
+    `SELECT k.country_of_residence, k.nationality, k.country, u.email
+     FROM users u
+     LEFT JOIN kyc_records k ON k.user_id = u.id
+     WHERE u.id = ?
+     LIMIT 1`,
     [userId]
   );
-  if (rows.length === 0) return false;
-  const r = rows[0];
-  return (r.country_of_residence || '').toUpperCase() === 'ZW' ||
-         (r.nationality || '').toUpperCase() === 'ZW';
+  const kyc = rows[0];
+  if (!kyc) return false;
+  const cor = (kyc.country_of_residence || kyc.country || '').toUpperCase();
+  const nat = (kyc.nationality || '').toUpperCase();
+  return cor === 'ZW' || nat === 'ZW';
 }
 
 // POST /api/wallet/usdc/deposit — investor submits USDC deposit intent
@@ -967,12 +1010,12 @@ router.post('/usdc/withdraw', authenticate, requireUsdcEnabled, async (req, res)
     if (balanceUsdc < amt)
       return res.status(400).json({ error: `Insufficient USDC balance. Available: ${balanceUsdc.toFixed(2)} USDC` });
 
-    // Determine IMTT applicability (Zimbabwe residents only)
+    // Determine IMTT applicability (Zimbabwe residents only — same check as USD withdrawal)
     const [imttRows] = await db.execute(
       "SELECT value FROM platform_settings WHERE key = 'usdc_imtt_rate'"
     );
     const imttRate   = parseFloat(imttRows[0]?.value || 0.02);
-    const isResident = await isZimbabweResident(req.user.userId);
+    const isResident = await shouldApplyIMTT(req.user.userId);
     const imttAmount = isResident ? parseFloat((amt * imttRate).toFixed(6)) : 0;
     const netAmount  = parseFloat((amt - imttAmount).toFixed(6));
 
@@ -990,14 +1033,20 @@ router.post('/usdc/withdraw', authenticate, requireUsdcEnabled, async (req, res)
       [withdrawalId, req.user.userId, amt, destination_wallet, destination_wallet, notes || null, destination_wallet, imttAmount, netAmount]
     );
 
-    // Record IMTT deduction if applicable
-    if (imttAmount > 0) {
-      await db.execute(
-        `INSERT INTO wallet_transactions (id, user_id, type, amount, description, reference_id, created_at)
-         VALUES (gen_random_uuid(), ?, 'IMTT', ?, ?, ?, NOW())`,
-        [req.user.userId, imttAmount, `IMTT on USDC withdrawal (2% — SI 99 of 2026, Finance Act)`, withdrawalId]
-      );
-    }
+    // Always record IMTT transaction for audit trail (even when zero for international investors)
+    await db.execute(
+      `INSERT INTO wallet_transactions (id, user_id, type, amount_usd, balance_before, balance_after, reference_id, description)
+       VALUES (gen_random_uuid(), ?, 'IMTT', ?, ?, ?, ?, ?)`,
+      [
+        req.user.userId, -imttAmount,
+        balanceUsdc,
+        parseFloat((balanceUsdc - imttAmount).toFixed(6)),
+        withdrawalId,
+        isResident
+          ? `IMTT (2%) — Zimbabwe resident electronic transfer — ${amt.toFixed(6)} USDC withdrawal`
+          : 'IMTT — Not applicable (international transfer)',
+      ]
+    );
 
     const [users] = await db.execute('SELECT full_name, email FROM users WHERE id = ?', [req.user.userId]);
     const investor = users[0] || {};
@@ -1023,6 +1072,31 @@ router.post('/usdc/withdraw', authenticate, requireUsdcEnabled, async (req, res)
       referenceId: withdrawalId,
     }).catch(() => {});
 
+    // Travel Rule — SI 99 of 2026, Part V (non-blocking)
+    recordTravelRule(db, {
+      transactionId:    withdrawalId,
+      transactionType:  'USDC_WITHDRAWAL',
+      originatorUserId: req.user.userId,
+      beneficiaryWallet: destination_wallet,
+      beneficiaryName:  investor.full_name || 'Unknown',
+      beneficiaryCountry: null,
+      beneficiaryCity:  null,
+      amountUsd:        amt,
+      currency:         'USDC',
+    }).catch(e => console.error('[TRAVEL_RULE] USDC withdrawal record failed:', e.message));
+
+    // CDD — SI 99 s.21 (non-blocking)
+    const cddResult = await triggerCDDIfRequired(db, {
+      userId:          req.user.userId,
+      transactionId:   withdrawalId,
+      transactionType: 'USDC_WITHDRAWAL',
+      amountUsd:       amt,
+    }).catch(() => ({ required: false, cddId: null }));
+
+    // Unhosted wallet check — SI 99 s.20 (>= USD 1,000 requires Wallet Ownership Proof)
+    const isUnhosted = getUnhostedWalletFlag(destination_wallet);
+    const walletOwnershipRequired = isUnhosted && amt >= 1000;
+
     res.json({
       success:        true,
       withdrawalId,
@@ -1033,10 +1107,15 @@ router.post('/usdc/withdraw', authenticate, requireUsdcEnabled, async (req, res)
       imtt_applies:   isResident,
       net_usdc:       netAmount,
       destination:    destination_wallet,
+      ...(cddResult.required ? { cdd_id: cddResult.cddId } : {}),
       message:        'USDC withdrawal request submitted. Admin will process the on-chain transfer within 1 business day.',
       regulatory_notice: isResident
-        ? `IMTT of ${(imttRate * 100).toFixed(0)}% (${imttAmount.toFixed(6)} USDC) has been withheld in accordance with the Finance Act and SI 99 of 2026.`
+        ? `IMTT of ${(imttRate * 100).toFixed(0)}% (${imttAmount.toFixed(6)} USDC) has been withheld in accordance with the Finance Act (Zimbabwe).`
         : 'IMTT does not apply to international investors.',
+      ...(walletOwnershipRequired ? {
+        wallet_ownership_proof_required: true,
+        regulatory_note: 'Transfers to unhosted wallets exceeding USD 1,000 require Wallet Ownership Proof under SI 99 of 2026, Section 20. Please provide a signed message from the destination wallet confirming ownership, or use a known custodian wallet address.',
+      } : {}),
     });
   } catch (err) {
     res.status(500).json({ error: 'USDC withdrawal failed: ' + err.message });
