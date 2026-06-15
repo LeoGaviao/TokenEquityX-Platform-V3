@@ -154,7 +154,7 @@ CREATE INDEX IF NOT EXISTS idx_cdd_triggered
 
 -- ── 11. platform_settings — correct regulatory basis (Task 4a/c) ──────────────
 -- USDC settlement basis: RBZ Exchange Control authorisation (not SI 99)
--- SI 99 is the VASP registration framework; it does not authorise USDC settlement
+-- SI 99 is the VASP registration framework — it does not authorise USDC settlement
 INSERT INTO platform_settings (key, value, description)
 VALUES (
   'usdc_regulatory_basis',
