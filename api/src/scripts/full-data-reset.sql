@@ -49,9 +49,7 @@ DELETE FROM data_submissions
 WHERE token_symbol IN ('TEXZ','MGMC','ZWGB','SNDX');
 
 DELETE FROM data_submissions
-WHERE token_id IN (
-  SELECT id FROM tokens WHERE symbol IN ('TEXZ','MGMC','ZWGB','SNDX')
-);
+WHERE token_symbol IN ('TEXZ','MGMC','ZWGB','SNDX');
 
 -- application_fees references submission_id but also has token_symbol
 DELETE FROM application_fees
@@ -138,7 +136,7 @@ DELETE FROM dividend_rounds;
 -- ── 2.5 Risk acknowledgements (has FK REFERENCES users(id) — clear before tokens) ──
 DELETE FROM risk_acknowledgements;
 
--- ── 2.6 Partner activity records (commissions reference trade_id; leads/clients reference user_id) ──
+-- ── 2.6 Partner activity records (commissions, leads, clients) ──────────────
 DELETE FROM partner_commissions;
 
 DELETE FROM partner_clients;
