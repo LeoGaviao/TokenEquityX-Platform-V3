@@ -73,7 +73,7 @@ router.post('/verify-otp', authenticate, requireRole('ADMIN'), requireSuperAdmin
 router.put('/sensitive-setting', authenticate, requireRole('ADMIN'), requireSuperAdmin, async (req, res) => {
   const { key, value, otpCode } = req.body;
   if (!key || value === undefined || !otpCode) return res.status(400).json({ error: 'key, value and otpCode required' });
-  const SENSITIVE_KEYS = ['usdc_omnibus_wallet', 'stripe_secret_key', 'paynow_integration_key', 'supabase_service_key'];
+  const SENSITIVE_KEYS = ['usdc_pilot_enabled', 'usdc_omnibus_wallet', 'stripe_secret_key', 'paynow_integration_key', 'supabase_service_key'];
   if (!SENSITIVE_KEYS.includes(key)) return res.status(400).json({ error: 'Not a sensitive setting' });
   try {
     const [rows] = await db.execute(
@@ -83,6 +83,29 @@ router.put('/sensitive-setting', authenticate, requireRole('ADMIN'), requireSupe
     if (!rows.length) return res.status(401).json({ error: 'Invalid or expired OTP' });
     await db.execute('UPDATE otps SET used = TRUE WHERE id = ?', [rows[0].id]);
     await db.execute('UPDATE platform_settings SET value = ?, updated_by = ?, updated_at = NOW() WHERE key = ?', [value, req.user.userId, key]);
+
+    // If disabling the USDC pilot, notify all investors who have a USDC balance
+    if (key === 'usdc_pilot_enabled' && value === 'false') {
+      const { notifyUsdcPilotSuspended } = require('../utils/mailer');
+      const suspendedAt = new Date().toISOString();
+      db.execute(
+        `SELECT u.id, u.email, u.full_name, w.balance_usdc
+         FROM users u
+         JOIN investor_wallets w ON w.user_id = u.id
+         WHERE u.is_active = TRUE AND w.balance_usdc > 0`
+      ).then(([investors]) => {
+        for (const investor of investors) {
+          if (!investor.email) continue;
+          notifyUsdcPilotSuspended({
+            investorEmail: investor.email,
+            investorName:  investor.full_name || 'Investor',
+            balanceUsdc:   investor.balance_usdc,
+            suspendedAt,
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     res.json({ success: true, message: `Setting '${key}' updated.` });
   } catch (err) {
     res.status(500).json({ error: err.message });

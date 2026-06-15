@@ -1165,6 +1165,26 @@ async function notifyUsdcWithdrawalCompleted({ investorEmail, investorName, netA
     `));
 }
 
+async function notifyUsdcPilotSuspended({ investorEmail, investorName, balanceUsdc, suspendedAt }) {
+  const resend = getResend();
+  if (!resend) return;
+  const html = baseTemplate('USDC Pilot Suspended — Action Required', `
+    <p>Dear ${investorName || 'Investor'},</p>
+    <p>The TokenEquityX USDC supervised pilot under <strong>Statutory Instrument 99 of 2026</strong> has been temporarily suspended by platform administration.</p>
+    <div class="detail-row"><span>Your USDC Balance</span><span>${Number(balanceUsdc || 0).toFixed(6)} USDC</span></div>
+    <div class="detail-row"><span>Suspended At</span><span>${new Date(suspendedAt || Date.now()).toLocaleString('en-GB', { timeZone: 'Africa/Harare' })} (CAT)</span></div>
+    <p style="margin-top:16px;">Your funds are safe and remain in the platform ledger. You will not be able to make new USDC deposits or withdrawals until the pilot is re-activated following regulatory confirmation.</p>
+    <p>Our team will contact you with further information as soon as the situation is resolved. If you have questions please contact <a href="mailto:${ADMIN}">${ADMIN}</a>.</p>
+    <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Portfolio &rarr;</a>
+  `);
+  return resend.emails.send({
+    from:    FROM,
+    to:      [investorEmail],
+    subject: '[TokenEquityX] USDC Pilot Suspended — Your Balance is Safe',
+    html,
+  });
+}
+
 async function notifyUsdcMonthlyReport(report) {
   const resend = getResend();
   if (!resend) return;
@@ -1252,5 +1272,6 @@ module.exports = {
   notifyUsdcDepositConfirmed,
   notifyUsdcWithdrawalInitiated,
   notifyUsdcWithdrawalCompleted,
+  notifyUsdcPilotSuspended,
   notifyUsdcMonthlyReport,
 };

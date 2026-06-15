@@ -877,6 +877,62 @@ router.get('/integrity-check',
   }
 );
 
+// POST /api/admin/run-migrations — execute pending-migrations.sql against the DB
+// One-time use; idempotent. Requires SUPER_ADMIN role.
+router.post('/run-migrations',
+  authenticate,
+  requireRole('SUPER_ADMIN'),
+  async (req, res) => {
+    const fs   = require('fs');
+    const path = require('path');
+    const SQL_FILE = path.join(__dirname, '../scripts/pending-migrations.sql');
+
+    if (!fs.existsSync(SQL_FILE)) {
+      return res.status(404).json({ error: 'pending-migrations.sql not found' });
+    }
+
+    const sql = fs.readFileSync(SQL_FILE, 'utf8');
+    const statements = sql
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !/^(--.*)$/.test(s));
+
+    const results = [];
+    const client = await db.pool ? db.pool.connect() : null;
+
+    const runStmt = async (stmt) => {
+      if (/^\s*SELECT\b/i.test(stmt)) {
+        const [rows] = await db.execute(stmt);
+        return { type: 'SELECT', rows: rows.length };
+      }
+      await db.execute(stmt);
+      return { type: 'DDL/DML', preview: stmt.replace(/\s+/g, ' ').slice(0, 80) };
+    };
+
+    let ok = 0;
+    let failed = 0;
+    for (const stmt of statements) {
+      try {
+        const r = await runStmt(stmt);
+        results.push({ status: 'ok', ...r });
+        ok++;
+      } catch (err) {
+        results.push({ status: 'error', preview: stmt.slice(0, 80), error: err.message });
+        failed++;
+      }
+    }
+
+    if (client) client.release();
+
+    res.json({
+      applied: ok,
+      failed,
+      results,
+      ran_at: new Date().toISOString(),
+    });
+  }
+);
+
 // GET /api/admin/usdc-report?year=2026&month=6
 router.get('/usdc-report',
   authenticate,
