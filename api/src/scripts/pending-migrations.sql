@@ -185,5 +185,35 @@ VALUES (
 ) ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================
+-- RETAIL IPO PARTICIPATION (Tasks 2–7)
+-- Phased subscription support and per-tier investment minimums
+-- TokenEquityX policy: any KYC-approved investor who meets the offering minimum
+-- may participate in a primary IPO regardless of investor tier.
+-- =============================================================================
+
+-- ── 12. primary_offerings — retail IPO and phased subscription columns ────────
+ALTER TABLE primary_offerings
+  ADD COLUMN IF NOT EXISTS anchor_phase_end_date   TIMESTAMPTZ;
+
+ALTER TABLE primary_offerings
+  ADD COLUMN IF NOT EXISTS public_phase_start_date TIMESTAMPTZ;
+
+ALTER TABLE primary_offerings
+  ADD COLUMN IF NOT EXISTS institutional_min_usd   NUMERIC(20,2) DEFAULT 10000;
+
+ALTER TABLE primary_offerings
+  ADD COLUMN IF NOT EXISTS retail_min_usd          NUMERIC(20,2) DEFAULT 100;
+
+ALTER TABLE primary_offerings
+  ADD COLUMN IF NOT EXISTS allow_retail_ipo        BOOLEAN DEFAULT TRUE;
+
+ALTER TABLE primary_offerings
+  ADD COLUMN IF NOT EXISTS risk_warning_required   BOOLEAN DEFAULT TRUE;
+
+-- ── 13. offering_subscriptions — add investor_tier for reporting ───────────────
+ALTER TABLE offering_subscriptions
+  ADD COLUMN IF NOT EXISTS investor_tier VARCHAR(20) DEFAULT 'RETAIL';
+
+-- =============================================================================
 -- END
 -- =============================================================================

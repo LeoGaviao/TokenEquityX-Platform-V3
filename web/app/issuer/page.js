@@ -2212,7 +2212,9 @@ function IssuerOfferingTab({ notify, submissionStatus = null }) {
   const [form, setForm] = useState({
     token_id:'', offering_price_usd:'', target_raise_usd:'',
     min_subscription_usd:'100', max_subscription_usd:'',
-    total_tokens_offered:'', subscription_deadline:'', offering_rationale:''
+    total_tokens_offered:'', subscription_deadline:'', offering_rationale:'',
+    retail_min_usd:'100', institutional_min_usd:'10000',
+    anchor_phase_end_date:'', allow_retail_ipo: true, risk_warning_required: true,
   });
   const API  = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
   const hdrs = () => ({ Authorization:`Bearer ${localStorage.getItem('token')}`, 'Content-Type':'application/json' });
@@ -2424,6 +2426,31 @@ function IssuerOfferingTab({ notify, submissionStatus = null }) {
               <input type="number" value={form.max_subscription_usd} onChange={e=>setForm(f=>({...f,max_subscription_usd:e.target.value}))} className={inputCls} placeholder="Optional"/>
               <p className="text-xs text-gray-500 mt-1 leading-snug">Cap a single investor&apos;s subscription to avoid concentration risk. Leave blank for no cap.</p>
             </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Retail Min Subscription (USD)</label>
+              <input type="number" value={form.retail_min_usd} onChange={e=>setForm(f=>({...f,retail_min_usd:e.target.value}))} className={inputCls} placeholder="100"/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Minimum investment for Tier 1 retail investors. Default $100.</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Institutional Min Subscription (USD)</label>
+              <input type="number" value={form.institutional_min_usd} onChange={e=>setForm(f=>({...f,institutional_min_usd:e.target.value}))} className={inputCls} placeholder="10000"/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Minimum investment for Tier 3 institutional investors. Default $10,000.</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Anchor Phase End Date</label>
+              <input type="datetime-local" value={form.anchor_phase_end_date} onChange={e=>setForm(f=>({...f,anchor_phase_end_date:e.target.value}))} className={inputCls}/>
+              <p className="text-xs text-gray-500 mt-1 leading-snug">Institutional investors subscribe before this date. Public subscription opens after. Leave blank to open immediately to all investors.</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between bg-gray-800/50 rounded-lg px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-white">Allow Retail IPO Participation</p>
+              <p className="text-xs text-gray-500 mt-0.5">When enabled, qualified retail investors (Tier 1) may subscribe alongside institutional investors. TokenEquityX policy is ON by default.</p>
+            </div>
+            <button type="button" onClick={()=>setForm(f=>({...f,allow_retail_ipo:!f.allow_retail_ipo}))}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${form.allow_retail_ipo ? 'bg-green-600' : 'bg-gray-600'}`}>
+              <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform ${form.allow_retail_ipo ? 'translate-x-5' : 'translate-x-0'}`}/>
+            </button>
           </div>
           <div>
             <label className="text-xs text-gray-400 block mb-1">Offering Rationale</label>

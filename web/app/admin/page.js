@@ -426,6 +426,27 @@ function AdminOfferingsTab({ NAVY, GOLD, GREEN, RED, notify }) {
     } catch { notify('error', 'Could not cancel offering'); }
   };
 
+  const toggleRetailIpo = async (id, currentValue) => {
+    const newVal = !currentValue;
+    if (!window.confirm(`${newVal ? 'Enable' : 'Restrict'} retail IPO participation for this offering?`)) return;
+    try {
+      const res  = await fetch(`${API}/admin/offerings/${id}/toggle-retail`, { method:'PUT', headers: hdrs(), body: JSON.stringify({ allow_retail_ipo: newVal }) });
+      const data = await res.json();
+      if (res.ok) { notify('success', data.message); setSelected(s => ({...s, allow_retail_ipo: newVal})); loadOfferings(); }
+      else notify('error', data.error);
+    } catch { notify('error', 'Could not update retail access'); }
+  };
+
+  const openPublicNow = async (id) => {
+    if (!window.confirm('Open this offering to public subscription immediately? This ends the institutional anchor phase now.')) return;
+    try {
+      const res  = await fetch(`${API}/admin/offerings/${id}/open-public`, { method:'PUT', headers: hdrs() });
+      const data = await res.json();
+      if (res.ok) { notify('success', data.message); setSelected(s => ({...s, anchor_phase_end_date: new Date().toISOString()})); loadOfferings(); }
+      else notify('error', data.error);
+    } catch { notify('error', 'Could not open public phase'); }
+  };
+
   const pendingQueue   = offerings.filter(o => o.status === 'PENDING_APPROVAL' || o.status === 'AUDITOR_REVIEWED');
   const activeOfferings = offerings.filter(o => o.status === 'OPEN');
   const pastOfferings   = offerings.filter(o => o.status === 'DISBURSED' || o.status === 'CANCELLED');
@@ -461,9 +482,13 @@ function AdminOfferingsTab({ NAVY, GOLD, GREEN, RED, notify }) {
             ['Offering Price',     `$${parseFloat(selected.offering_price_usd||0).toFixed(4)}`],
             ['Min Subscription',   fmt(selected.min_subscription_usd)],
             ['Max Subscription',   selected.max_subscription_usd ? fmt(selected.max_subscription_usd) : 'No limit'],
+            ['Retail Min',         selected.retail_min_usd ? fmt(selected.retail_min_usd) : '$100'],
+            ['Institutional Min',  selected.institutional_min_usd ? fmt(selected.institutional_min_usd) : '$10,000'],
             ['Total Tokens',       parseInt(selected.total_tokens_offered||0).toLocaleString()],
             ['Deadline',           new Date(selected.subscription_deadline).toLocaleDateString('en-GB')],
             ['Issuance Fee',       `${(parseFloat(selected.issuance_fee_rate||0)*100).toFixed(1)}%`],
+            ['Retail IPO',         selected.allow_retail_ipo !== false ? '✅ Enabled' : '🚫 Restricted'],
+            ['Anchor Phase Ends',  selected.anchor_phase_end_date ? new Date(selected.anchor_phase_end_date).toLocaleDateString('en-GB') : 'No anchor phase'],
           ].map(([l,v])=>(
             <div key={l} className="bg-gray-800/50 rounded-lg p-3">
               <p className="text-xs text-gray-500 mb-0.5">{l}</p>
@@ -513,6 +538,37 @@ function AdminOfferingsTab({ NAVY, GOLD, GREEN, RED, notify }) {
             </button>
           </div>
           <p className="text-xs text-gray-500">Approving will move the token to PRIMARY_ONLY market state and open subscriptions to investors.</p>
+        </div>
+      )}
+
+      {/* Live offering controls — retail toggle + anchor phase */}
+      {selected.status === 'OPEN' && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+          <h3 className="font-semibold text-sm text-gray-300">🎛️ Live Offering Controls</h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-white font-medium">Retail IPO Participation</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {selected.allow_retail_ipo !== false ? 'Retail investors can subscribe' : 'Restricted to institutional/corporate'}
+              </p>
+            </div>
+            <button onClick={() => toggleRetailIpo(selected.id, selected.allow_retail_ipo !== false)}
+              className={`px-4 py-2 rounded-lg text-xs font-bold ${selected.allow_retail_ipo !== false ? 'bg-green-900/50 text-green-300 border border-green-700' : 'bg-red-900/50 text-red-300 border border-red-700'}`}>
+              {selected.allow_retail_ipo !== false ? '✅ Enabled — Click to Restrict' : '🚫 Restricted — Click to Enable'}
+            </button>
+          </div>
+          {selected.anchor_phase_end_date && new Date(selected.anchor_phase_end_date) > new Date() && (
+            <div className="flex items-center justify-between bg-amber-900/20 border border-amber-800/40 rounded-lg px-4 py-3">
+              <div>
+                <p className="text-sm text-amber-300 font-medium">Anchor Phase Active</p>
+                <p className="text-xs text-gray-400 mt-0.5">Public opens {new Date(selected.anchor_phase_end_date).toLocaleDateString('en-GB')}</p>
+              </div>
+              <button onClick={() => openPublicNow(selected.id)}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-blue-900/50 text-blue-300 border border-blue-700 hover:bg-blue-900/70">
+                Open to Public Now
+              </button>
+            </div>
+          )}
         </div>
       )}
 
