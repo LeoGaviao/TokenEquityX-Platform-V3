@@ -304,6 +304,108 @@ cron.schedule('0 6 * * 0', async () => {
     console.error('[CRON] Integrity check failed:', err.message);
   }
 });
+
+// ── Quarterly ZIMRA WHT report — 1 April, 1 July, 1 October, 1 January at 07:00 ──
+cron.schedule('0 7 1 1,4,7,10 *', async () => {
+  console.log('[CRON] Generating quarterly ZIMRA WHT report...');
+  try {
+    const { getQuarterDetails, generateWHTReturn, generateWHTCSV } = require('./src/services/zimraWHT');
+    const { notifyZimraWHTQuarterlyReport } = require('./src/utils/mailer');
+    const db = require('./src/db/pool');
+
+    // Quarter that just ended (cron fires on 1st of next month after quarter close)
+    const lastMonth = new Date();
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    const details   = getQuarterDetails(lastMonth);
+    const whtReturn = await generateWHTReturn(db, details.quarter);
+
+    if (whtReturn.distributionCount === 0) {
+      console.log(`[ZIMRA WHT] No distributions in ${details.quarter} — no report needed`);
+      return;
+    }
+
+    const csv = generateWHTCSV(whtReturn);
+
+    // Upsert zimra_remittances record
+    await db.execute(`
+      INSERT INTO zimra_remittances
+        (quarter, tax_year, period_start, period_end, due_date,
+         total_wht_usd, resident_wht, non_resident_wht,
+         distribution_count, investor_count, status, report_generated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', NOW())
+      ON CONFLICT (quarter) DO UPDATE SET
+        total_wht_usd      = EXCLUDED.total_wht_usd,
+        resident_wht       = EXCLUDED.resident_wht,
+        non_resident_wht   = EXCLUDED.non_resident_wht,
+        distribution_count = EXCLUDED.distribution_count,
+        investor_count     = EXCLUDED.investor_count,
+        report_generated_at = NOW(),
+        updated_at         = NOW()
+    `, [
+      details.quarter, details.taxYear,
+      whtReturn.periodStart, whtReturn.periodEnd,
+      details.dueDate.toISOString().split('T')[0],
+      whtReturn.totals.totalWHT,
+      whtReturn.totals.residentWHT,
+      whtReturn.totals.nonResidentWHT,
+      whtReturn.distributionCount,
+      whtReturn.investorCount,
+    ]);
+
+    // Email compliance officer
+    await notifyZimraWHTQuarterlyReport(whtReturn, csv, details.dueDate);
+
+    // Update report_sent_at
+    await db.execute(
+      'UPDATE zimra_remittances SET report_sent_at = NOW(), updated_at = NOW() WHERE quarter = ?',
+      [details.quarter]
+    );
+
+    console.log(`[ZIMRA WHT] ${details.quarter} report generated — USD ${whtReturn.totals.totalWHT.toFixed(2)} WHT — ${whtReturn.distributionCount} distributions`);
+  } catch (err) {
+    console.error('[CRON] ZIMRA WHT quarterly report failed:', err.message);
+  }
+});
+
+// ── Daily ZIMRA WHT overdue check — 08:00 ─────────────────────────────────────
+cron.schedule('0 8 * * *', async () => {
+  try {
+    const db = require('./src/db/pool');
+    const { notifyZimraWHTOverdue } = require('./src/utils/mailer');
+
+    const [overdueRows] = await db.execute(`
+      SELECT * FROM zimra_remittances
+      WHERE status IN ('PENDING', 'FILED')
+        AND due_date < CURRENT_DATE
+    `);
+
+    for (const rem of overdueRows) {
+      const daysOverdue = Math.floor(
+        (Date.now() - new Date(rem.due_date).getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      // Mark OVERDUE
+      await db.execute(
+        "UPDATE zimra_remittances SET status = 'OVERDUE', updated_at = NOW() WHERE id = ?",
+        [rem.id]
+      );
+
+      notifyZimraWHTOverdue({
+        quarter:     rem.quarter,
+        dueDate:     rem.due_date,
+        daysOverdue,
+        totalWHT:    rem.total_wht_usd,
+        residentWHT: rem.resident_wht,
+        nonResidentWHT: rem.non_resident_wht,
+      }).catch(e => console.error('[CRON] notifyZimraWHTOverdue failed:', e.message));
+
+      console.log(`[ZIMRA WHT] OVERDUE alert sent for ${rem.quarter} — ${daysOverdue} days late — USD ${rem.total_wht_usd}`);
+    }
+  } catch (err) {
+    console.error('[CRON] ZIMRA WHT overdue check failed:', err.message);
+  }
+});
+
 } // end require.main === module (cron block)
 
 // ─── 404 HANDLER ──────────────────────────────────────────────────
