@@ -965,4 +965,37 @@ router.get('/usdc-report',
   }
 );
 
+// GET /api/admin/debug-holdings — TEMPORARY diagnostic endpoint
+// Returns token_holdings rows with balance <= 0 so we can identify bad records.
+// Remove this endpoint after the investigation is complete.
+router.get('/debug-holdings',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      // token_holdings.token_id is INTEGER; tokens.id is SERIAL (INTEGER) — no cast needed
+      // column is 'balance' not 'quantity'
+      const [rows] = await db.execute(`
+        SELECT
+          th.id,
+          th.user_id,
+          th.token_id,
+          th.balance,
+          th.reserved,
+          u.email,
+          t.symbol
+        FROM token_holdings th
+        LEFT JOIN users  u ON u.id = th.user_id
+        LEFT JOIN tokens t ON t.id = th.token_id
+        WHERE th.balance <= 0
+        ORDER BY th.balance ASC
+        LIMIT 20
+      `);
+      res.json({ count: rows.length, holdings: rows });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;
