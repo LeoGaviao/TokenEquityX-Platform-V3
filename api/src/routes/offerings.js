@@ -100,7 +100,9 @@ router.post('/',
       token_id, offering_price_usd, target_raise_usd,
       min_subscription_usd, max_subscription_usd,
       total_tokens_offered, subscription_deadline,
-      offering_rationale
+      offering_rationale,
+      retail_min_usd, institutional_min_usd,
+      anchor_phase_end_date, allow_retail_ipo, risk_warning_required,
     } = req.body;
 
     if (!token_id || !offering_price_usd || !target_raise_usd ||
@@ -167,19 +169,26 @@ router.post('/',
         INSERT INTO primary_offerings (
           token_id, issuer_id, offering_price_usd, target_raise_usd,
           min_subscription_usd, max_subscription_usd,
+          retail_min_usd, institutional_min_usd,
+          anchor_phase_end_date, allow_retail_ipo, risk_warning_required,
           total_tokens_offered, issuance_fee_rate,
           subscription_deadline, offering_rationale, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_APPROVAL')
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_APPROVAL')
       `, [
         token_id,
         req.user.userId,
         offering_price_usd, target_raise_usd,
         min_subscription_usd || 100,
         max_subscription_usd || null,
+        retail_min_usd || 100,
+        institutional_min_usd || 10000,
+        anchor_phase_end_date ? new Date(anchor_phase_end_date) : null,
+        allow_retail_ipo !== false,
+        risk_warning_required !== false,
         total_tokens_offered,
         ISSUANCE_FEE_RATE,
         new Date(subscription_deadline),
-        offering_rationale || null
+        offering_rationale || null,
       ]);
 
       await conn.execute(
@@ -422,6 +431,48 @@ router.put('/:id/reject',
   }
 );
 
+// ── checkSubscriptionEligibility — tier-aware eligibility helper ──────────────
+async function checkSubscriptionEligibility(investor, offering, amountUsd) {
+  const errors = [];
+  const tier = investor.investor_tier || 'RETAIL';
+
+  if (offering.status !== 'OPEN') {
+    errors.push('This offering is not currently open for subscriptions.');
+  }
+  if (new Date() > new Date(offering.subscription_deadline)) {
+    errors.push('The subscription deadline for this offering has passed.');
+  }
+  if (tier === 'RETAIL' && offering.allow_retail_ipo === false) {
+    errors.push('This offering is restricted to institutional and corporate investors.');
+  }
+  if (offering.anchor_phase_end_date) {
+    const anchorEnd = new Date(offering.anchor_phase_end_date);
+    if (new Date() < anchorEnd && tier === 'RETAIL') {
+      errors.push(
+        `This offering is currently in the institutional anchor phase. ` +
+        `Public subscription opens on ${anchorEnd.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}.`
+      );
+    }
+  }
+
+  let minimumUsd;
+  if (tier === 'INSTITUTIONAL') {
+    minimumUsd = parseFloat(offering.institutional_min_usd || offering.min_subscription_usd || 10000);
+  } else if (tier === 'CORPORATE') {
+    minimumUsd = parseFloat(offering.min_subscription_usd || 500);
+  } else {
+    minimumUsd = parseFloat(offering.retail_min_usd || offering.min_subscription_usd || 100);
+  }
+  if (amountUsd < minimumUsd) {
+    errors.push(`Minimum subscription for ${tier.toLowerCase()} investors is USD ${minimumUsd.toLocaleString()}.`);
+  }
+  if (offering.max_subscription_usd && amountUsd > parseFloat(offering.max_subscription_usd)) {
+    errors.push(`Maximum subscription per investor is USD ${parseFloat(offering.max_subscription_usd).toLocaleString()}.`);
+  }
+
+  return { errors, tier, minimumUsd };
+}
+
 // ── POST /api/offerings/:id/subscribe — INVESTOR subscribes
 router.post('/:id/subscribe',
   authenticate,
@@ -439,35 +490,52 @@ router.post('/:id/subscribe',
       if (offerings.length === 0) { await conn.rollback(); return res.status(404).json({ error: 'Offering not found' }); }
       const offering = offerings[0];
 
-      // KYC gate — investor must be approved before subscribing
-      const [kycCheck] = await conn.execute(
-        'SELECT kyc_status FROM users WHERE id = ?',
+      // KYC gate — investor must be approved + fetch tier
+      const [investorRows] = await conn.execute(
+        `SELECT u.kyc_status, k.investor_tier
+         FROM users u
+         LEFT JOIN kyc_records k ON k.user_id = u.id
+         WHERE u.id = ? LIMIT 1`,
         [req.user.userId]
       );
-      if (!kycCheck.length || kycCheck[0].kyc_status !== 'APPROVED') {
+      if (!investorRows.length || investorRows[0].kyc_status !== 'APPROVED') {
         await conn.rollback();
         return res.status(403).json({
           error: 'Your KYC verification must be approved before you can subscribe to offerings. Please complete your KYC and wait for admin approval.',
         });
       }
-
-      if (offering.status !== 'OPEN') {
-        await conn.rollback();
-        return res.status(400).json({ error: 'This offering is not open for subscriptions' });
-      }
-      if (new Date() > new Date(offering.subscription_deadline)) {
-        await conn.rollback();
-        return res.status(400).json({ error: 'Subscription deadline has passed' });
-      }
+      const investor = investorRows[0];
 
       const subscribeAmount = parseFloat(amount_usd);
-      if (subscribeAmount < parseFloat(offering.min_subscription_usd)) {
+
+      // Tier-aware eligibility check
+      const { errors, tier } = await checkSubscriptionEligibility(investor, offering, subscribeAmount);
+      if (errors.length > 0) {
         await conn.rollback();
-        return res.status(400).json({ error: `Minimum subscription is $${offering.min_subscription_usd}` });
+        return res.status(400).json({ error: 'Subscription not eligible', reasons: errors });
       }
-      if (offering.max_subscription_usd && subscribeAmount > parseFloat(offering.max_subscription_usd)) {
-        await conn.rollback();
-        return res.status(400).json({ error: `Maximum subscription is $${offering.max_subscription_usd}` });
+
+      // Risk acknowledgement gate for retail investors on primary offerings
+      if (tier === 'RETAIL' && offering.risk_warning_required !== false) {
+        const [ackRows] = await conn.execute(
+          `SELECT id FROM risk_acknowledgements
+           WHERE investor_id = ? AND token_symbol = (
+             SELECT COALESCE(token_symbol, symbol) FROM tokens WHERE id = ?
+           ) LIMIT 1`,
+          [req.user.userId, offering.token_id]
+        );
+        if (ackRows.length === 0) {
+          await conn.rollback();
+          const [tokenRows] = await db.execute(
+            'SELECT COALESCE(token_symbol, symbol) AS symbol FROM tokens WHERE id = ?', [offering.token_id]
+          );
+          return res.status(402).json({
+            requires_risk_acknowledgement: true,
+            token_symbol: tokenRows[0]?.symbol || '',
+            risk_warning: 'Primary market investments in tokenised securities are illiquid and carry risk of partial or total loss. Returns are not guaranteed. This investment is not covered by any deposit protection scheme. By proceeding, you confirm you understand and accept these risks.',
+            action: `POST /api/offerings/${req.params.id}/acknowledge-risk`,
+          });
+        }
       }
 
       const [existingSub] = await conn.execute(
@@ -518,9 +586,9 @@ router.post('/:id/subscribe',
 
       const [subResult] = await conn.execute(`
         INSERT INTO offering_subscriptions
-          (offering_id, investor_id, amount_usd, tokens_allocated, settlement_rail, status)
-        VALUES (?, ?, ?, ?, ?, 'CONFIRMED')
-      `, [req.params.id, req.user.userId, subscribeAmount, tokensAllocated, rail]);
+          (offering_id, investor_id, amount_usd, tokens_allocated, settlement_rail, status, investor_tier)
+        VALUES (?, ?, ?, ?, ?, 'CONFIRMED', ?)
+      `, [req.params.id, req.user.userId, subscribeAmount, tokensAllocated, rail, tier]);
       const subscriptionId = subResult.insertId;
 
       await conn.execute(`
@@ -594,6 +662,39 @@ router.post('/:id/subscribe',
       res.status(500).json({ error: 'Subscription failed: ' + err.message });
     } finally {
       conn.release();
+    }
+  }
+);
+
+// ── POST /api/offerings/:id/acknowledge-risk — retail investor acknowledges risk
+// Records acknowledgement in risk_acknowledgements. Required before subscribing
+// to any primary offering where risk_warning_required = TRUE.
+router.post('/:id/acknowledge-risk',
+  authenticate,
+  async (req, res) => {
+    try {
+      const [offerings] = await db.execute(
+        'SELECT po.token_id, t.token_symbol, t.symbol FROM primary_offerings po JOIN tokens t ON t.id = po.token_id WHERE po.id = ?',
+        [req.params.id]
+      );
+      if (offerings.length === 0) return res.status(404).json({ error: 'Offering not found' });
+      const tokenSymbol = offerings[0].token_symbol || offerings[0].symbol;
+
+      const [kycRows] = await db.execute(
+        'SELECT investor_tier FROM kyc_records WHERE user_id = ? LIMIT 1', [req.user.userId]
+      );
+      const tier = kycRows[0]?.investor_tier || 'RETAIL';
+
+      await db.execute(
+        `INSERT INTO risk_acknowledgements (investor_id, token_symbol, investor_profile, token_category)
+         VALUES (?, ?, ?, 'PRIMARY_OFFERING')
+         ON CONFLICT (investor_id, token_symbol) DO UPDATE SET acknowledged_at = NOW()`,
+        [req.user.userId, tokenSymbol, tier]
+      );
+
+      res.json({ acknowledged: true, token_symbol: tokenSymbol });
+    } catch (err) {
+      res.status(500).json({ error: 'Could not record acknowledgement: ' + err.message });
     }
   }
 );
