@@ -1123,4 +1123,89 @@ router.put('/cdd/:id/flag',
   }
 );
 
+// ── PUT /api/admin/offerings/:id/toggle-retail — enable/disable retail IPO participation
+router.put(
+  '/offerings/:id/toggle-retail',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute(
+        'SELECT id, allow_retail_ipo FROM primary_offerings WHERE id = ?',
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Offering not found' });
+      const newValue = req.body.allow_retail_ipo !== undefined
+        ? !!req.body.allow_retail_ipo
+        : !rows[0].allow_retail_ipo;
+      await db.execute(
+        'UPDATE primary_offerings SET allow_retail_ipo = ? WHERE id = ?',
+        [newValue, req.params.id]
+      );
+      res.json({ success: true, offering_id: req.params.id, allow_retail_ipo: newValue });
+    } catch (err) {
+      console.error('[ADMIN] PUT /offerings/toggle-retail error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// ── PUT /api/admin/offerings/:id/open-public — end anchor phase immediately (anchor_phase_end_date = NOW())
+router.put(
+  '/offerings/:id/open-public',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute(
+        'SELECT id, status FROM primary_offerings WHERE id = ?',
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Offering not found' });
+      if (rows[0].status !== 'OPEN') {
+        return res.status(400).json({ error: 'Offering must be OPEN to open the public phase.' });
+      }
+      await db.execute(
+        'UPDATE primary_offerings SET anchor_phase_end_date = NOW(), public_phase_start_date = NOW() WHERE id = ?',
+        [req.params.id]
+      );
+
+      // Notify all KYC-approved retail investors non-blocking
+      const [offerData] = await db.execute(
+        `SELECT po.*, t.token_symbol, t.token_name
+         FROM primary_offerings po
+         LEFT JOIN tokens t ON t.id = po.token_id
+         WHERE po.id = ?`,
+        [req.params.id]
+      );
+      if (offerData[0]) {
+        const offering = offerData[0];
+        db.execute(`
+          SELECT u.email, u.full_name AS name
+          FROM users u
+          JOIN kyc_records kr ON kr.user_id = u.id
+          WHERE kr.status = 'APPROVED' AND u.role = 'INVESTOR'
+        `).then(([investors]) => {
+          const { notifyOfferingPublicPhaseOpen } = require('../utils/mailer');
+          notifyOfferingPublicPhaseOpen({
+            investors:    investors,
+            tokenName:    offering.token_name,
+            tokenSymbol:  offering.token_symbol,
+            assetType:    offering.asset_type,
+            priceUsd:     offering.offering_price_usd,
+            retailMinUsd: offering.retail_min_usd || offering.min_subscription_usd,
+            closeDate:    offering.subscription_deadline,
+            offeringId:   req.params.id,
+          }).catch(e => console.error('[MAILER] notifyOfferingPublicPhaseOpen failed:', e.message));
+        }).catch(e => console.error('[ADMIN] open-public investor query failed (non-fatal):', e.message));
+      }
+
+      res.json({ success: true, offering_id: req.params.id, public_phase_opened_at: new Date().toISOString() });
+    } catch (err) {
+      console.error('[ADMIN] PUT /offerings/open-public error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;

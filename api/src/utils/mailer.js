@@ -1239,6 +1239,85 @@ async function notifySuspiciousActivityReport({ cddId, investorEmail, investorNa
   });
 }
 
+// ── notifyOfferingPublicPhaseOpen — sent to all KYC-approved investors when anchor phase ends
+async function notifyOfferingPublicPhaseOpen({ investors, tokenName, tokenSymbol, assetType, priceUsd, retailMinUsd, closeDate, offeringId }) {
+  const resend = getResend();
+  if (!resend || !Array.isArray(investors) || investors.length === 0) return;
+  const closeFmt  = closeDate ? new Date(closeDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const minFmt    = retailMinUsd ? `$${parseFloat(retailMinUsd).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '$100.00';
+  const priceFmt  = priceUsd ? `$${parseFloat(priceUsd).toFixed(4)}` : '—';
+  const results   = await Promise.allSettled(investors.map(({ email, name }) => {
+    const html = baseTemplate(`${tokenSymbol} Primary Offering — Now Open to All Investors`, `
+      <p>Dear ${name || 'Investor'},</p>
+      <p>A primary offering is now open for public subscription on TokenEquityX.</p>
+      <div class="amount" style="color:#1A3C5E">${tokenName} (${tokenSymbol})</div>
+      <div class="detail-row"><span>Asset Type</span><span>${assetType || '—'}</span></div>
+      <div class="detail-row"><span>Offering Price</span><span style="font-weight:700">${priceFmt} per token</span></div>
+      <div class="detail-row"><span>Minimum Investment</span><span>${minFmt}</span></div>
+      <div class="detail-row"><span>Subscription Closes</span><span>${closeFmt}</span></div>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Action required:</strong> Log in to your TokenEquityX investor dashboard to review the offering and subscribe before the deadline.
+      </p>
+      <p style="font-size:12px;color:#666;">Investments in primary market tokenised securities are illiquid and carry risk. This is not financial advice.</p>
+      <a href="${PLATFORM}/investor/offering/${offeringId}" class="btn btn-gold">View Offering &rarr;</a>
+    `);
+    return resend.emails.send({
+      from:    process.env.EMAIL_FROM || 'TokenEquityX <noreply@tokenequityx.com>',
+      to:      email,
+      subject: `📢 ${tokenSymbol} Primary Offering Open — Min ${minFmt} — Closes ${closeFmt}`,
+      html,
+    });
+  }));
+  const failed = results.filter(r => r.status === 'rejected');
+  if (failed.length) console.error(`[MAILER] notifyOfferingPublicPhaseOpen: ${failed.length}/${investors.length} emails failed`);
+}
+
+// ── notifySubscriptionConfirmedPrimary — richer confirmation with fee breakdown
+async function notifySubscriptionConfirmedPrimary({ investorEmail, investorName, tokenName, tokenSymbol, quantity, pricePerToken, amountUsd, issuanceFeeUsd, deadline }) {
+  const deadlineFmt = deadline ? new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const priceFmt    = pricePerToken ? `$${parseFloat(pricePerToken).toFixed(4)}` : '—';
+  const feeFmt      = issuanceFeeUsd ? `$${parseFloat(issuanceFeeUsd).toFixed(2)}` : '—';
+  return send(investorEmail, `✅ Primary Subscription Confirmed — ${tokenSymbol}`,
+    baseTemplate('Primary Offering Subscription Confirmed', `
+      <p>Dear ${investorName},</p>
+      <p>Your subscription to the <strong>${tokenName} (${tokenSymbol})</strong> primary offering has been confirmed and your wallet has been debited.</p>
+      <div class="amount" style="color:#1A3C5E">$${parseFloat(amountUsd).toFixed(2)} USD</div>
+      <div class="detail-row"><span>Token</span><span style="font-family:monospace;font-weight:bold">${tokenSymbol}</span></div>
+      <div class="detail-row"><span>Tokens Reserved</span><span style="font-weight:700">${parseInt(quantity).toLocaleString()} tokens</span></div>
+      <div class="detail-row"><span>Price Per Token</span><span>${priceFmt}</span></div>
+      <div class="detail-row"><span>Issuance Fee</span><span>${feeFmt} (charged to issuer)</span></div>
+      <div class="detail-row"><span>Status</span><span class="success">✔ Confirmed</span></div>
+      <div class="detail-row"><span>Offering Closes</span><span>${deadlineFmt}</span></div>
+      <p style="background:#fffbeb;border-left:4px solid #d97706;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Next step:</strong> Your tokens will be credited to your portfolio automatically once the offering closes and receives final platform approval. No further action is required.
+      </p>
+      <p style="font-size:12px;color:#666;">Keep this email as confirmation of your subscription. For queries, contact support@tokenequityx.com.</p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Portfolio &rarr;</a>
+    `));
+}
+
+// ── notifyAnchorPhaseOpen — sent to INSTITUTIONAL (Tier 3) investors when an offering with anchor phase is approved
+async function notifyAnchorPhaseOpen({ institutionEmail, institutionName, tokenName, tokenSymbol, assetType, priceUsd, institutionalMinUsd, anchorPhaseEndDate, offeringId }) {
+  const anchorFmt = anchorPhaseEndDate ? new Date(anchorPhaseEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const priceFmt  = priceUsd ? `$${parseFloat(priceUsd).toFixed(4)}` : '—';
+  const minFmt    = institutionalMinUsd ? `$${parseFloat(institutionalMinUsd).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '$10,000.00';
+  return send(institutionEmail, `🏦 Institutional Anchor Phase Open — ${tokenSymbol}`,
+    baseTemplate('Anchor Phase — Early Institutional Access', `
+      <p>Dear ${institutionName || 'Institutional Investor'},</p>
+      <p>As a verified institutional investor on TokenEquityX, you have been granted <strong>early anchor access</strong> to the following primary offering before it opens to retail investors.</p>
+      <div class="amount" style="color:#1A3C5E">${tokenName} (${tokenSymbol})</div>
+      <div class="detail-row"><span>Asset Type</span><span>${assetType || '—'}</span></div>
+      <div class="detail-row"><span>Offering Price</span><span style="font-weight:700">${priceFmt} per token</span></div>
+      <div class="detail-row"><span>Institutional Minimum</span><span>${minFmt}</span></div>
+      <div class="detail-row"><span>Anchor Phase Closes</span><span style="font-weight:700;color:#d97706">${anchorFmt}</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin-top:16px;">
+        <strong>Exclusive access:</strong> The public subscription phase opens ${anchorFmt}. Subscribe now to secure your position before retail investors can participate.
+      </p>
+      <p style="font-size:12px;color:#666;">This invitation is exclusive to verified institutional investors. Investments are subject to the terms in the offering documents.</p>
+      <a href="${PLATFORM}/investor/offering/${offeringId}" class="btn btn-gold">View Offering &rarr;</a>
+    `));
+}
+
 module.exports = {
   send,
   sendReconciliationEmail,
@@ -1303,4 +1382,7 @@ module.exports = {
   notifyUsdcPilotSuspended,
   notifyUsdcMonthlyReport,
   notifySuspiciousActivityReport,
+  notifyOfferingPublicPhaseOpen,
+  notifySubscriptionConfirmedPrimary,
+  notifyAnchorPhaseOpen,
 };

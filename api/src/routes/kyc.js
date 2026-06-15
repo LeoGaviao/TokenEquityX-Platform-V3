@@ -571,4 +571,17 @@ router.get('/holdings/:walletAddress', authenticate, async (req, res) => {
   }
 });
 
+// ── GET /api/kyc/risk-acknowledgements — investor's acknowledged offering risks
+router.get('/risk-acknowledgements', authenticate, async (req, res) => {
+  try {
+    const [rows] = await db.execute(
+      'SELECT token_symbol, acknowledged_at FROM risk_acknowledgements WHERE investor_id = ?',
+      [req.user.userId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not fetch risk acknowledgements' });
+  }
+});
+
 module.exports = router;

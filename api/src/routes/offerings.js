@@ -362,6 +362,35 @@ router.put('/:id/approve',
             deadline:     offering.subscription_deadline,
           }).catch(e => console.error('[MAILER] offering-approve notifyIssuerOfferingApproved failed:', e.message));
         }
+        // If offering has anchor_phase_end_date, notify institutional investors
+        if (offering.anchor_phase_end_date) {
+          try {
+            const { notifyAnchorPhaseOpen } = require('../utils/mailer');
+            const [instRows] = await db.execute(`
+              SELECT u.email, u.full_name
+              FROM users u
+              JOIN kyc_records kr ON kr.user_id = u.id
+              WHERE kr.investor_tier = 'INSTITUTIONAL'
+                AND kr.status = 'APPROVED'
+                AND u.role = 'INVESTOR'
+            `);
+            instRows.forEach(inv => {
+              notifyAnchorPhaseOpen({
+                institutionEmail:   inv.email,
+                institutionName:    inv.full_name,
+                tokenName:          approveTokenSym,
+                tokenSymbol:        approveTokenSym,
+                assetType:          offering.asset_type,
+                priceUsd:           offering.offering_price_usd,
+                institutionalMinUsd: offering.institutional_min_usd,
+                anchorPhaseEndDate: offering.anchor_phase_end_date,
+                offeringId:         req.params.id,
+              }).catch(e => console.error('[MAILER] notifyAnchorPhaseOpen failed:', e.message));
+            });
+          } catch (anchorErr) {
+            console.error('[OFFERING-APPROVE] Anchor phase notification error (non-fatal):', anchorErr.message);
+          }
+        }
       } catch (notifyErr) {
         console.error('[OFFERING-APPROVE] Notification error (non-fatal):', notifyErr.message);
       }
@@ -634,17 +663,21 @@ router.post('/:id/subscribe',
           body:        `Your subscription has been confirmed. Amount: $${subscribeAmount.toFixed(2)}. Tokens reserved: ${tokensAllocated}. You will receive your tokens once the offering closes.`,
           type:        'SYSTEM', category: 'OFFERING', referenceId: String(req.params.id),
         }).catch(() => {});
-        const { notifyInvestorSubscriptionConfirmed } = require('../utils/mailer');
+        const { notifySubscriptionConfirmedPrimary } = require('../utils/mailer');
         const [subInvRows] = await db.execute('SELECT email, full_name FROM users WHERE id = ?', [req.user.userId]);
         if (subInvRows[0]?.email) {
-          notifyInvestorSubscriptionConfirmed({
-            investorEmail:   subInvRows[0].email,
-            investorName:    subInvRows[0].full_name,
-            tokenSymbol:     subTokenSym,
-            amountUsd:       subscribeAmount,
-            tokensAllocated,
-            deadline:        offering.subscription_deadline,
-          }).catch(e => console.error('[MAILER] subscribe notifyInvestorSubscriptionConfirmed failed:', e.message));
+          const issuanceFeeUsd = subscribeAmount * parseFloat(offering.issuance_fee_rate || 0.02);
+          notifySubscriptionConfirmedPrimary({
+            investorEmail:    subInvRows[0].email,
+            investorName:     subInvRows[0].full_name,
+            tokenName:        offering.token_name || subTokenSym,
+            tokenSymbol:      subTokenSym,
+            quantity:         tokensAllocated,
+            pricePerToken:    offering.offering_price_usd,
+            amountUsd:        subscribeAmount,
+            issuanceFeeUsd,
+            deadline:         offering.subscription_deadline,
+          }).catch(e => console.error('[MAILER] subscribe notifySubscriptionConfirmedPrimary failed:', e.message));
         }
       } catch (notifyErr) {
         console.error('[SUBSCRIBE] Investor notification error (non-fatal):', notifyErr.message);
@@ -1059,16 +1092,33 @@ router.post('/:id/cancel',
   }
 );
 
-// ── GET /api/offerings/:id/subscriptions — admin view all subscriptions
+// ── GET /api/offerings/:id/subscriptions — admin or issuer view subscriptions
 router.get('/:id/subscriptions',
   authenticate,
-  requireRole('ADMIN', 'AUDITOR'),
   async (req, res) => {
     try {
+      const role = req.user.role;
+      if (!['ADMIN', 'AUDITOR', 'ISSUER'].includes(role)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      // Issuers may only see their own offering's subscriptions
+      if (role === 'ISSUER') {
+        const [ofRows] = await db.execute(
+          'SELECT issuer_id FROM primary_offerings WHERE id = ?',
+          [req.params.id]
+        );
+        if (!ofRows.length || String(ofRows[0].issuer_id) !== String(req.user.userId)) {
+          return res.status(403).json({ error: 'You are not the issuer of this offering' });
+        }
+      }
       const [rows] = await db.execute(`
-        SELECT os.*, u.full_name, u.email, u.wallet_address
+        SELECT os.id, os.investor_id, os.status, os.subscribed_at, os.created_at,
+               os.amount_usd, os.tokens_allocated, os.investor_tier,
+               u.full_name, u.email,
+               kr.investor_tier AS kyc_investor_tier
         FROM offering_subscriptions os
         JOIN users u ON u.id = os.investor_id
+        LEFT JOIN kyc_records kr ON kr.user_id = os.investor_id
         WHERE os.offering_id = ?
         ORDER BY os.subscribed_at ASC
       `, [req.params.id]);

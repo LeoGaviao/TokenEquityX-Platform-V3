@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 
 const API  = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-const NAVY = '#1A3C5E';
 const GOLD = '#C8972B';
 
 function fmt(n) {
@@ -18,34 +17,82 @@ function daysLeft(deadline) {
   return Math.max(0, Math.ceil(diff / 86400000));
 }
 
+function tierLabel(tier) {
+  if (tier === 'INSTITUTIONAL') return 'Institutional';
+  if (tier === 'CORPORATE')     return 'Corporate';
+  return 'Retail';
+}
+
 export default function OfferingPitchPage() {
   const router  = useRouter();
   const params  = useParams();
   const id      = params?.id;
 
-  const [offering,    setOffering]    = useState(null);
-  const [loading,     setLoading]     = useState(true);
-  const [subAmount,   setSubAmount]   = useState('');
-  const [subLoading,  setSubLoading]  = useState(false);
-  const [msg,         setMsg]         = useState(null);
-  const [activeTab,   setActiveTab]   = useState('overview');
+  const [offering,         setOffering]         = useState(null);
+  const [loading,          setLoading]          = useState(true);
+  const [subAmount,        setSubAmount]        = useState('');
+  const [subLoading,       setSubLoading]       = useState(false);
+  const [msg,              setMsg]              = useState(null);
+  const [activeTab,        setActiveTab]        = useState('overview');
+  const [investorTier,     setInvestorTier]     = useState('RETAIL');
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
+  const [riskChecked,      setRiskChecked]      = useState(false);
+  const [ackLoading,       setAckLoading]       = useState(false);
 
   useEffect(() => {
     if (!id) return;
     const token = localStorage.getItem('token');
-    fetch(`${API}/offerings/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).then(r => r.json()).then(data => {
-      if (data.error) { router.push('/investor'); return; }
-      setOffering(data);
+    // Load offering and investor profile in parallel
+    Promise.all([
+      fetch(`${API}/offerings/${id}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API}/kyc/status`,      { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).catch(() => ({})),
+    ]).then(([offeringData, kycData]) => {
+      if (offeringData.error) { router.push('/investor'); return; }
+      setOffering(offeringData);
+      const tier = kycData?.investor_tier || kycData?.kyc?.investor_tier || 'RETAIL';
+      setInvestorTier(tier);
+      // Check risk acknowledgement for this token
+      if (offeringData.token_symbol) {
+        fetch(`${API}/kyc/risk-acknowledgements`, { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => r.json())
+          .then(acks => {
+            const sym = offeringData.token_symbol;
+            const acked = Array.isArray(acks) ? acks.some(a => a.token_symbol === sym) : false;
+            setRiskAcknowledged(acked);
+          }).catch(() => {});
+      }
     }).catch(() => router.push('/investor'))
     .finally(() => setLoading(false));
   }, [id]);
+
+  async function acknowledgeRisk() {
+    setAckLoading(true);
+    const token = localStorage.getItem('token');
+    try {
+      const res  = await fetch(`${API}/offerings/${id}/acknowledge-risk`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (res.ok) { setRiskAcknowledged(true); setMsg(null); }
+      else { const d = await res.json(); setMsg({ type: 'error', text: d.error || 'Could not record acknowledgement.' }); }
+    } catch { setMsg({ type: 'error', text: 'Network error.' }); }
+    setAckLoading(false);
+  }
 
   async function subscribe() {
     if (!subAmount || parseFloat(subAmount) <= 0) {
       setMsg({ type: 'error', text: 'Please enter a valid amount.' }); return;
     }
+    // Acknowledge risk first if needed
+    if (investorTier === 'RETAIL' && offering?.risk_warning_required !== false && !riskAcknowledged) {
+      if (!riskChecked) {
+        setMsg({ type: 'error', text: 'Please read and acknowledge the investment risk warning before subscribing.' });
+        return;
+      }
+      await acknowledgeRisk();
+      if (!riskAcknowledged) return; // acknowledgeRisk sets it on success
+    }
+
     setSubLoading(true);
     const token = localStorage.getItem('token');
     try {
@@ -56,11 +103,19 @@ export default function OfferingPitchPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMsg({ type: 'success', text: `✅ ${data.message}` });
+        setMsg({
+          type: 'success',
+          text: `✅ Subscription confirmed! You subscribed to ${data.tokens_allocated?.toLocaleString()} ${offering.token_symbol} tokens for $${parseFloat(subAmount).toLocaleString()}. Your wallet has been debited $${parseFloat(subAmount).toLocaleString()}. You will receive your tokens once the offering closes and receives final platform approval.`,
+        });
         setSubAmount('');
         const t2 = localStorage.getItem('token');
         fetch(`${API}/offerings/${id}`, { headers: { Authorization: `Bearer ${t2}` } })
           .then(r => r.json()).then(setOffering).catch(() => {});
+      } else if (res.status === 402 && data.requires_risk_acknowledgement) {
+        setMsg({ type: 'warning', text: data.risk_warning });
+        setRiskChecked(false);
+      } else if (data.reasons) {
+        setMsg({ type: 'error', text: data.reasons.join(' ') });
       } else {
         setMsg({ type: 'error', text: data.error || 'Subscription failed.' });
       }
@@ -78,9 +133,9 @@ export default function OfferingPitchPage() {
 
   if (!offering) return null;
 
-  const pct         = Math.min(100, (parseFloat(offering.total_raised_usd || 0) / parseFloat(offering.target_raise_usd)) * 100);
-  const days        = daysLeft(offering.subscription_deadline);
-  const subData     = offering.submission_data
+  const pct     = Math.min(100, (parseFloat(offering.total_raised_usd || 0) / parseFloat(offering.target_raise_usd)) * 100);
+  const days    = daysLeft(offering.subscription_deadline);
+  const subData = offering.submission_data
     ? (typeof offering.submission_data === 'string' ? JSON.parse(offering.submission_data) : offering.submission_data)
     : {};
   const docs        = subData?.documents || [];
@@ -88,12 +143,27 @@ export default function OfferingPitchPage() {
     ? (typeof offering.audit_report === 'string' ? JSON.parse(offering.audit_report) : offering.audit_report)
     : null;
 
+  // Anchor phase check
+  const anchorEnd   = offering.anchor_phase_end_date ? new Date(offering.anchor_phase_end_date) : null;
+  const inAnchor    = anchorEnd && new Date() < anchorEnd && investorTier === 'RETAIL';
+  const anchorLabel = anchorEnd ? anchorEnd.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : null;
+
+  // Tier-appropriate minimum
+  const minUsd = investorTier === 'INSTITUTIONAL'
+    ? parseFloat(offering.institutional_min_usd || offering.min_subscription_usd || 10000)
+    : investorTier === 'CORPORATE'
+    ? parseFloat(offering.min_subscription_usd || 500)
+    : parseFloat(offering.retail_min_usd || offering.min_subscription_usd || 100);
+
+  const isRetailRiskRequired = investorTier === 'RETAIL' && offering.risk_warning_required !== false && !riskAcknowledged;
+  const subscribeDisabled    = subLoading || !subAmount || inAnchor || (isRetailRiskRequired && !riskChecked);
+
   const TABS = [
-    { key: 'overview',  label: 'Overview' },
-    { key: 'financials',label: 'Financials' },
-    { key: 'documents', label: `Documents (${docs.length})` },
-    { key: 'audit',     label: 'Audit Report' },
-    { key: 'subscribe', label: '🏦 Subscribe' },
+    { key: 'overview',   label: 'Overview' },
+    { key: 'financials', label: 'Financials' },
+    { key: 'documents',  label: `Documents (${docs.length})` },
+    { key: 'audit',      label: 'Audit Report' },
+    { key: 'subscribe',  label: '🏦 Subscribe' },
   ];
 
   return (
@@ -111,6 +181,9 @@ export default function OfferingPitchPage() {
             <span className="text-gray-400 text-sm">{offering.token_name}</span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40">OPEN</span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">{offering.asset_type}</span>
+            {offering.allow_retail_ipo !== false && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-300 border border-blue-700/40">Open to All Investors</span>
+            )}
           </div>
           <p className="text-gray-500 text-xs mt-0.5">{offering.company_name} · {offering.sector} · {offering.jurisdiction}</p>
         </div>
@@ -139,10 +212,25 @@ export default function OfferingPitchPage() {
         </div>
       </div>
 
+      {/* Anchor phase banner for retail investors */}
+      {inAnchor && (
+        <div className="bg-amber-900/30 border-b border-amber-800/40 px-6 py-3 text-center">
+          <p className="text-amber-300 text-sm font-medium">
+            🏦 Institutional Anchor Phase — Public subscription opens {anchorLabel}
+          </p>
+          <p className="text-amber-400/70 text-xs mt-0.5">
+            Institutional investors have early access. You can subscribe from {anchorLabel}.
+          </p>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Notification */}
         {msg && (
-          <div className={`rounded-xl p-4 border mb-4 text-sm ${msg.type === 'success' ? 'bg-green-900/40 border-green-700 text-green-300' : 'bg-red-900/40 border-red-700 text-red-300'}`}>
+          <div className={`rounded-xl p-4 border mb-4 text-sm ${
+            msg.type === 'success' ? 'bg-green-900/40 border-green-700 text-green-300'
+            : msg.type === 'warning' ? 'bg-amber-900/40 border-amber-700 text-amber-300'
+            : 'bg-red-900/40 border-red-700 text-red-300'}`}>
             {msg.text}
           </div>
         )}
@@ -152,9 +240,7 @@ export default function OfferingPitchPage() {
           {TABS.map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
               className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
-                activeTab === t.key
-                  ? 'border-yellow-500 text-white'
-                  : 'border-transparent text-gray-400 hover:text-white'
+                activeTab === t.key ? 'border-yellow-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
               }`}>
               {t.label}
             </button>
@@ -176,28 +262,16 @@ export default function OfferingPitchPage() {
                   <div className="mt-4 pt-4 border-t border-gray-800 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       {offering.founded_year && (
-                        <div>
-                          <p className="text-gray-500 text-xs">Founded</p>
-                          <p className="text-white text-sm font-medium">{offering.founded_year}</p>
-                        </div>
+                        <div><p className="text-gray-500 text-xs">Founded</p><p className="text-white text-sm font-medium">{offering.founded_year}</p></div>
                       )}
                       {offering.headquarters && (
-                        <div>
-                          <p className="text-gray-500 text-xs">Headquarters</p>
-                          <p className="text-white text-sm font-medium">{offering.headquarters}</p>
-                        </div>
+                        <div><p className="text-gray-500 text-xs">Headquarters</p><p className="text-white text-sm font-medium">{offering.headquarters}</p></div>
                       )}
                       {offering.num_employees && (
-                        <div>
-                          <p className="text-gray-500 text-xs">Employees</p>
-                          <p className="text-white text-sm font-medium">{offering.num_employees}</p>
-                        </div>
+                        <div><p className="text-gray-500 text-xs">Employees</p><p className="text-white text-sm font-medium">{offering.num_employees}</p></div>
                       )}
                       {offering.sector && (
-                        <div>
-                          <p className="text-gray-500 text-xs">Sector</p>
-                          <p className="text-white text-sm font-medium">{offering.sector}</p>
-                        </div>
+                        <div><p className="text-gray-500 text-xs">Sector</p><p className="text-white text-sm font-medium">{offering.sector}</p></div>
                       )}
                     </div>
                     {offering.website_url && (
@@ -237,16 +311,16 @@ export default function OfferingPitchPage() {
                   <h3 className="font-bold text-base mb-3">Key Terms</h3>
                   <div className="space-y-2">
                     {[
-                      ['Offering Price',        `$${parseFloat(offering.offering_price_usd).toFixed(4)} per token`],
-                      ['Target Raise',          fmt(offering.target_raise_usd)],
-                      ['Total Tokens Offered',  parseInt(offering.total_tokens_offered).toLocaleString()],
-                      ['Min Subscription',      fmt(offering.min_subscription_usd)],
-                      ['Max Subscription',      offering.max_subscription_usd ? fmt(offering.max_subscription_usd) : 'No limit'],
-                      ['Issuance Fee',          `${(parseFloat(offering.issuance_fee_rate||0.02)*100).toFixed(1)}% of proceeds`],
-                      ['Registration',          offering.registration_number || '—'],
-                      ['Jurisdiction',          offering.jurisdiction || '—'],
-                      ['Sector',                offering.sector || '—'],
-                      ['Asset Type',            offering.asset_type || '—'],
+                      ['Offering Price',       `$${parseFloat(offering.offering_price_usd).toFixed(4)} per token`],
+                      ['Target Raise',         fmt(offering.target_raise_usd)],
+                      ['Total Tokens Offered', parseInt(offering.total_tokens_offered).toLocaleString()],
+                      ['Min Subscription',     fmt(minUsd)],
+                      ['Max Subscription',     offering.max_subscription_usd ? fmt(offering.max_subscription_usd) : 'No limit'],
+                      ['Issuance Fee',         `${(parseFloat(offering.issuance_fee_rate||0.02)*100).toFixed(1)}% of proceeds`],
+                      ['Registration',         offering.registration_number || '—'],
+                      ['Jurisdiction',         offering.jurisdiction || '—'],
+                      ['Sector',               offering.sector || '—'],
+                      ['Asset Type',           offering.asset_type || '—'],
                     ].map(([label, value]) => (
                       <div key={label} className="flex justify-between py-1.5 border-b border-gray-800/50 last:border-0">
                         <span className="text-gray-400 text-sm">{label}</span>
@@ -254,6 +328,11 @@ export default function OfferingPitchPage() {
                       </div>
                     ))}
                   </div>
+                  {investorTier !== 'RETAIL' && (
+                    <p className="text-xs text-gray-500 mt-3">
+                      Showing {tierLabel(investorTier)} minimum. Retail minimum: {fmt(offering.retail_min_usd || offering.min_subscription_usd || 100)}.
+                    </p>
+                  )}
                 </div>
               </>
             )}
@@ -268,8 +347,7 @@ export default function OfferingPitchPage() {
                       <div key={k} className="bg-gray-800/60 rounded-xl p-3">
                         <p className="text-gray-500 text-xs capitalize mb-1">{k.replace(/([A-Z])/g,' $1').trim()}</p>
                         <p className="font-semibold text-white text-sm">
-                          {['revenueTTM','ebitdaTTM','freeCashFlow','totalDebt','cash','propertyValuation','netOperatingIncome','faceValue','annualRevenue'].includes(k)
-                            ? fmt(v) : v}
+                          {['revenueTTM','ebitdaTTM','freeCashFlow','totalDebt','cash','propertyValuation','netOperatingIncome','faceValue','annualRevenue'].includes(k) ? fmt(v) : v}
                         </p>
                       </div>
                     ))}
@@ -324,10 +402,10 @@ export default function OfferingPitchPage() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        ['Certified Price',    `$${parseFloat(auditReport.certifiedPrice || 0).toFixed(4)}`],
-                        ['Risk Rating',        auditReport.riskRating || '—'],
-                        ['Listing Type',       auditReport.suggestedListingType?.replace('_',' ') || '—'],
-                        ['Annual Revenue',     auditReport.annualRevenue ? fmt(auditReport.annualRevenue) : '—'],
+                        ['Certified Price', `$${parseFloat(auditReport.certifiedPrice || 0).toFixed(4)}`],
+                        ['Risk Rating',     auditReport.riskRating || '—'],
+                        ['Listing Type',    auditReport.suggestedListingType?.replace('_',' ') || '—'],
+                        ['Annual Revenue',  auditReport.annualRevenue ? fmt(auditReport.annualRevenue) : '—'],
                       ].map(([label, value]) => (
                         <div key={label} className="bg-gray-800/60 rounded-xl p-3">
                           <p className="text-gray-500 text-xs mb-1">{label}</p>
@@ -339,12 +417,6 @@ export default function OfferingPitchPage() {
                       <div>
                         <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">Audit Findings</p>
                         <p className="text-gray-300 text-sm leading-relaxed bg-gray-800/40 rounded-xl p-4">{auditReport.auditFindings}</p>
-                      </div>
-                    )}
-                    {auditReport.valuationMethodology && (
-                      <div>
-                        <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">Valuation Methodology</p>
-                        <p className="text-gray-300 text-sm leading-relaxed bg-gray-800/40 rounded-xl p-4">{auditReport.valuationMethodology}</p>
                       </div>
                     )}
                     {auditReport.caveats && (
@@ -362,46 +434,96 @@ export default function OfferingPitchPage() {
 
             {/* SUBSCRIBE TAB */}
             {activeTab === 'subscribe' && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-                <h3 className="font-bold text-base mb-4">Subscribe to {offering.token_symbol}</h3>
-                <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-3 mb-4 text-xs text-blue-300">
-                  ℹ️ Your subscription will be deducted from your USD fiat wallet balance. A {(parseFloat(offering.issuance_fee_rate||0.02)*100).toFixed(1)}% issuance fee applies to proceeds raised.
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">
-                      Subscription Amount (USD) · Min {fmt(offering.min_subscription_usd)}
-                      {offering.max_subscription_usd ? ` · Max ${fmt(offering.max_subscription_usd)}` : ''}
-                    </label>
-                    <input type="number" value={subAmount} onChange={e => setSubAmount(e.target.value)}
-                      placeholder={`e.g. ${parseFloat(offering.min_subscription_usd||5000).toLocaleString()}`}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-yellow-500"/>
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-4">
+                <h3 className="font-bold text-base">Subscribe to {offering.token_symbol}</h3>
+
+                {/* Anchor phase block */}
+                {inAnchor && (
+                  <div className="bg-amber-900/30 border border-amber-700/40 rounded-xl p-4">
+                    <p className="text-amber-300 font-semibold text-sm mb-1">🏦 Anchor Phase Active</p>
+                    <p className="text-amber-400/80 text-xs">
+                      This offering is currently reserved for institutional investors. Public subscription opens {anchorLabel}.
+                    </p>
                   </div>
-                  {subAmount && parseFloat(subAmount) > 0 && (
-                    <div className="bg-gray-800/60 rounded-xl p-4 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Tokens you receive</span>
-                        <span className="font-bold text-green-400">{(parseFloat(subAmount)/parseFloat(offering.offering_price_usd)).toLocaleString(undefined,{maximumFractionDigits:2})} {offering.token_symbol}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Price per token</span>
-                        <span className="text-white">${parseFloat(offering.offering_price_usd).toFixed(4)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm border-t border-gray-700 pt-2">
-                        <span className="text-gray-400">Total deducted from wallet</span>
-                        <span className="font-bold text-white">${parseFloat(subAmount).toLocaleString()}</span>
-                      </div>
+                )}
+
+                {/* Risk warning for retail */}
+                {!inAnchor && investorTier === 'RETAIL' && offering.risk_warning_required !== false && (
+                  <div className={`rounded-xl p-4 border ${riskAcknowledged ? 'bg-green-900/20 border-green-700/40' : 'bg-amber-900/20 border-amber-700/40'}`}>
+                    <p className="font-semibold text-sm mb-2">
+                      {riskAcknowledged ? '✅ Risk Acknowledged' : '⚠️ Investment Risk Warning'}
+                    </p>
+                    {!riskAcknowledged && (
+                      <>
+                        <p className="text-gray-300 text-xs leading-relaxed mb-3">
+                          Primary market investments in tokenised securities are illiquid and carry risk of partial or total loss.
+                          Returns are not guaranteed. This investment is not covered by any deposit protection scheme.
+                        </p>
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input type="checkbox" checked={riskChecked}
+                            onChange={e => setRiskChecked(e.target.checked)}
+                            className="mt-0.5 accent-yellow-500"/>
+                          <span className="text-xs text-gray-300">
+                            I have read and understand the investment risk warning above, and I accept these risks.
+                          </span>
+                        </label>
+                      </>
+                    )}
+                    {riskAcknowledged && (
+                      <p className="text-green-400 text-xs">You have previously acknowledged the risks for {offering.token_symbol}.</p>
+                    )}
+                  </div>
+                )}
+
+                {!inAnchor && (
+                  <>
+                    <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-3 text-xs text-blue-300">
+                      ℹ️ Your subscription will be deducted from your wallet balance. A {(parseFloat(offering.issuance_fee_rate||0.02)*100).toFixed(1)}% issuance fee applies to proceeds raised.
+                      {investorTier !== 'INSTITUTIONAL' && <> Min. investment for {tierLabel(investorTier)} investors: {fmt(minUsd)}.</>}
                     </div>
-                  )}
-                  <button onClick={subscribe} disabled={subLoading || !subAmount}
-                    className="w-full py-3.5 rounded-xl text-sm font-bold text-gray-900 disabled:opacity-50 transition-all"
-                    style={{background: GOLD}}>
-                    {subLoading ? '⏳ Processing...' : `✅ Confirm Subscription — $${parseFloat(subAmount||0).toLocaleString()}`}
-                  </button>
-                  <p className="text-xs text-gray-600 text-center">
-                    By subscribing you confirm you have read the offering documents and understand the risks involved.
-                  </p>
-                </div>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">
+                          Subscription Amount (USD) · Min {fmt(minUsd)}
+                          {offering.max_subscription_usd ? ` · Max ${fmt(offering.max_subscription_usd)}` : ''}
+                        </label>
+                        <input type="number" value={subAmount} onChange={e => setSubAmount(e.target.value)}
+                          placeholder={`e.g. ${minUsd.toLocaleString()}`}
+                          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-yellow-500"/>
+                      </div>
+                      {subAmount && parseFloat(subAmount) > 0 && (
+                        <div className="bg-gray-800/60 rounded-xl p-4 space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400">Tokens you receive</span>
+                            <span className="font-bold text-green-400">
+                              {Math.floor(parseFloat(subAmount)/parseFloat(offering.offering_price_usd)).toLocaleString()} {offering.token_symbol}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400">Price per token</span>
+                            <span className="text-white">${parseFloat(offering.offering_price_usd).toFixed(4)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400">Issuance fee ({(parseFloat(offering.issuance_fee_rate||0.02)*100).toFixed(1)}%)</span>
+                            <span className="text-gray-300">${(parseFloat(subAmount)*parseFloat(offering.issuance_fee_rate||0.02)).toFixed(2)} (charged to issuer)</span>
+                          </div>
+                          <div className="flex justify-between text-sm border-t border-gray-700 pt-2">
+                            <span className="text-gray-400">Total deducted from wallet</span>
+                            <span className="font-bold text-white">${parseFloat(subAmount).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      )}
+                      <button onClick={subscribe} disabled={subscribeDisabled}
+                        className="w-full py-3.5 rounded-xl text-sm font-bold text-gray-900 disabled:opacity-50 transition-all"
+                        style={{background: GOLD}}>
+                        {subLoading ? '⏳ Processing...' : `✅ Confirm Subscription — $${parseFloat(subAmount||0).toLocaleString()}`}
+                      </button>
+                      <p className="text-xs text-gray-600 text-center">
+                        By subscribing you confirm you have read the offering documents and understand the risks involved.
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -409,22 +531,30 @@ export default function OfferingPitchPage() {
           {/* Sidebar */}
           <div className="space-y-4">
             {/* Quick subscribe */}
-            {activeTab !== 'subscribe' && (
+            {activeTab !== 'subscribe' && !inAnchor && (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-                <p className="text-sm font-semibold mb-3">Quick Subscribe</p>
+                <p className="text-sm font-semibold mb-1">Quick Subscribe</p>
+                <p className="text-xs text-gray-500 mb-2">{tierLabel(investorTier)} min: {fmt(minUsd)}</p>
                 <input type="number" value={subAmount} onChange={e => setSubAmount(e.target.value)}
-                  placeholder={`Min ${fmt(offering.min_subscription_usd)}`}
+                  placeholder={`Min ${fmt(minUsd)}`}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500 mb-2"/>
                 {subAmount && parseFloat(subAmount) > 0 && (
                   <p className="text-xs text-green-400 mb-2">
-                    ≈ {(parseFloat(subAmount)/parseFloat(offering.offering_price_usd)).toLocaleString(undefined,{maximumFractionDigits:2})} {offering.token_symbol} tokens
+                    ≈ {Math.floor(parseFloat(subAmount)/parseFloat(offering.offering_price_usd)).toLocaleString()} {offering.token_symbol} tokens
                   </p>
                 )}
-                <button onClick={subscribe} disabled={subLoading || !subAmount}
-                  className="w-full py-2.5 rounded-lg text-sm font-bold text-gray-900 disabled:opacity-50"
+                <button onClick={() => setActiveTab('subscribe')}
+                  className="w-full py-2.5 rounded-lg text-sm font-bold text-gray-900"
                   style={{background: GOLD}}>
-                  {subLoading ? '⏳' : '✅ Subscribe'}
+                  Subscribe
                 </button>
+              </div>
+            )}
+
+            {inAnchor && activeTab !== 'subscribe' && (
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-2xl p-4">
+                <p className="text-amber-300 text-sm font-semibold mb-1">🏦 Anchor Phase</p>
+                <p className="text-xs text-amber-400/70">Public opens {anchorLabel}</p>
               </div>
             )}
 
@@ -432,11 +562,12 @@ export default function OfferingPitchPage() {
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
               {[
                 ['Status',       offering.status],
+                ['Your Tier',    tierLabel(investorTier)],
+                ['Your Min',     fmt(minUsd)],
                 ['Subscribers',  offering.subscriber_count],
                 ['Raised',       fmt(offering.total_raised_usd)],
                 ['Target',       fmt(offering.target_raise_usd)],
                 ['Days Left',    `${days} days`],
-                ['Oracle Price', `$${parseFloat(offering.current_price_usd||0).toFixed(4)}`],
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between text-sm">
                   <span className="text-gray-400">{label}</span>
@@ -445,7 +576,6 @@ export default function OfferingPitchPage() {
               ))}
             </div>
 
-            {/* Approved by */}
             {offering.admin_notes && (
               <div className="bg-green-900/20 border border-green-700/40 rounded-2xl p-4">
                 <p className="text-green-400 text-xs font-semibold mb-1">✅ Admin Approved</p>

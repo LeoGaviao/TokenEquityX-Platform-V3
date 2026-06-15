@@ -931,7 +931,12 @@ export default function InvestorDashboard() {
                   <button onClick={()=>setTab('market')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
                 </div>
                 <div className="flex gap-3 overflow-x-auto pb-2" style={{scrollbarWidth:'none'}}>
-                  {offerings.map(o => (
+                  {offerings.map(o => {
+                    const anchorEnd  = o.anchor_phase_end_date ? new Date(o.anchor_phase_end_date) : null;
+                    const inAnchor   = anchorEnd && new Date() < anchorEnd;
+                    const anchorDate = anchorEnd ? anchorEnd.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : null;
+                    const retailMin  = parseFloat(o.retail_min_usd || o.min_subscription_usd || 100);
+                    return (
                     <div key={o.id}
                       onClick={() => router.push(`/investor/offering/${o.id}`)}
                       className="flex-shrink-0 cursor-pointer rounded-xl p-3 transition-all"
@@ -942,7 +947,10 @@ export default function InvestorDashboard() {
                       }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-white text-sm">{o.token_symbol}</span>
-                        <span className="text-xs bg-green-900/40 text-green-300 px-1.5 py-0.5 rounded text-[10px]">OPEN</span>
+                        {inAnchor
+                          ? <span className="text-[9px] bg-amber-900/40 text-amber-300 px-1.5 py-0.5 rounded">ANCHOR</span>
+                          : <span className="text-[10px] bg-green-900/40 text-green-300 px-1.5 py-0.5 rounded">OPEN</span>
+                        }
                       </div>
                       <p className="text-gray-400 text-xs mb-2 truncate">{o.issuer_name || o.token_name || o.token_symbol}</p>
                       <p className="text-white font-semibold text-base mb-1">${parseFloat(o.offering_price_usd).toFixed(4)}</p>
@@ -953,14 +961,18 @@ export default function InvestorDashboard() {
                       <p className="text-gray-500 text-[10px]">
                         ${(parseFloat(o.total_raised_usd||0)/1000).toFixed(0)}K of ${(parseFloat(o.target_raise_usd)/1000).toFixed(0)}K
                       </p>
-                      <p className="text-gray-600 text-[10px] mt-0.5">Closes {new Date(o.subscription_deadline).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</p>
+                      {inAnchor
+                        ? <p className="text-amber-400/70 text-[10px] mt-0.5">Public opens {anchorDate}</p>
+                        : <p className="text-gray-600 text-[10px] mt-0.5">Min ${retailMin.toLocaleString()} · Closes {new Date(o.subscription_deadline).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</p>
+                      }
                       <button
                         onClick={e=>{e.stopPropagation();setTidToken(o);setTidAcknowledged(false);}}
                         className="w-full mt-2 py-1 rounded text-[10px] font-medium border border-blue-700/50 text-blue-400 hover:bg-blue-900/20">
                         📄 View TID
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {kycData?.user_kyc_status==='APPROVED'
                   ? <p className="text-xs text-gray-600 mt-2">Click an offering card to subscribe on the Market tab.</p>
@@ -1210,7 +1222,12 @@ export default function InvestorDashboard() {
               <>
                 {/* Horizontal scrollable offering cards */}
                 <div className="flex gap-3 overflow-x-auto pb-2" style={{scrollbarWidth:'none'}}>
-                  {offerings.map(o => (
+                  {offerings.map(o => {
+                    const anchorEnd  = o.anchor_phase_end_date ? new Date(o.anchor_phase_end_date) : null;
+                    const inAnchor   = anchorEnd && new Date() < anchorEnd;
+                    const anchorDate = anchorEnd ? anchorEnd.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : null;
+                    const retailMin  = parseFloat(o.retail_min_usd || o.min_subscription_usd || 100);
+                    return (
                     <div key={o.id}
                       onClick={() => router.push(`/investor/offering/${o.id}`)}
                       className="flex-shrink-0 cursor-pointer rounded-xl p-3 transition-all"
@@ -1221,7 +1238,10 @@ export default function InvestorDashboard() {
                       }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-white text-sm">{o.token_symbol}</span>
-                        <span className="text-xs bg-green-900/40 text-green-300 px-1.5 py-0.5 rounded text-[10px]">OPEN</span>
+                        {inAnchor
+                          ? <span className="text-[9px] bg-amber-900/40 text-amber-300 px-1.5 py-0.5 rounded">ANCHOR</span>
+                          : <span className="text-[10px] bg-green-900/40 text-green-300 px-1.5 py-0.5 rounded">OPEN</span>
+                        }
                       </div>
                       <p className="text-gray-400 text-xs mb-2 truncate">{o.issuer_name || o.token_name || o.token_symbol}</p>
                       <p className="text-white font-semibold text-base mb-1">${parseFloat(o.offering_price_usd).toFixed(4)}</p>
@@ -1232,14 +1252,18 @@ export default function InvestorDashboard() {
                       <p className="text-gray-500 text-[10px]">
                         ${(parseFloat(o.total_raised_usd||0)/1000).toFixed(0)}K of ${(parseFloat(o.target_raise_usd)/1000).toFixed(0)}K
                       </p>
-                      <p className="text-gray-600 text-[10px] mt-0.5">Closes {new Date(o.subscription_deadline).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</p>
+                      {inAnchor
+                        ? <p className="text-amber-400/70 text-[10px] mt-0.5">Public opens {anchorDate}</p>
+                        : <p className="text-gray-600 text-[10px] mt-0.5">Min ${retailMin.toLocaleString()} · Closes {new Date(o.subscription_deadline).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</p>
+                      }
                       <button
                         onClick={e=>{e.stopPropagation();setTidToken(o);setTidAcknowledged(false);}}
                         className="w-full mt-2 py-1 rounded text-[10px] font-medium border border-blue-700/50 text-blue-400 hover:bg-blue-900/20">
                         📄 View TID
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Subscribe panel — appears when card selected */}

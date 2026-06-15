@@ -2498,12 +2498,35 @@ export default function IssuerDashboard() {
   const [kycRefreshing,  setKycRefreshing]  = useState(false);
   const [boThreshold,    setBoThreshold]    = useState(10);
   const [tab, setTab] = useState('overview');
+  const [issuerOffering, setIssuerOffering] = useState(null);
+  const [issuerSubs,     setIssuerSubs]     = useState([]);
+  const [issuerSubsLoading, setIssuerSubsLoading] = useState(false);
 
   useEffect(() => {
     const handler = (e) => setTab(e.detail.tab);
     window.addEventListener('issuer-tab-change', handler);
     return () => window.removeEventListener('issuer-tab-change', handler);
   }, []);
+
+  useEffect(() => {
+    if (tab !== 'investors' || !selToken) return;
+    setIssuerSubsLoading(true);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const hdrsLocal = () => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' });
+    fetch(`${API}/offerings`, { headers: hdrsLocal() })
+      .then(r => r.json())
+      .then(offs => {
+        if (!Array.isArray(offs)) return;
+        const offering = offs.find(o => String(o.token_id) === String(selToken.id));
+        setIssuerOffering(offering || null);
+        if (!offering) { setIssuerSubs([]); setIssuerSubsLoading(false); return; }
+        return fetch(`${API}/offerings/${offering.id}/subscriptions`, { headers: hdrsLocal() })
+          .then(r => r.json())
+          .then(subs => { if (Array.isArray(subs)) setIssuerSubs(subs); })
+          .finally(() => setIssuerSubsLoading(false));
+      })
+      .catch(() => setIssuerSubsLoading(false));
+  }, [tab, selToken]);
   const [loading,        setLoading]        = useState(true);
   const [statement,      setStatement]      = useState('');
   const [postMsg,        setPostMsg]        = useState(null);
@@ -2843,13 +2866,149 @@ export default function IssuerDashboard() {
         )}
 
         {/* ══ INVESTORS ══ */}
-        {tab==='investors' && (
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
-            <p className="text-3xl mb-3">👥</p>
-            <h3 className="font-bold text-lg mb-2">Investor Relations</h3>
-            <p className="text-gray-500 text-sm">View your investor base, subscription history and investor communications. Coming soon.</p>
+        {tab==='investors' && (() => {
+          const totalRaised = issuerSubs.reduce((s, r) => s + parseFloat(r.amount_usd || 0), 0);
+          const target      = parseFloat(issuerOffering?.target_raise_usd || 0);
+          const byTier      = { INSTITUTIONAL: 0, CORPORATE: 0, RETAIL: 0 };
+          issuerSubs.forEach(r => {
+            const tier = r.investor_tier || r.kyc_investor_tier || 'RETAIL';
+            byTier[tier] = (byTier[tier] || 0) + parseFloat(r.amount_usd || 0);
+          });
+          const fmtUsd = v => {
+            const n = parseFloat(v || 0);
+            if (n >= 1e6) return `$${(n/1e6).toFixed(2)}M`;
+            if (n >= 1e3) return `$${(n/1e3).toFixed(1)}K`;
+            return `$${n.toFixed(2)}`;
+          };
+          const TIER_COLOR = { INSTITUTIONAL: 'text-purple-400', CORPORATE: 'text-blue-400', RETAIL: 'text-green-400' };
+          return (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Investor Relations — {t?.token_symbol || t?.symbol}</h2>
+              {issuerOffering && (
+                <span className={`text-xs px-2 py-1 rounded-full ${issuerOffering.status==='OPEN'?'bg-green-900/40 text-green-300 border border-green-700':'bg-gray-800 text-gray-400'}`}>
+                  Offering {issuerOffering.status}
+                </span>
+              )}
+            </div>
+
+            {/* Summary cards */}
+            {issuerOffering ? (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { label: 'Total Raised',     value: fmtUsd(totalRaised), sub: `of ${fmtUsd(target)} target`, color: 'text-green-400' },
+                    { label: 'Subscribers',       value: issuerSubs.length,   sub: 'confirmed investors',          color: 'text-white' },
+                    { label: 'Institutional',     value: fmtUsd(byTier.INSTITUTIONAL), sub: `${target > 0 ? ((byTier.INSTITUTIONAL/target)*100).toFixed(1) : 0}% of target`, color: 'text-purple-400' },
+                    { label: 'Retail',            value: fmtUsd(byTier.RETAIL),        sub: `${target > 0 ? ((byTier.RETAIL/target)*100).toFixed(1) : 0}% of target`,        color: 'text-green-400' },
+                  ].map((k, i) => (
+                    <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                      <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">{k.label}</p>
+                      <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
+                      <p className="text-gray-500 text-xs mt-1">{k.sub}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tier breakdown bar */}
+                {totalRaised > 0 && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <p className="text-sm font-semibold mb-3">Subscription Breakdown by Tier</p>
+                    <div className="flex h-4 rounded-full overflow-hidden gap-0.5">
+                      {byTier.INSTITUTIONAL > 0 && (
+                        <div className="bg-purple-500" style={{width:`${(byTier.INSTITUTIONAL/totalRaised)*100}%`}} title={`Institutional: ${fmtUsd(byTier.INSTITUTIONAL)}`}/>
+                      )}
+                      {byTier.CORPORATE > 0 && (
+                        <div className="bg-blue-500" style={{width:`${(byTier.CORPORATE/totalRaised)*100}%`}} title={`Corporate: ${fmtUsd(byTier.CORPORATE)}`}/>
+                      )}
+                      {byTier.RETAIL > 0 && (
+                        <div className="bg-green-500" style={{width:`${(byTier.RETAIL/totalRaised)*100}%`}} title={`Retail: ${fmtUsd(byTier.RETAIL)}`}/>
+                      )}
+                    </div>
+                    <div className="flex gap-4 mt-2">
+                      {Object.entries(byTier).filter(([,v]) => v > 0).map(([tier, v]) => (
+                        <div key={tier} className="flex items-center gap-1.5 text-xs">
+                          <span className={`w-2.5 h-2.5 rounded-full ${tier==='INSTITUTIONAL'?'bg-purple-500':tier==='CORPORATE'?'bg-blue-500':'bg-green-500'}`}/>
+                          <span className="text-gray-400">{tier[0]+tier.slice(1).toLowerCase()}</span>
+                          <span className="text-white font-medium">{fmtUsd(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Subscription table */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                  <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+                    <p className="text-sm font-semibold">Subscription Register</p>
+                    <p className="text-xs text-gray-500">{issuerSubs.length} entries</p>
+                  </div>
+                  {issuerSubsLoading ? (
+                    <p className="text-gray-500 text-sm text-center py-8">Loading subscriptions...</p>
+                  ) : issuerSubs.length === 0 ? (
+                    <p className="text-gray-600 text-sm text-center py-8">No subscriptions yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-gray-500 text-xs border-b border-gray-800">
+                            {['Date', 'Investor', 'Tier', 'Amount (USD)', 'Tokens', 'Status'].map(h => (
+                              <th key={h} className="text-left px-4 py-2.5">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-800/50">
+                          {issuerSubs.map((s, i) => {
+                            const tier = s.investor_tier || s.kyc_investor_tier || 'RETAIL';
+                            return (
+                              <tr key={s.id || i} className="hover:bg-gray-800/30 transition-colors">
+                                <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">
+                                  {new Date(s.subscribed_at || s.created_at).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'})}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <p className="text-white font-medium text-xs">{s.full_name || '—'}</p>
+                                  <p className="text-gray-500 text-[10px]">{s.email}</p>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <span className={`text-xs font-medium ${TIER_COLOR[tier] || 'text-gray-400'}`}>
+                                    {tier[0]+tier.slice(1).toLowerCase()}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5 text-white font-semibold">{fmtUsd(s.amount_usd)}</td>
+                                <td className="px-4 py-2.5 text-gray-300">
+                                  {parseInt(s.tokens_allocated || 0).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                    s.status==='CONFIRMED' ? 'bg-green-900/40 text-green-300'
+                                    : s.status==='CANCELLED' ? 'bg-red-900/40 text-red-300'
+                                    : 'bg-gray-800 text-gray-400'}`}>
+                                    {s.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center">
+                <p className="text-3xl mb-3">📋</p>
+                <h3 className="font-bold text-lg mb-2">No Active Offering</h3>
+                <p className="text-gray-500 text-sm">
+                  {selToken
+                    ? `No primary offering found for ${selToken.token_symbol || selToken.symbol}. Submit a primary offering to begin raising capital.`
+                    : 'Select a token from the overview to view investor data.'}
+                </p>
+              </div>
+            )}
           </div>
-        )}
+          );
+        })()}
 
         {/* ══ TRADING ══ */}
         {tab==='trading' && (
