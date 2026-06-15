@@ -877,18 +877,36 @@ router.get('/integrity-check',
   }
 );
 
-// POST /api/admin/run-migrations — execute pending-migrations.sql against the DB
-// One-time use; idempotent. Remove this endpoint after migrations are confirmed applied.
+// POST /api/admin/run-migrations
+// Body: { "confirm": "RUN_MIGRATIONS" }                           → pending-migrations.sql
+// Body: { "confirm": "RUN_MIGRATIONS", "script": "full-data-reset" } → full-data-reset.sql
 router.post('/run-migrations',
   authenticate,
   requireRole('ADMIN'),
   async (req, res) => {
+    const { confirm, script } = req.body;
+    if (confirm !== 'RUN_MIGRATIONS') {
+      return res.status(400).json({ error: 'Body must include { "confirm": "RUN_MIGRATIONS" }' });
+    }
+
+    const ALLOWED_SCRIPTS = {
+      'pending-migrations': 'pending-migrations.sql',
+      'full-data-reset':    'full-data-reset.sql',
+    };
+    const scriptKey  = script || 'pending-migrations';
+    const scriptFile = ALLOWED_SCRIPTS[scriptKey];
+    if (!scriptFile) {
+      return res.status(400).json({
+        error: `Unknown script "${scriptKey}". Allowed values: ${Object.keys(ALLOWED_SCRIPTS).join(', ')}`,
+      });
+    }
+
     const fs   = require('fs');
     const path = require('path');
-    const SQL_FILE = path.join(__dirname, '../scripts/pending-migrations.sql');
+    const SQL_FILE = path.join(__dirname, '../scripts', scriptFile);
 
     if (!fs.existsSync(SQL_FILE)) {
-      return res.status(404).json({ error: 'pending-migrations.sql not found' });
+      return res.status(404).json({ error: `${scriptFile} not found` });
     }
 
     const sql = fs.readFileSync(SQL_FILE, 'utf8');
@@ -896,9 +914,6 @@ router.post('/run-migrations',
       .split(';')
       .map(s => s.trim())
       .filter(s => s.length > 0 && !/^(--.*)$/.test(s));
-
-    const results = [];
-    const client = await db.pool ? db.pool.connect() : null;
 
     const runStmt = async (stmt) => {
       if (/^\s*SELECT\b/i.test(stmt)) {
@@ -911,6 +926,7 @@ router.post('/run-migrations',
 
     let ok = 0;
     let failed = 0;
+    const results = [];
     for (const stmt of statements) {
       try {
         const r = await runStmt(stmt);
@@ -922,9 +938,8 @@ router.post('/run-migrations',
       }
     }
 
-    if (client) client.release();
-
     res.json({
+      script: scriptFile,
       applied: ok,
       failed,
       results,
