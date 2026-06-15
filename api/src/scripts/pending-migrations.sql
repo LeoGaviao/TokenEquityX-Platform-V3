@@ -215,5 +215,53 @@ ALTER TABLE offering_subscriptions
   ADD COLUMN IF NOT EXISTS investor_tier VARCHAR(20) DEFAULT 'RETAIL';
 
 -- =============================================================================
+-- ZIMRA WITHHOLDING TAX (WHT) REMITTANCE WORKFLOW (Tasks 2–7)
+-- Income Tax Act [Chapter 23:06] — WHT on dividends/distributions
+-- Quarterly remittance via ZIMRA e-services (www.my.zimra.co.zw)
+-- =============================================================================
+
+-- ── 14. wht_batches — quarter tracking and remittance detail columns ───────────
+ALTER TABLE wht_batches
+  ADD COLUMN IF NOT EXISTS quarter          VARCHAR(10),
+  ADD COLUMN IF NOT EXISTS tax_year         INTEGER,
+  ADD COLUMN IF NOT EXISTS due_date         DATE,
+  ADD COLUMN IF NOT EXISTS payment_date     DATE,
+  ADD COLUMN IF NOT EXISTS bank_reference   VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS remittance_notes TEXT,
+  ADD COLUMN IF NOT EXISTS penalty_amount   NUMERIC(20,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS interest_amount  NUMERIC(20,2) DEFAULT 0;
+
+-- Note: zimra_reference and remitted_by already exist on wht_batches (original schema)
+
+-- ── 15. zimra_remittances — quarterly ZIMRA WHT filing tracker ────────────────
+CREATE TABLE IF NOT EXISTS zimra_remittances (
+  id                  UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  quarter             VARCHAR(10)   NOT NULL UNIQUE,
+  tax_year            INTEGER       NOT NULL,
+  period_start        DATE          NOT NULL,
+  period_end          DATE          NOT NULL,
+  due_date            DATE          NOT NULL,
+  total_wht_usd       NUMERIC(20,2) NOT NULL DEFAULT 0,
+  resident_wht        NUMERIC(20,2) NOT NULL DEFAULT 0,
+  non_resident_wht    NUMERIC(20,2) NOT NULL DEFAULT 0,
+  distribution_count  INTEGER       NOT NULL DEFAULT 0,
+  investor_count      INTEGER       NOT NULL DEFAULT 0,
+  status              VARCHAR(20)   DEFAULT 'PENDING',
+  zimra_reference     VARCHAR(100),
+  payment_date        DATE,
+  bank_reference      VARCHAR(100),
+  paid_by             UUID          REFERENCES users(id),
+  notes               TEXT,
+  report_generated_at TIMESTAMPTZ,
+  report_sent_at      TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ   DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ   DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_zimra_remittances_quarter ON zimra_remittances(quarter);
+CREATE INDEX IF NOT EXISTS idx_zimra_remittances_status  ON zimra_remittances(status);
+CREATE INDEX IF NOT EXISTS idx_zimra_remittances_due     ON zimra_remittances(due_date);
+
+-- =============================================================================
 -- END
 -- =============================================================================
