@@ -1649,6 +1649,16 @@ export default function AdminDashboard() {
   const [actionMsg,setActionMsg]=useState(null);
   const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
+  // ── ZIMRA WHT Remittance state
+  const [whtQuarters,      setWhtQuarters]      = useState([]);
+  const [whtLoading,       setWhtLoading]       = useState(false);
+  const [whtFiledModal,    setWhtFiledModal]     = useState(null);
+  const [whtPaidModal,     setWhtPaidModal]      = useState(null);
+  const [whtFiledForm,     setWhtFiledForm]      = useState({ zimra_reference: '', notes: '' });
+  const [whtPaidForm,      setWhtPaidForm]       = useState({ zimra_reference: '', payment_date: '', bank_reference: '', notes: '' });
+  const [whtActionLoading, setWhtActionLoading]  = useState(false);
+  const [whtCurrentQtr,    setWhtCurrentQtr]     = useState(null);
+
   // Track which pipeline item has drill-down open
   const [detailItem, setDetailItem] = useState(null);
 
@@ -1788,6 +1798,8 @@ export default function AdminDashboard() {
         .then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setStaffList(d); }).catch(()=>{})
         .finally(()=>setStaffLoading(false));
   }, [tab]);
+
+  useEffect(() => { if (tab === 'wht') loadWHT(); }, [tab]);
 
   const loadAll = async () => {
     try {
@@ -1950,6 +1962,63 @@ export default function AdminDashboard() {
   };
 
   const notify=(type,text)=>{setActionMsg({type,text});setTimeout(()=>setActionMsg(null),3500);};
+
+  const loadWHT = async () => {
+    setWhtLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`${API}/admin/wht/quarters`, { headers:{ Authorization:`Bearer ${token}` } });
+      const data  = await res.json();
+      if (Array.isArray(data)) setWhtQuarters(data);
+      // Current quarter position
+      const now    = new Date();
+      const m      = now.getMonth();
+      const y      = now.getFullYear();
+      const q      = m<=2?'Q1':m<=5?'Q2':m<=8?'Q3':'Q4';
+      setWhtCurrentQtr(`${q}-${y}`);
+    } catch(e) { notify('error', 'Failed to load WHT data: ' + e.message); }
+    finally { setWhtLoading(false); }
+  };
+
+  const whtMarkFiled = async () => {
+    if (!whtFiledModal || !whtFiledForm.zimra_reference) return;
+    setWhtActionLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`${API}/admin/wht/${whtFiledModal.quarter}/mark-filed`, {
+        method: 'PUT',
+        headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+        body: JSON.stringify(whtFiledForm),
+      });
+      const data = await res.json();
+      if (!res.ok) { notify('error', data.error || 'Failed to mark filed'); return; }
+      notify('success', `✅ ${whtFiledModal.quarter} marked as FILED — Ref: ${whtFiledForm.zimra_reference}`);
+      setWhtFiledModal(null);
+      setWhtFiledForm({ zimra_reference:'', notes:'' });
+      loadWHT();
+    } catch(e) { notify('error', e.message); }
+    finally { setWhtActionLoading(false); }
+  };
+
+  const whtMarkPaid = async () => {
+    if (!whtPaidModal || !whtPaidForm.bank_reference || !whtPaidForm.payment_date) return;
+    setWhtActionLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res   = await fetch(`${API}/admin/wht/${whtPaidModal.quarter}/mark-paid`, {
+        method: 'PUT',
+        headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+        body: JSON.stringify(whtPaidForm),
+      });
+      const data = await res.json();
+      if (!res.ok) { notify('error', data.error || 'Failed to mark paid'); return; }
+      notify('success', `✅ ${whtPaidModal.quarter} marked as PAID — Bank Ref: ${whtPaidForm.bank_reference}`);
+      setWhtPaidModal(null);
+      setWhtPaidForm({ zimra_reference:'', payment_date:'', bank_reference:'', notes:'' });
+      loadWHT();
+    } catch(e) { notify('error', e.message); }
+    finally { setWhtActionLoading(false); }
+  };
 
   const handleApproveApplication = async () => {
     if (!appFeeModal) return;
@@ -2143,11 +2212,12 @@ export default function AdminDashboard() {
               )}
             </div>
             {/* Primary tabs */}
-            {['pipeline','trading','compliance','users','offerings','settings','diagnostic'].map(t=>(
+            {['pipeline','trading','compliance','wht','users','offerings','settings','diagnostic'].map(t=>(
               <button key={t} onClick={()=>setTab(t)} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
-                {t}
+                {t==='wht' ? 'WHT' : t}
                 {t==='pipeline'&&pendingApprovals>0&&<span className="ml-1.5 bg-amber-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingApprovals}</span>}
                 {t==='compliance'&&pendingKYC>0&&<span className="ml-1.5 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingKYC}</span>}
+                {t==='wht'&&whtQuarters.filter(q=>q.status==='OVERDUE').length>0&&<span className="ml-1.5 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{whtQuarters.filter(q=>q.status==='OVERDUE').length}</span>}
               </button>
             ))}
           </div>
@@ -2972,6 +3042,265 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ══ WHT REMITTANCE ══ */}
+        {tab==='wht'&&(()=>{
+          const totalAllTime  = whtQuarters.reduce((s,q)=>s+parseFloat(q.totalWHT||0),0);
+          const pendingItems  = whtQuarters.filter(q=>['PENDING','OVERDUE'].includes(q.status));
+          const pendingTotal  = pendingItems.reduce((s,q)=>s+parseFloat(q.totalWHT||0),0);
+          const overdueItems  = whtQuarters.filter(q=>q.status==='OVERDUE');
+          const overdueTotal  = overdueItems.reduce((s,q)=>s+parseFloat(q.totalWHT||0),0);
+          const STATUS_BADGE  = {
+            PENDING:      'bg-amber-900/40 text-amber-300 border border-amber-700/40',
+            OVERDUE:      'bg-red-900/50 text-red-300 border border-red-700/50',
+            FILED:        'bg-blue-900/40 text-blue-300 border border-blue-700/40',
+            PAID:         'bg-green-900/40 text-green-300 border border-green-700/40',
+            LATE_PAYMENT: 'bg-orange-900/40 text-orange-300 border border-orange-700/40',
+          };
+          const token = typeof window !== 'undefined' ? localStorage.getItem('token') : '';
+          const hdrs  = () => ({ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' });
+          return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">ZIMRA WHT Remittance</h2>
+                <p className="text-gray-500 text-xs mt-0.5">Withholding Tax on dividends — Income Tax Act [Chapter 23:06]</p>
+              </div>
+              <button
+                onClick={async()=>{
+                  if(!whtCurrentQtr)return;
+                  const res=await fetch(`${API}/admin/wht/${whtCurrentQtr}`,{headers:hdrs()});
+                  const d=await res.json();
+                  if(d.distributionCount===0){notify('info',`No distributions in ${whtCurrentQtr} yet.`);return;}
+                  notify('success',`${whtCurrentQtr}: USD ${d.totals?.totalWHT?.toFixed(2)||'0.00'} WHT accumulated across ${d.distributionCount} distributions.`);
+                }}
+                className="text-xs bg-blue-900/30 border border-blue-700/50 text-blue-300 px-3 py-1.5 rounded-lg hover:bg-blue-900/50">
+                📊 Check Current Quarter ({whtCurrentQtr})
+              </button>
+            </div>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Total WHT Collected</p>
+                <p className="text-2xl font-bold text-white">${totalAllTime.toFixed(2)}</p>
+                <p className="text-gray-500 text-xs mt-1">all time — {whtQuarters.length} quarters</p>
+              </div>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Pending Remittance</p>
+                <p className={`text-2xl font-bold ${pendingTotal>0?'text-amber-400':'text-white'}`}>${pendingTotal.toFixed(2)}</p>
+                <p className="text-gray-500 text-xs mt-1">{pendingItems.length} quarters awaiting payment</p>
+              </div>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Overdue</p>
+                <p className={`text-2xl font-bold ${overdueTotal>0?'text-red-400':'text-white'}`}>${overdueTotal.toFixed(2)}</p>
+                <p className={`text-xs mt-1 ${overdueTotal>0?'text-red-400':'text-gray-500'}`}>
+                  {overdueItems.length>0?`⚠️ ${overdueItems.length} quarter${overdueItems.length>1?'s':''} overdue — penalties may apply`:'No overdue quarters'}
+                </p>
+              </div>
+            </div>
+
+            {/* Quarterly table */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+                <p className="text-sm font-semibold">Quarterly WHT Register</p>
+                <button onClick={loadWHT} className="text-xs text-gray-500 hover:text-white">↻ Refresh</button>
+              </div>
+              {whtLoading ? (
+                <p className="text-gray-500 text-sm text-center py-8">Loading WHT data...</p>
+              ) : whtQuarters.length === 0 ? (
+                <p className="text-gray-600 text-sm text-center py-8">No WHT distributions recorded yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-500 text-xs border-b border-gray-800">
+                        {['Quarter','Period','Due Date','Total WHT','Resident','Non-Resident','Status','Actions'].map(h=>(
+                          <th key={h} className="text-left px-4 py-2.5">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/50">
+                      {whtQuarters.map((q,i)=>{
+                        const isOverdue = q.status==='OVERDUE';
+                        const daysLeft  = q.dueDate ? Math.ceil((new Date(q.dueDate)-Date.now())/(1000*60*60*24)) : null;
+                        return (
+                        <tr key={i} className={`hover:bg-gray-800/30 transition-colors ${isOverdue?'bg-red-950/20':''}`}>
+                          <td className="px-4 py-3 font-bold text-white">{q.quarter}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                            {q.periodStart} – {q.periodEnd}
+                          </td>
+                          <td className={`px-4 py-3 text-xs whitespace-nowrap font-medium ${isOverdue?'text-red-400':daysLeft!==null&&daysLeft<=10?'text-amber-400':'text-gray-400'}`}>
+                            {q.dueDate}
+                            {daysLeft!==null&&daysLeft>0&&!isOverdue&&<span className="text-gray-600 font-normal"> ({daysLeft}d)</span>}
+                            {isOverdue&&<span className="ml-1">⚠️</span>}
+                          </td>
+                          <td className="px-4 py-3 font-bold text-white">${parseFloat(q.totalWHT||0).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">
+                            ${parseFloat(q.residentWHT||0).toFixed(2)}<span className="text-gray-600"> 10%</span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">
+                            ${parseFloat(q.nonResidentWHT||0).toFixed(2)}<span className="text-gray-600"> 15%</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[q.status]||'bg-gray-800 text-gray-400'}`}>
+                              {q.status==='PAID'?'✅ ':q.status==='OVERDUE'?'⚠️ ':''}{q.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {/* Download CSV */}
+                              <a href={`${API}/admin/wht/${q.quarter}/csv`}
+                                onClick={e=>{e.preventDefault();
+                                  const a=document.createElement('a');
+                                  a.href=`${API}/admin/wht/${q.quarter}/csv`;
+                                  fetch(a.href,{headers:hdrs()}).then(r=>r.blob()).then(b=>{
+                                    const url=URL.createObjectURL(b);
+                                    a.href=url;a.download=`TokenEquityX_WHT_${q.quarter}.csv`;
+                                    document.body.appendChild(a);a.click();
+                                    document.body.removeChild(a);URL.revokeObjectURL(url);
+                                  });
+                                }}
+                                className="text-[10px] px-2 py-1 rounded border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 cursor-pointer">
+                                ⬇ CSV
+                              </a>
+                              {/* Email report */}
+                              <button
+                                onClick={async()=>{
+                                  const res=await fetch(`${API}/admin/wht/${q.quarter}/send-report`,{method:'POST',headers:hdrs()});
+                                  const d=await res.json();
+                                  res.ok?notify('success',d.message||'Report emailed'):notify('error',d.error||'Failed');
+                                  loadWHT();
+                                }}
+                                className="text-[10px] px-2 py-1 rounded border border-blue-800/50 text-blue-400 hover:bg-blue-900/20">
+                                📧 Email
+                              </button>
+                              {/* Mark Filed */}
+                              {['PENDING','OVERDUE'].includes(q.status)&&(
+                                <button
+                                  onClick={()=>{setWhtFiledModal({quarter:q.quarter,totalWHT:q.totalWHT});setWhtFiledForm({zimra_reference:'',notes:''}); }}
+                                  className="text-[10px] px-2 py-1 rounded border border-amber-700/50 text-amber-400 hover:bg-amber-900/20">
+                                  📋 Mark Filed
+                                </button>
+                              )}
+                              {/* Mark Paid */}
+                              {q.status==='FILED'&&(
+                                <button
+                                  onClick={()=>{setWhtPaidModal({quarter:q.quarter,zimraRef:q.zimraReference,totalWHT:q.totalWHT});setWhtPaidForm({zimra_reference:q.zimraReference||'',payment_date:'',bank_reference:'',notes:''}); }}
+                                  className="text-[10px] px-2 py-1 rounded border border-green-700/50 text-green-400 hover:bg-green-900/20">
+                                  ✅ Mark Paid
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Filing instructions */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-xs text-gray-500">
+              <p className="font-semibold text-gray-300 mb-2">ZIMRA Filing Process (ITF12C)</p>
+              <ol className="list-decimal list-inside space-y-1">
+                <li>Receive auto-generated report email on 1 Apr/Jul/Oct/Jan</li>
+                <li>Log into ZIMRA e-services: <span className="text-blue-400">www.my.zimra.co.zw</span> → Returns → WHT → Dividends (ITF12C)</li>
+                <li>Enter the figures, attach the CSV, submit — note ZIMRA reference</li>
+                <li>Pay via bank using ZIMRA reference</li>
+                <li>Click <strong className="text-gray-300">Mark Filed</strong> (enter ZIMRA ref), then <strong className="text-gray-300">Mark Paid</strong> (enter bank ref)</li>
+              </ol>
+            </div>
+          </div>
+          );
+        })()}
+
+        {/* ══ MARK FILED MODAL ══ */}
+        {whtFiledModal&&(
+          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
+              <h3 className="font-bold text-lg mb-1">Mark WHT Filed — {whtFiledModal.quarter}</h3>
+              <p className="text-gray-400 text-xs mb-4">Total WHT: <strong className="text-white">${parseFloat(whtFiledModal.totalWHT||0).toFixed(2)}</strong></p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">ZIMRA Reference Number <span className="text-red-400">*</span></label>
+                  <input type="text" value={whtFiledForm.zimra_reference}
+                    onChange={e=>setWhtFiledForm(f=>({...f,zimra_reference:e.target.value}))}
+                    placeholder="e.g. ZIMRA-WHT-2026-Q1-XXXXXX"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Notes (optional)</label>
+                  <textarea value={whtFiledForm.notes}
+                    onChange={e=>setWhtFiledForm(f=>({...f,notes:e.target.value}))}
+                    rows={2} placeholder="Any relevant notes..."
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 resize-none"/>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-5">
+                <button onClick={()=>setWhtFiledModal(null)}
+                  className="flex-1 py-2 rounded-lg border border-gray-700 text-gray-400 hover:text-white text-sm">Cancel</button>
+                <button onClick={whtMarkFiled} disabled={!whtFiledForm.zimra_reference||whtActionLoading}
+                  className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-40">
+                  {whtActionLoading?'Saving...':'Confirm Filed'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══ MARK PAID MODAL ══ */}
+        {whtPaidModal&&(
+          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
+              <h3 className="font-bold text-lg mb-1">Mark WHT Paid — {whtPaidModal.quarter}</h3>
+              <p className="text-gray-400 text-xs mb-4">Total WHT: <strong className="text-white">${parseFloat(whtPaidModal.totalWHT||0).toFixed(2)}</strong></p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">ZIMRA Reference</label>
+                  <input type="text" value={whtPaidForm.zimra_reference}
+                    onChange={e=>setWhtPaidForm(f=>({...f,zimra_reference:e.target.value}))}
+                    placeholder="From filing step"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Payment Date <span className="text-red-400">*</span></label>
+                  <input type="date" value={whtPaidForm.payment_date}
+                    onChange={e=>setWhtPaidForm(f=>({...f,payment_date:e.target.value}))}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Bank Reference / Transfer Ref <span className="text-red-400">*</span></label>
+                  <input type="text" value={whtPaidForm.bank_reference}
+                    onChange={e=>setWhtPaidForm(f=>({...f,bank_reference:e.target.value}))}
+                    placeholder="e.g. TXN-20260410-XXXXXX"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Amount Paid (USD)</label>
+                  <input type="text" value={`$${parseFloat(whtPaidModal.totalWHT||0).toFixed(2)}`} readOnly
+                    className="w-full bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400"/>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Notes (optional)</label>
+                  <textarea value={whtPaidForm.notes}
+                    onChange={e=>setWhtPaidForm(f=>({...f,notes:e.target.value}))}
+                    rows={2} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 resize-none"/>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-5">
+                <button onClick={()=>setWhtPaidModal(null)}
+                  className="flex-1 py-2 rounded-lg border border-gray-700 text-gray-400 hover:text-white text-sm">Cancel</button>
+                <button onClick={whtMarkPaid} disabled={!whtPaidForm.bank_reference||!whtPaidForm.payment_date||whtActionLoading}
+                  className="flex-1 py-2 rounded-lg bg-green-700 hover:bg-green-600 text-white text-sm font-medium disabled:opacity-40">
+                  {whtActionLoading?'Saving...':'Confirm Payment'}
+                </button>
+              </div>
             </div>
           </div>
         )}
