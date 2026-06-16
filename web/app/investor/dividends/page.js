@@ -18,6 +18,8 @@ export default function DividendsPage() {
   const [claiming,    setClaiming]      = useState({});
   const [activeTab,   setActiveTab]     = useState('summary');
   const [message,     setMessage]       = useState(null);
+  const [certYear,    setCertYear]      = useState(new Date().getFullYear());
+  const [certLoading, setCertLoading]   = useState(false);
 
   useEffect(() => {
     if (!ready) return;
@@ -51,6 +53,27 @@ export default function DividendsPage() {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Claim failed.' });
     } finally {
       setClaiming(c => ({ ...c, [roundId]: false }));
+    }
+  }
+
+  async function downloadCertificate() {
+    setCertLoading(true);
+    try {
+      const res = await api.get(`/dividends/wht-certificate?year=${certYear}`);
+      const cert = res.data;
+      const blob = new Blob([JSON.stringify(cert, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `WHT-Certificate-${certYear}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Could not generate certificate.' });
+    } finally {
+      setCertLoading(false);
     }
   }
 
@@ -220,6 +243,25 @@ export default function DividendsPage() {
         {/* ── WHT Summary Tab ── */}
         {activeTab === 'wht' && (
           <div className="space-y-4">
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-sm mb-1">📄 Annual WHT Tax Certificate</h3>
+                <p className="text-xs text-gray-500">Download a summary of withholding tax deducted on your distributions for a given tax year.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select value={certYear} onChange={e => setCertYear(parseInt(e.target.value, 10))}
+                  className="bg-gray-800 border border-gray-700 rounded-lg text-sm px-3 py-2 text-white">
+                  {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <button onClick={downloadCertificate} disabled={certLoading}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 whitespace-nowrap">
+                  {certLoading ? 'Generating…' : `Download WHT Certificate ${certYear}`}
+                </button>
+              </div>
+            </div>
+
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
               <h3 className="font-bold text-sm mb-3">🏛 Withholding Tax Explanation</h3>
               <div className="space-y-3 text-sm text-gray-300">

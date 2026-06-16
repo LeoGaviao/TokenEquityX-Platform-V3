@@ -530,6 +530,83 @@ router.get('/history', authenticate, async (req, res) => {
   }
 });
 
+// ── GET /api/dividends/wht-certificate — investor's annual WHT tax certificate
+router.get('/wht-certificate', authenticate, async (req, res) => {
+  try {
+    const taxYear = parseInt(req.query.year, 10) || new Date().getFullYear();
+    const yearStart = new Date(taxYear, 0, 1);
+    const yearEnd   = new Date(taxYear, 11, 31, 23, 59, 59);
+
+    const [userRows] = await db.execute(
+      'SELECT full_name, email FROM users WHERE id = ?',
+      [req.user.userId]
+    );
+    if (!userRows.length) return res.status(404).json({ error: 'User not found' });
+    const investor = userRows[0];
+
+    const [rows] = await db.execute(`
+      SELECT
+        dc.token_symbol,
+        dr.round_type,
+        dc.gross_amount,
+        dc.withholding_rate,
+        dc.withholding_tax,
+        dc.net_amount,
+        dc.claimed_at
+      FROM dividend_claims dc
+      JOIN dividend_rounds dr ON dr.id = dc.round_id
+      WHERE dc.user_id = ?
+        AND dc.claimed = TRUE
+        AND dc.claimed_at BETWEEN ? AND ?
+      ORDER BY dc.token_symbol, dc.claimed_at
+    `, [req.user.userId, yearStart, yearEnd]);
+
+    const byToken = rows.reduce((acc, r) => {
+      const k = r.token_symbol;
+      if (!acc[k]) acc[k] = { token_symbol: k, distribution_count: 0, gross_amount: 0, withholding_tax: 0, net_amount: 0, wht_rate: r.withholding_rate };
+      acc[k].distribution_count++;
+      acc[k].gross_amount    += parseFloat(r.gross_amount    || 0);
+      acc[k].withholding_tax += parseFloat(r.withholding_tax || 0);
+      acc[k].net_amount      += parseFloat(r.net_amount      || 0);
+      return acc;
+    }, {});
+
+    const whtSummary = Object.values(byToken).map(t => ({
+      token_symbol:       t.token_symbol,
+      distribution_count: t.distribution_count,
+      gross_amount:       t.gross_amount.toFixed(2),
+      wht_rate:           `${(parseFloat(t.wht_rate) * 100).toFixed(0)}%`,
+      withholding_tax:    t.withholding_tax.toFixed(2),
+      net_amount:         t.net_amount.toFixed(2),
+    }));
+
+    const totals = rows.reduce((acc, r) => {
+      acc.gross_amount    += parseFloat(r.gross_amount    || 0);
+      acc.withholding_tax += parseFloat(r.withholding_tax || 0);
+      acc.net_amount      += parseFloat(r.net_amount      || 0);
+      return acc;
+    }, { gross_amount: 0, withholding_tax: 0, net_amount: 0 });
+
+    res.json({
+      investor_name:    investor.full_name,
+      investor_email:   investor.email,
+      tax_year:         taxYear,
+      platform:         'TokenEquityX (Private) Limited',
+      certificate_date: new Date().toISOString().split('T')[0],
+      wht_summary:      whtSummary,
+      totals: {
+        gross_amount:    totals.gross_amount.toFixed(2),
+        withholding_tax: totals.withholding_tax.toFixed(2),
+        net_amount:      totals.net_amount.toFixed(2),
+      },
+      regulatory_note: 'This certificate summarises withholding tax deducted at source on distributions paid to you, in terms of the Income Tax Act [Chapter 23:06]. Withholding tax has been remitted to the Zimbabwe Revenue Authority (ZIMRA) on your behalf. Retain this certificate for your personal tax records.',
+    });
+  } catch (err) {
+    logger.error('WHT certificate generation failed', { error: err.message });
+    res.status(500).json({ error: 'Could not generate WHT certificate' });
+  }
+});
+
 // ── GET /api/dividends/admin/summary — admin withholding tax summary for ZIMRA
 router.get('/admin/summary',
   authenticate,
