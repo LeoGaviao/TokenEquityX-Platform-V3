@@ -9,6 +9,7 @@ import api from '../../lib/api';
 import TokenChartModal from '../../components/TokenChartModal';
 import PremiumBadge from '../../components/investor/PremiumBadge';
 import PWAInstallPrompt from '../../components/ui/PWAInstallPrompt';
+import { SkeletonStat, SkeletonTable } from '../../components/ui/SkeletonCard';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -481,6 +482,20 @@ export default function InvestorDashboard() {
 
   if (typeof window === 'undefined') return null;
   if (!JSON.parse(localStorage.getItem('user') || '{}')?.role) return null;
+
+  if (loading) return (
+    <div className="min-h-screen bg-gray-950 text-white p-4 sm:p-6">
+      <div className="max-w-screen-xl mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_,i) => <SkeletonStat key={i} />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SkeletonTable rows={5} cols={4} />
+          <SkeletonTable rows={5} cols={3} />
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
