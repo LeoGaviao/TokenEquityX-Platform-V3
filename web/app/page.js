@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
 import axios from 'axios';
+import ScrollToTop from '../components/ui/ScrollToTop';
 
 const API  = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 const NAVY = '#1A3C5E';
@@ -49,7 +50,13 @@ function ConnectButton({ label = 'Access Platform', size = 'lg' }) {
   async function connect() {
     setError(''); setLoading(true);
     try {
-      if (!window.ethereum) { setError('MetaMask not found. Please install MetaMask.'); setLoading(false); return; }
+      if (!window.ethereum) {
+        const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+        setError(isMobile
+          ? 'MetaMask mobile app required. Open this page inside the MetaMask browser, or use email sign-in below.'
+          : 'MetaMask not found. Please install the MetaMask browser extension.');
+        setLoading(false); return;
+      }
       setStatus('Connecting...');
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const wallet   = accounts[0];
@@ -180,10 +187,10 @@ function AccessPanel() {
         <form onSubmit={handleLogin} className="space-y-3">
           <input type="email" required placeholder="Email address" value={form.email}
             onChange={e => setForm({...form, email: e.target.value})}
-            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 text-sm outline-none transition"/>
+            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 min-h-[44px] text-sm outline-none transition"/>
           <input type="password" required placeholder="Password" value={form.password}
             onChange={e => setForm({...form, password: e.target.value})}
-            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 text-sm outline-none transition"/>
+            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 min-h-[44px] text-sm outline-none transition"/>
           <button type="submit" disabled={loading}
             className="w-full py-3 rounded-xl font-black text-gray-900 text-sm disabled:opacity-50 transition hover:opacity-90"
             style={{ background: GOLD }}>
@@ -194,16 +201,16 @@ function AccessPanel() {
         <form onSubmit={handleSignup} className="space-y-3">
           <input type="text" required placeholder="Full name" value={form.full_name}
             onChange={e => setForm({...form, full_name: e.target.value})}
-            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 text-sm outline-none transition"/>
+            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 min-h-[44px] text-sm outline-none transition"/>
           <input type="email" required placeholder="Email address" value={form.email}
             onChange={e => setForm({...form, email: e.target.value})}
-            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 text-sm outline-none transition"/>
+            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 min-h-[44px] text-sm outline-none transition"/>
           <input type="password" required placeholder="Password (min 8 characters)" value={form.password}
             onChange={e => setForm({...form, password: e.target.value})}
-            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 text-sm outline-none transition"/>
+            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 min-h-[44px] text-sm outline-none transition"/>
           <input type="password" required placeholder="Confirm password" value={form.confirm}
             onChange={e => setForm({...form, confirm: e.target.value})}
-            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 text-sm outline-none transition"/>
+            className="w-full bg-gray-800 border border-gray-700 focus:border-yellow-500 text-white rounded-xl px-4 py-2.5 min-h-[44px] text-sm outline-none transition"/>
           <button type="submit" disabled={loading}
             className="w-full py-3 rounded-xl font-black text-gray-900 text-sm disabled:opacity-50 transition hover:opacity-90"
             style={{ background: GOLD }}>
@@ -319,9 +326,9 @@ export default function HomePage() {
 
           {/* Live ticker */}
           <div className="bg-gray-900/60 border border-gray-800 rounded-2xl p-4 backdrop-blur-sm">
-            <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <p className="text-gray-600 text-xs uppercase tracking-wider">Live Prices</p>
-              <div className="flex flex-wrap gap-6">
+              <div className="flex flex-wrap gap-4 sm:gap-6">
                 {TICKER_ASSETS.map(a => (
                   <div key={a.symbol} className="flex items-center gap-3">
                     <div>
@@ -422,6 +429,8 @@ export default function HomePage() {
           <AccessPanel />
         </div>
       </section>
+
+      <ScrollToTop />
 
       {/* ── DISCLAIMER ────────────────────────────────────────── */}
       <section className="py-8 px-6 border-t border-gray-900">
