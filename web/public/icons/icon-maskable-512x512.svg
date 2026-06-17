@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full-bleed navy background (maskable — no rounded corners) -->
+  <rect width="512" height="512" fill="#1A1F2E"/>
+  <!-- Gold hexagon scaled to ~55% radius (88px) — safe zone compliant -->
+  <!-- r=88: 0°:(344,256) 60°:(300,332.2) 120°:(212,332.2) 180°:(168,256) 240°:(212,179.8) 300°:(300,179.8) -->
+  <polygon points="344,256 300,332.2 212,332.2 168,256 212,179.8 300,179.8" fill="#C8972B"/>
+  <!-- Navy inner hexagon r=55 -->
+  <!-- 0°:(311,256) 60°:(283.5,303.6) 120°:(228.5,303.6) 180°:(201,256) 240°:(228.5,208.4) 300°:(283.5,208.4) -->
+  <polygon points="311,256 283.5,303.6 228.5,303.6 201,256 228.5,208.4 283.5,208.4" fill="#1A1F2E"/>
+  <!-- Gold T lettermark (scaled proportionally) -->
+  <rect x="232" y="224" width="48" height="10" rx="3" fill="#C8972B"/>
+  <rect x="251" y="234" width="10" height="60" rx="3" fill="#C8972B"/>
+</svg>
