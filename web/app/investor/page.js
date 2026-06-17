@@ -59,6 +59,7 @@ export default function InvestorDashboard() {
   const [kycData,          setKycData]          = useState(null);
   const [riskAcknowledged, setRiskAcknowledged] = useState([]);
   const [premiumAccess,    setPremiumAccess]    = useState(null);
+  const [isOnline,         setIsOnline]         = useState(true);
   const wsRef = useRef(null);
 
   // ── Wallet state
@@ -86,6 +87,14 @@ export default function InvestorDashboard() {
   const [tradeMsg,     setTradeMsg]     = useState(null);
   const [tradeLoading, setTradeLoading] = useState(false);
   const [cancelling,   setCancelling]   = useState(null);
+
+  useEffect(() => {
+    const online  = () => setIsOnline(true);
+    const offline = () => setIsOnline(false);
+    window.addEventListener('online',  online);
+    window.addEventListener('offline', offline);
+    return () => { window.removeEventListener('online', online); window.removeEventListener('offline', offline); };
+  }, []);
 
   const notify = (type, text) => { setActionMsg({type,text}); setTimeout(()=>setActionMsg(null),3500); };
 
@@ -474,6 +483,14 @@ export default function InvestorDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
+
+      {/* Offline banner */}
+      {!isOnline && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-yellow-900/95 border-b border-yellow-600 text-yellow-200 text-sm text-center py-2 px-4 flex items-center justify-center gap-2">
+          <span>⚠</span>
+          <span>You're offline — showing cached data. Changes will sync when you reconnect.</span>
+        </div>
+      )}
 
       {/* Pre-listing detail modal */}
       {preListingDetail && (
