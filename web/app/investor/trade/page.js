@@ -98,17 +98,17 @@ function TradePageInner() {
   const fee   = total * 0.005;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <div className="flex items-center gap-4 mb-6">
+    <div className="max-w-7xl mx-auto px-4 py-8 pb-8">
+      <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-6">
         <h1 className="text-2xl font-bold">Exchange</h1>
-        <select value={symbol} onChange={e => setSymbol(e.target.value)} className="select w-auto">
+        <select value={symbol} onChange={e => setSymbol(e.target.value)} className="select w-auto min-h-[44px]">
           {tokens.map(t => (
             <option key={t.token_symbol} value={t.token_symbol}>
               {t.token_symbol} — {t.legal_name}
             </option>
           ))}
         </select>
-        <button onClick={loadOrderBook} className="btn-secondary text-sm">↻ Refresh</button>
+        <button onClick={loadOrderBook} className="btn-secondary text-sm min-h-[44px]">↻ Refresh</button>
       </div>
 
       {message && (
@@ -127,7 +127,7 @@ function TradePageInner() {
           <div className="flex gap-2 mb-4">
             {['BUY','SELL'].map(s => (
               <button key={s} onClick={() => setForm(f => ({...f, side: s}))}
-                className={`flex-1 py-2 rounded-lg font-semibold text-sm transition-colors ${
+                className={`flex-1 min-h-[44px] py-2 rounded-lg font-semibold text-sm transition-colors ${
                   form.side === s
                     ? s === 'BUY' ? 'bg-green-700 text-white' : 'bg-red-700 text-white'
                     : 'bg-gray-800 text-gray-400 hover:text-white'
@@ -182,14 +182,14 @@ function TradePageInner() {
 
         {/* Order Book / Trades / My Orders */}
         <div className="lg:col-span-2">
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-4 overflow-x-auto" style={{scrollbarWidth:'none'}}>
             {[
               { id: 'book',   label: '📖 Order Book' },
               { id: 'trades', label: '⚡ Recent Trades' },
               { id: 'mine',   label: '📋 My Orders' },
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
                   tab === t.id ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400 hover:text-white'
                 }`}>{t.label}</button>
             ))}
@@ -228,7 +228,8 @@ function TradePageInner() {
           )}
 
           {tab === 'trades' && (
-            <div className="card p-0 overflow-hidden">
+            <div className="card p-0 overflow-hidden overflow-x-auto">
+              <div className="min-w-[480px]">
               <div className="grid grid-cols-4 px-4 py-2 bg-gray-800 text-xs text-gray-400 font-bold">
                 <span>Price</span><span>Qty</span><span>Total</span><span>Time</span>
               </div>
@@ -243,11 +244,13 @@ function TradePageInner() {
                   </span>
                 </div>
               ))}
+              </div>
             </div>
           )}
 
           {tab === 'mine' && (
-            <div className="card p-0 overflow-hidden">
+            <div className="card p-0 overflow-hidden overflow-x-auto">
+              <div className="min-w-[560px]">
               <div className="grid grid-cols-5 px-4 py-2 bg-gray-800 text-xs text-gray-400 font-bold">
                 <span>Token</span><span>Side</span><span>Qty</span><span>Price</span><span>Status</span>
               </div>
@@ -266,11 +269,12 @@ function TradePageInner() {
                       'badge-yellow'
                     }`}>{o.status}</span>
                     {o.status === 'OPEN' && (
-                      <button onClick={() => cancelOrder(o.id)} className="text-red-400 hover:text-red-300 text-xs">✕</button>
+                      <button onClick={() => cancelOrder(o.id)} className="text-red-400 hover:text-red-300 text-xs min-h-[36px] min-w-[36px]">✕</button>
                     )}
                   </div>
                 </div>
               ))}
+              </div>
             </div>
           )}
         </div>

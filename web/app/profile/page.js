@@ -251,9 +251,9 @@ export default function ProfilePage() {
         </div>
       )}
 
-      <div className="max-w-5xl mx-auto px-4 py-8 flex gap-8">
+      <div className="max-w-5xl mx-auto px-4 py-8 flex flex-col sm:flex-row gap-6 sm:gap-8">
         {/* Sidebar */}
-        <aside className="w-64 flex-shrink-0">
+        <aside className="w-full sm:w-64 flex-shrink-0">
           {/* Avatar card */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-4 text-center">
             <div className="relative inline-block mb-3">
@@ -317,7 +317,7 @@ export default function ProfilePage() {
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
               <h2 className="font-bold text-white text-lg mb-6">Personal Information</h2>
               <form onSubmit={saveInfo} className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs text-gray-400 block mb-1">Full Name</label>
                     <input type="text" value={form.full_name}

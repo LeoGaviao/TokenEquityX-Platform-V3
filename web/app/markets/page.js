@@ -75,7 +75,7 @@ export default function MarketsPage() {
                       <h3 className="text-2xl font-black">{s.title}</h3>
                     </div>
                     <p className="text-gray-400 leading-relaxed mb-6">{s.desc}</p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {s.features.map((f,j)=>(
                         <div key={j} className="flex items-center gap-2 text-sm text-gray-300">
                           <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:s.color}}/>
@@ -137,8 +137,8 @@ export default function MarketsPage() {
             <h2 className="text-4xl font-black mb-4">Fee Schedule</h2>
             <p className="text-gray-400">Transparent, competitive pricing. No hidden fees.</p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden overflow-x-auto">
+            <table className="min-w-full text-sm">
               <thead><tr className="border-b border-gray-800 bg-gray-800/50"><th className="text-left p-4 font-bold">Service</th><th className="text-left p-4 font-bold">Fee</th><th className="text-left p-4 font-bold">Who Pays</th></tr></thead>
               <tbody>
                 {[

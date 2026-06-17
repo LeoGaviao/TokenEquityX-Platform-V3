@@ -545,10 +545,10 @@ export default function InvestorDashboard() {
       )}
 
       {/* ── HEADER ── */}
-      <div className="border-b border-gray-800 px-6 py-4 bg-gray-900/80">
-        <div className="max-w-screen-xl mx-auto flex items-center justify-between">
+      <div className="border-b border-gray-800 px-4 sm:px-6 py-4 bg-gray-900/80">
+        <div className="max-w-screen-xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{background:GOLD}}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{background:GOLD}}>
               <span className="text-sm font-bold text-gray-900">TX</span>
             </div>
             <div>
@@ -556,29 +556,29 @@ export default function InvestorDashboard() {
               <p className="text-gray-500 text-xs">INVESTOR — RETAIL</p>
             </div>
           </div>
-          <nav className="flex gap-1">
+          <div className="flex items-center gap-2 order-3 sm:order-none">
+            <span className="hidden lg:inline text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email || 'User'}</span>
+            <Inbox token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} />
+            <button onClick={()=>window.location.href='/profile'} className="hidden sm:inline text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg">Profile</button>
+            <button onClick={()=>{localStorage.clear();window.location.href='/'}}
+              className="hidden sm:inline text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg">
+              Disconnect
+            </button>
+          </div>
+          <nav className="flex gap-1 w-full sm:w-auto overflow-x-auto order-4 sm:order-none" style={{scrollbarWidth:'none'}}>
             {['portfolio','market','trade','news','governance','dividends'].map(t=>(
               <button key={t} onClick={()=>setTab(t)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium capitalize transition-all min-h-[44px] ${tab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
                 {t}
                 {t==='dividends'&&dividends.length>0&&<span className="ml-1 bg-green-600 text-white text-xs px-1 rounded-full">{dividends.length}</span>}
                 {t==='governance'&&proposals.filter(p=>p.status==='ACTIVE').length>0&&<span className="ml-1 bg-amber-600 text-white text-xs px-1 rounded-full">{proposals.filter(p=>p.status==='ACTIVE').length}</span>}
               </button>
             ))}
           </nav>
-          <div className="flex items-center gap-3">
-            <span className="text-gray-500 text-xs">{JSON.parse(localStorage.getItem('user')||'{}')?.email || 'User'}</span>
-            <Inbox token={typeof window !== 'undefined' ? localStorage.getItem('token') : ''} />
-            <button onClick={()=>window.location.href='/profile'} className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg">Profile</button>
-            <button onClick={()=>{localStorage.clear();window.location.href='/'}}
-              className="text-xs border border-gray-700 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg">
-              Disconnect
-            </button>
-          </div>
         </div>
       </div>
 
-      <div className="max-w-screen-xl mx-auto px-6 py-6">
+      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6 pb-24 sm:pb-6">
         {actionMsg&&<div className={`rounded-xl p-4 border mb-4 text-sm ${actionMsg.type==='success'?'bg-green-900/40 border-green-700 text-green-300':actionMsg.type==='error'?'bg-red-900/40 border-red-700 text-red-300':'bg-blue-900/40 border-blue-700 text-blue-300'}`}>{actionMsg.text}</div>}
         <PremiumBadge premiumAccess={premiumAccess} />
 
@@ -588,10 +588,10 @@ export default function InvestorDashboard() {
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold text-lg">💵 My Wallet</h3>
-                <div className="flex gap-1 bg-gray-800 rounded-xl p-1">
+                <div className="flex gap-1 bg-gray-800 rounded-xl p-1 overflow-x-auto max-w-full" style={{scrollbarWidth:'none'}}>
                   {['overview','deposit','withdraw','history','settlement'].map(t => (
                     <button key={t} onClick={() => { setWalletTab(t); setWalletMsg(null); }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${walletTab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
+                      className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all min-h-[36px] ${walletTab===t?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>
                       {t}
                     </button>
                   ))}
@@ -887,7 +887,8 @@ export default function InvestorDashboard() {
               {walletTab==='history' && (
                 <div>
                   {walletTxns.length===0&&<p className="text-gray-500 text-sm text-center py-6">No transactions yet.</p>}
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto -mx-4 px-4">
+                  <table className="min-w-full text-sm">
                     <thead><tr className="text-gray-500 text-xs border-b border-gray-800">{['Date','Type','Amount','Balance After','Description'].map(h=><th key={h} className="text-left pb-2 pr-4">{h}</th>)}</tr></thead>
                     <tbody>
                       {walletTxns.map((t,i)=>(
@@ -901,6 +902,7 @@ export default function InvestorDashboard() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </div>
@@ -1077,7 +1079,8 @@ export default function InvestorDashboard() {
                   <div className="px-4 py-3 border-b border-gray-800">
                     <h3 className="font-semibold text-sm">📋 Primary Subscription History</h3>
                   </div>
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-gray-500 text-xs border-b border-gray-800">
                         <th className="text-left py-2 px-4">Token</th>
@@ -1103,6 +1106,7 @@ export default function InvestorDashboard() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
 
@@ -1112,7 +1116,8 @@ export default function InvestorDashboard() {
                   <div className="px-4 py-3 border-b border-gray-800">
                     <h3 className="font-semibold text-sm">🔄 P2P Activity History</h3>
                   </div>
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-gray-500 text-xs border-b border-gray-800">
                         <th className="text-left py-2 px-4">Token</th>
@@ -1146,6 +1151,7 @@ export default function InvestorDashboard() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
 
@@ -1153,7 +1159,7 @@ export default function InvestorDashboard() {
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mt-4">
                 <h3 className="font-semibold text-sm mb-1">🧮 CGT Calculator</h3>
                 <p className="text-xs text-gray-500 mb-4">Estimate your Capital Gains Tax liability on real estate token disposals. CGT rate: {(0.20*100).toFixed(0)}% on net gain. This is an estimate only — consult a tax advisor for your specific circumstances.</p>
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                   {[
                     { key:'qty',       label:'Number of Tokens',    placeholder:'e.g. 1000' },
                     { key:'buyPrice',  label:'Acquisition Price ($)',placeholder:'e.g. 1.00' },
@@ -1171,12 +1177,12 @@ export default function InvestorDashboard() {
                             setCgtResult({gain,cgt,netProceeds,isGain:gain>0});
                           } else setCgtResult(null);
                         }}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"/>
+                        className="w-full h-11 bg-gray-800 border border-gray-700 rounded-lg px-3 text-sm text-white focus:outline-none focus:border-yellow-500"/>
                     </div>
                   ))}
                 </div>
                 {cgtResult && (
-                  <div className={`rounded-xl p-4 border grid grid-cols-3 gap-3 text-center ${cgtResult.isGain?'bg-amber-900/20 border-amber-700/40':'bg-green-900/20 border-green-700/40'}`}>
+                  <div className={`rounded-xl p-4 border grid grid-cols-1 sm:grid-cols-3 gap-3 text-center ${cgtResult.isGain?'bg-amber-900/20 border-amber-700/40':'bg-green-900/20 border-green-700/40'}`}>
                     <div>
                       <p className="text-xs text-gray-500 mb-1">Capital Gain / (Loss)</p>
                       <p className={`font-bold text-lg ${cgtResult.isGain?'text-amber-400':'text-green-400'}`}>${Math.abs(cgtResult.gain).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
@@ -1189,8 +1195,8 @@ export default function InvestorDashboard() {
                       <p className="text-xs text-gray-500 mb-1">Net Proceeds After CGT</p>
                       <p className="font-bold text-lg text-white">${cgtResult.netProceeds.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
                     </div>
-                    {!cgtResult.isGain && <div className="col-span-3 text-xs text-green-400">No CGT applies — this disposal results in a capital loss.</div>}
-                    <div className="col-span-3 text-xs text-gray-600">CGT applies to real estate and land-holding entity tokens under the Finance Act 2025. Other asset classes may have different tax treatment. This calculator uses the 20% CGT rate per the Finance Act 2025.</div>
+                    {!cgtResult.isGain && <div className="sm:col-span-3 text-xs text-green-400">No CGT applies — this disposal results in a capital loss.</div>}
+                    <div className="sm:col-span-3 text-xs text-gray-600">CGT applies to real estate and land-holding entity tokens under the Finance Act 2025. Other asset classes may have different tax treatment. This calculator uses the 20% CGT rate per the Finance Act 2025.</div>
                   </div>
                 )}
               </div>
@@ -1312,7 +1318,8 @@ export default function InvestorDashboard() {
               </div>
               <button onClick={()=>router.push('/investor/asset?section=secondary')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-gray-500 text-xs border-b border-gray-800">
                   {['Asset','Price','24h','Vol','Yield',''].map(h=>(
@@ -1350,6 +1357,7 @@ export default function InvestorDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* ── SECTION 3: P2P MARKET ── */}
@@ -1361,7 +1369,8 @@ export default function InvestorDashboard() {
               </div>
               <button onClick={()=>router.push('/investor/asset?section=p2p')} className="text-xs text-blue-400 hover:text-blue-300">View all →</button>
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-gray-500 text-xs border-b border-gray-800">
                   {['Asset','Price','24h','Mkt Cap','Yield',''].map(h=>(
@@ -1398,6 +1407,7 @@ export default function InvestorDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
         )}
@@ -1522,7 +1532,8 @@ export default function InvestorDashboard() {
               {openOrders.filter(o=>o.status==='OPEN'||o.status==='PARTIAL').length===0 ? (
                 <p className="text-gray-500 text-sm text-center py-6">No open orders.</p>
               ) : (
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto -mx-4 px-4">
+                <table className="min-w-full text-sm">
                   <thead><tr className="text-gray-500 text-xs border-b border-gray-800">{['Token','Side','Type','Qty','Filled','Price','Status','Action'].map(h=><th key={h} className="text-left pb-2 pr-4">{h}</th>)}</tr></thead>
                   <tbody>
                     {openOrders.filter(o=>o.status==='OPEN'||o.status==='PARTIAL').map((o,i)=>(
@@ -1534,11 +1545,12 @@ export default function InvestorDashboard() {
                         <td className="py-2 pr-4 text-gray-400">{parseFloat(o.filled_qty||0).toLocaleString()}</td>
                         <td className="py-2 pr-4 font-mono">{o.limit_price?`$${parseFloat(o.limit_price).toFixed(4)}`:'Market'}</td>
                         <td className="py-2 pr-4"><span className={`text-xs px-2 py-0.5 rounded-full ${o.status==='OPEN'?'bg-blue-900/50 text-blue-300':'bg-amber-900/50 text-amber-300'}`}>{o.status}</span></td>
-                        <td className="py-2"><button onClick={()=>cancelOrder(o.id)} disabled={cancelling===o.id} className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40">{cancelling===o.id?'…':'Cancel'}</button></td>
+                        <td className="py-2"><button onClick={()=>cancelOrder(o.id)} disabled={cancelling===o.id} className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 min-h-[36px] px-2">{cancelling===o.id?'…':'Cancel'}</button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
           </div>
@@ -1673,7 +1685,8 @@ export default function InvestorDashboard() {
             })}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <h3 className="font-semibold mb-4">Income History</h3>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-4 px-4">
+              <table className="min-w-full text-sm">
                 <thead><tr className="text-gray-500 text-xs border-b border-gray-800">{['Date','Token','Type','Amount','Status'].map(h=><th key={h} className="text-left pb-2 font-medium pr-4">{h}</th>)}</tr></thead>
                 <tbody>
                   {true && <p className="text-gray-500 text-sm text-center py-4">No income history yet.</p>}
@@ -1688,10 +1701,30 @@ export default function InvestorDashboard() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* ── BOTTOM NAV — mobile only ── */}
+      <div className="fixed bottom-0 left-0 right-0 bg-[#1A1F2E] border-t border-[#C8972B] flex sm:hidden z-50">
+        {[
+          { key:'home',      label:'Home',      icon:'🏠', active: tab==='portfolio', action:()=>setTab('portfolio') },
+          { key:'portfolio', label:'Portfolio',  icon:'📊', active: false,             action:()=>{ setTab('portfolio'); setWalletTab('history'); } },
+          { key:'markets',   label:'Markets',    icon:'🛍', active: tab==='market',    action:()=>setTab('market') },
+          { key:'wallet',    label:'Wallet',     icon:'💰', active: false,             action:()=>{ setTab('portfolio'); setWalletTab('overview'); } },
+          { key:'profile',   label:'Profile',    icon:'👤', active: false,             action:()=>router.push('/profile') },
+        ].map(item=>(
+          <button key={item.key} onClick={item.action}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 min-h-[56px] text-xs transition-colors"
+            style={{ color: item.active ? '#C8972B' : '#9CA3AF' }}>
+            <span className="text-lg">{item.icon}</span>
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+
       {chartToken && (
         <TokenChartModal token={chartToken} onClose={() => setChartToken(null)} />
       )}

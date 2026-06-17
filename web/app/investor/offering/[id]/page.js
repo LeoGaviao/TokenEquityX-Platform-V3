@@ -260,7 +260,7 @@ export default function OfferingPitchPage() {
                     {offering.company_description || 'No company description provided.'}
                   </p>
                   <div className="mt-4 pt-4 border-t border-gray-800 space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {offering.founded_year && (
                         <div><p className="text-gray-500 text-xs">Founded</p><p className="text-white text-sm font-medium">{offering.founded_year}</p></div>
                       )}
@@ -342,7 +342,7 @@ export default function OfferingPitchPage() {
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
                 <h3 className="font-bold text-base mb-4">Financial Data</h3>
                 {subData.financialData ? (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {Object.entries(subData.financialData).filter(([,v]) => v !== null && v !== '' && v !== undefined).map(([k, v]) => (
                       <div key={k} className="bg-gray-800/60 rounded-xl p-3">
                         <p className="text-gray-500 text-xs capitalize mb-1">{k.replace(/([A-Z])/g,' $1').trim()}</p>
@@ -400,7 +400,7 @@ export default function OfferingPitchPage() {
                 <h3 className="font-bold text-base mb-4">Auditor Certification</h3>
                 {auditReport ? (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {[
                         ['Certified Price', `$${parseFloat(auditReport.certifiedPrice || 0).toFixed(4)}`],
                         ['Risk Rating',     auditReport.riskRating || '—'],

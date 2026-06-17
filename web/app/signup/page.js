@@ -128,7 +128,7 @@ export default function SignupPage() {
                 type="text" required value={form.full_name}
                 onChange={e => setForm({...form, full_name: e.target.value})}
                 placeholder="As it appears on your ID"
-                className="w-full bg-[#1A3C5E] border border-[#1A3C5E] focus:border-[#C8972B] text-white rounded px-4 py-2.5 text-sm outline-none transition"
+                className="w-full bg-[#1A3C5E] border border-[#1A3C5E] focus:border-[#C8972B] text-white rounded px-4 py-2.5 min-h-[44px] text-sm outline-none transition"
               />
             </div>
             <div>
@@ -137,7 +137,7 @@ export default function SignupPage() {
                 type="email" required value={form.email}
                 onChange={e => setForm({...form, email: e.target.value})}
                 placeholder="you@example.com"
-                className="w-full bg-[#1A3C5E] border border-[#1A3C5E] focus:border-[#C8972B] text-white rounded px-4 py-2.5 text-sm outline-none transition"
+                className="w-full bg-[#1A3C5E] border border-[#1A3C5E] focus:border-[#C8972B] text-white rounded px-4 py-2.5 min-h-[44px] text-sm outline-none transition"
               />
             </div>
             <div>
@@ -146,7 +146,7 @@ export default function SignupPage() {
                 type="password" required value={form.password}
                 onChange={e => setForm({...form, password: e.target.value})}
                 placeholder="Minimum 8 characters"
-                className="w-full bg-[#1A3C5E] border border-[#1A3C5E] focus:border-[#C8972B] text-white rounded px-4 py-2.5 text-sm outline-none transition"
+                className="w-full bg-[#1A3C5E] border border-[#1A3C5E] focus:border-[#C8972B] text-white rounded px-4 py-2.5 min-h-[44px] text-sm outline-none transition"
               />
             </div>
             <div>
@@ -155,13 +155,13 @@ export default function SignupPage() {
                 type="password" required value={form.confirm}
                 onChange={e => setForm({...form, confirm: e.target.value})}
                 placeholder="Repeat your password"
-                className="w-full bg-[#1A3C5E] border border-[#1A3C5E] focus:border-[#C8972B] text-white rounded px-4 py-2.5 text-sm outline-none transition"
+                className="w-full bg-[#1A3C5E] border border-[#1A3C5E] focus:border-[#C8972B] text-white rounded px-4 py-2.5 min-h-[44px] text-sm outline-none transition"
               />
             </div>
 
             <button
               type="submit" disabled={loading}
-              className="w-full bg-[#C8972B] hover:bg-[#b8872b] text-white font-semibold py-2.5 rounded text-sm transition disabled:opacity-50 mt-2"
+              className="w-full bg-[#C8972B] hover:bg-[#b8872b] text-white font-semibold py-2.5 min-h-[44px] rounded text-sm transition disabled:opacity-50 mt-2"
             >
               {loading ? 'Creating account…' : 'Create Account'}
             </button>
@@ -176,7 +176,7 @@ export default function SignupPage() {
 
             <button
               onClick={connectMetaMask}
-              className="mt-4 w-full bg-[#1A3C5E] border border-[#C8972B]/30 hover:border-[#C8972B] text-white py-2.5 rounded text-sm font-medium transition flex items-center justify-center gap-2"
+              className="mt-4 w-full bg-[#1A3C5E] border border-[#C8972B]/30 hover:border-[#C8972B] text-white py-2.5 min-h-[44px] rounded text-sm font-medium transition flex items-center justify-center gap-2"
             >
               <span>🦊</span>
               {walletAddress ? 'Wallet connected — update wallet' : 'Connect with MetaMask (optional)'}

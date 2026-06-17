@@ -134,7 +134,7 @@ const PROFILE_DESC = {
 };
 
 // ── Shared styles ──────────────────────────────────────────────────────────
-const INPUT    = 'w-full bg-[#0D1B2A] border border-[#1A3C5E] rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C8972B] placeholder-gray-600';
+const INPUT    = 'w-full min-h-[44px] bg-[#0D1B2A] border border-[#1A3C5E] rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C8972B] placeholder-gray-600';
 const TEXTAREA = INPUT + ' resize-none';
 
 // ── Helper components ──────────────────────────────────────────────────────
@@ -200,13 +200,13 @@ function NavButtons({ step, canAdvance, isLastStep, advance, loading, nextLabel,
   return (
     <div className="mt-6 flex justify-between items-center">
       {showBack
-        ? <button onClick={handleBack || (() => {})} className="text-gray-400 text-sm hover:text-gray-200">← Back</button>
+        ? <button onClick={handleBack || (() => {})} className="min-h-[44px] px-2 text-gray-400 text-sm hover:text-gray-200">← Back</button>
         : <div />
       }
       <button
         onClick={advance}
         disabled={!canAdvance() || loading}
-        className="bg-[#C8972B] text-white px-6 py-2 rounded text-sm font-semibold disabled:opacity-40 transition"
+        className="bg-[#C8972B] text-white px-6 py-2 min-h-[44px] rounded text-sm font-semibold disabled:opacity-40 transition"
       >
         {loading ? 'Submitting…' : nextLabel ?? (isLastStep ? 'Submit →' : 'Next →')}
       </button>
@@ -745,7 +745,7 @@ export default function OnboardingPage() {
                     onChange={e => setPersonal(p => ({...p, fullName: e.target.value}))}
                     placeholder="As it appears on your ID" className={INPUT} />
                 </FormField>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField label="Date of Birth" required>
                     <input type="date" value={personal.dateOfBirth}
                       onChange={e => setPersonal(p => ({...p, dateOfBirth: e.target.value}))}
@@ -757,7 +757,7 @@ export default function OnboardingPage() {
                       placeholder="e.g. Zimbabwean" className={INPUT} />
                   </FormField>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField label="ID Type" required>
                     <select value={personal.idType}
                       onChange={e => setPersonal(p => ({...p, idType: e.target.value}))}
@@ -817,7 +817,7 @@ export default function OnboardingPage() {
                     onChange={e => setAddress(a => ({...a, addressLine2: e.target.value}))}
                     placeholder="Apartment, suite, floor (optional)" className={INPUT} />
                 </FormField>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField label="City" required>
                     <input type="text" value={address.city}
                       onChange={e => setAddress(a => ({...a, city: e.target.value}))}
@@ -927,7 +927,7 @@ export default function OnboardingPage() {
                     onChange={e => setCorporate(c => ({...c, companyName: e.target.value}))}
                     placeholder="Registered company name" className={INPUT} />
                 </FormField>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField label="Registration Number" required>
                     <input type="text" value={corporate.registrationNumber}
                       onChange={e => setCorporate(c => ({...c, registrationNumber: e.target.value}))}
@@ -972,7 +972,7 @@ export default function OnboardingPage() {
                   </div>
                   <div className="space-y-2">
                     {corporate.directors.map((d, i) => (
-                      <div key={i} className="grid grid-cols-3 gap-2">
+                      <div key={i} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <input type="text" value={d.name} placeholder="Full name"
                           onChange={e => setCorporate(c => {const dirs=[...c.directors];dirs[i]={...dirs[i],name:e.target.value};return{...c,directors:dirs};})}
                           className={INPUT} />
@@ -1004,7 +1004,7 @@ export default function OnboardingPage() {
                   </div>
                   <div className="space-y-2">
                     {corporate.beneficialOwners.map((b, i) => (
-                      <div key={i} className="grid grid-cols-3 gap-2">
+                      <div key={i} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <input type="text" value={b.name} placeholder="Full name"
                           onChange={e => setCorporate(c => {const bos=[...c.beneficialOwners];bos[i]={...bos[i],name:e.target.value};return{...c,beneficialOwners:bos};})}
                           className={INPUT} />
@@ -1058,7 +1058,7 @@ export default function OnboardingPage() {
                     onChange={e => setInstitutional(s => ({...s, institutionName: e.target.value}))}
                     placeholder="Full legal name of the institution" className={INPUT} />
                 </FormField>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField label="Institution Type" required>
                     <select value={institutional.institutionType}
                       onChange={e => setInstitutional(s => ({...s, institutionType: e.target.value}))}
@@ -1076,7 +1076,7 @@ export default function OnboardingPage() {
                       placeholder="Company / fund reg. number" className={INPUT} />
                   </FormField>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField label="Country of Registration" required>
                     <input type="text" value={institutional.countryOfRegistration}
                       onChange={e => setInstitutional(s => ({...s, countryOfRegistration: e.target.value}))}

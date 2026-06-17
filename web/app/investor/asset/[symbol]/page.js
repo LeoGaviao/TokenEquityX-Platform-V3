@@ -439,7 +439,7 @@ export default function AssetDetailPage() {
             {myHolding && (parseFloat(myHolding.balance||0) - parseFloat(myHolding.reserved||0)) > 0 && (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
                 <h3 className="font-bold text-base mb-4">Post a Sell Offer</h3>
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Quantity</label>
                     <input type="number" value={postQty} onChange={e=>setPostQty(e.target.value)} placeholder="0.00"
