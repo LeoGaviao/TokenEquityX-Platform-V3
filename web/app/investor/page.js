@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
 import TokenChartModal from '../../components/TokenChartModal';
 import PremiumBadge from '../../components/investor/PremiumBadge';
+import PWAInstallPrompt from '../../components/ui/PWAInstallPrompt';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -1723,6 +1724,9 @@ export default function InvestorDashboard() {
           </div>
         )}
       </div>
+
+      {/* PWA install prompt */}
+      <PWAInstallPrompt />
 
       {/* ── BOTTOM NAV — mobile only ── */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#1A1F2E] border-t border-[#C8972B] flex sm:hidden z-50">

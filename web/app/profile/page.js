@@ -222,10 +222,30 @@ export default function ProfilePage() {
     ? user.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
     : user?.email?.[0]?.toUpperCase() || '?';
 
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isStandalone,  setIsStandalone]  = useState(false);
+  const [isIOS,         setIsIOS]         = useState(false);
+
+  useEffect(() => {
+    setIsStandalone(window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone);
+    setIsIOS(/iphone|ipad|ipod/i.test(navigator.userAgent));
+    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  async function installApp() {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') { setInstallPrompt(null); setIsStandalone(true); }
+  }
+
   const NAV = [
     { key: 'info',       label: 'Personal Info',  icon: '👤' },
     { key: 'security',   label: 'Security',        icon: '🔒' },
     { key: 'account',    label: 'Account',         icon: '📋' },
+    { key: 'app',        label: 'Install App',     icon: '📲' },
     { key: 'deactivate', label: 'Deactivate',      icon: '⚠️' },
   ];
 
@@ -434,6 +454,85 @@ export default function ProfilePage() {
                   ⏳ Account deactivation request is pending admin review.
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Install App ── */}
+          {section === 'app' && (
+            <div className="space-y-4">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h2 className="font-bold text-white text-lg mb-2">Install TokenEquityX App</h2>
+                <p className="text-sm text-gray-400 mb-6">
+                  Add TokenEquityX to your home screen for instant access to your portfolio — even offline.
+                </p>
+
+                {isStandalone ? (
+                  <div className="flex items-center gap-3 bg-green-900/30 border border-green-700/50 rounded-xl p-4">
+                    <span className="text-2xl">✅</span>
+                    <div>
+                      <p className="font-semibold text-green-300 text-sm">App is installed</p>
+                      <p className="text-green-400/70 text-xs mt-0.5">You're running TokenEquityX as an installed app.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {installPrompt && (
+                      <div>
+                        <p className="text-sm text-gray-300 mb-3 font-medium">Android / Chrome</p>
+                        <button onClick={installApp}
+                          className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-white text-sm transition hover:opacity-90"
+                          style={{ background: '#C8972B' }}>
+                          <span>📲</span> Install App
+                        </button>
+                      </div>
+                    )}
+
+                    {isIOS && (
+                      <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-4">
+                        <p className="text-sm text-gray-300 font-medium mb-3">iPhone / iPad (Safari)</p>
+                        <ol className="space-y-2 text-sm text-gray-400">
+                          <li className="flex items-start gap-2">
+                            <span className="text-[#C8972B] font-bold flex-shrink-0">1.</span>
+                            Open this page in Safari (not Chrome or Firefox)
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-[#C8972B] font-bold flex-shrink-0">2.</span>
+                            Tap the <span className="text-white font-semibold">Share</span> button (⬆) at the bottom of the screen
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-[#C8972B] font-bold flex-shrink-0">3.</span>
+                            Scroll down and tap <span className="text-white font-semibold">"Add to Home Screen"</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-[#C8972B] font-bold flex-shrink-0">4.</span>
+                            Tap <span className="text-white font-semibold">"Add"</span> to confirm
+                          </li>
+                        </ol>
+                      </div>
+                    )}
+
+                    {!installPrompt && !isIOS && (
+                      <p className="text-sm text-gray-500">
+                        Your browser does not support automatic install. Open this page in Chrome on Android to install the app.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h3 className="font-bold text-white text-sm mb-3">Why install?</h3>
+                <ul className="space-y-2 text-sm text-gray-400">
+                  {[
+                    ['⚡', 'Instant launch — no browser loading'],
+                    ['📶', 'Works offline with cached portfolio data'],
+                    ['🔔', 'Ready for push notifications'],
+                    ['📱', 'Full-screen experience without browser UI'],
+                  ].map(([icon, text]) => (
+                    <li key={text} className="flex items-center gap-2"><span>{icon}</span>{text}</li>
+                  ))}
+                </ul>
+              </div>
             </div>
           )}
 
