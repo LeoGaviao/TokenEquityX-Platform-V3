@@ -1662,6 +1662,12 @@ export default function AdminDashboard() {
   // Track which pipeline item has drill-down open
   const [detailItem, setDetailItem] = useState(null);
 
+  // Jurisdiction Settings state (super admin, OTP-gated)
+  const [jurisdictions,     setJurisdictions]     = useState([]);
+  const [jurisdictionsLoading, setJurisdictionsLoading] = useState(false);
+  const [jurisdictionForm,  setJurisdictionForm]  = useState({ country_code:'', country_name:'', conversion_lockup_days:90 });
+  const [jurisdictionMsg,   setJurisdictionMsg]   = useState('');
+
   const advanceStage = async (item) => {
     const STAGE_KEYS = ['spv','kyc','docs','auditor','contract','secz','offering','live'];
     const nextStageIdx = STAGE_KEYS.findIndex(k => !item.stages[k]);
@@ -1746,6 +1752,21 @@ export default function AdminDashboard() {
       setAuditorList(auditors);
     }).catch(() => {});
   }, [assignModal]);
+
+  const loadJurisdictions = async () => {
+    setJurisdictionsLoading(true);
+    try {
+      const t = localStorage.getItem('token');
+      const r = await fetch(`${API}/admin/jurisdictions`, { headers: { Authorization: `Bearer ${t}` } });
+      const d = await r.json();
+      setJurisdictions(Array.isArray(d) ? d : []);
+    } catch { setJurisdictions([]); }
+    setJurisdictionsLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'superadmin' && otpVerified) loadJurisdictions();
+  }, [activeTab, otpVerified]);
 
   const assignAuditor = async (item, auditorName) => {
     try {
@@ -1865,6 +1886,8 @@ export default function AdminDashboard() {
           has_financial_data: (() => { try { const d = typeof s.data_json==='string'?JSON.parse(s.data_json):(s.data_json||{}); return Object.values(d.financialData||{}).filter(v=>v!==''&&v!==null&&v!==undefined).length >= 3; } catch { return false; } })(),
           kyc_approved: entityKycMap[s.issuer_wallet] === 'APPROVED',
           auditor_status: s.auditor_status || null,
+          submission_type: s.submission_type || 'PRIMARY_ISSUANCE',
+          spv_jurisdiction: s.spv_jurisdiction || null,
         }));
         const financialSubs = subRes.value.data.filter(s=>s.submission_type!=='TOKENISATION_APPLICATION'&&s.period!=='TOKENISATION_APPLICATION').map(s=>({
           id:s.id,name:`${s.token_symbol} — ${s.entity_name||s.token_symbol}`,symbol:s.token_symbol,asset_class:'Financial Data',
@@ -2329,6 +2352,10 @@ export default function AdminDashboard() {
                             <p className="font-bold text-blue-300">{item.name}</p>
                             <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full">{item.symbol}</span>
                             <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{item.asset_class}</span>
+                            {item.submission_type === 'EXISTING_POSITION_CONVERSION'
+                              ? <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded-full border border-purple-700/50" title="Existing position conversion — no primary raise">🔄 Conversion</span>
+                              : <span className="text-xs bg-green-900/40 text-green-400 px-2 py-0.5 rounded-full border border-green-800/40" title="Primary issuance — new capital raise">🆕 Primary</span>
+                            }
                             {item.status==='SUSPENDED' && (
                               <span className="text-xs bg-amber-900/50 text-amber-300 px-2 py-0.5 rounded-full border border-amber-700/50">🚫 Suspended</span>
                             )}
@@ -3884,6 +3911,104 @@ export default function AdminDashboard() {
                       </button>
                     </div>
                   ))}
+
+                  {/* ── Jurisdiction Settings — Existing Position Conversion ── */}
+                  <div className="bg-gray-900/50 border border-purple-800/40 rounded-xl p-5 mt-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-bold text-sm text-purple-300">🌍 Jurisdiction Settings — Existing Position Conversion</h4>
+                      <button onClick={loadJurisdictions} disabled={jurisdictionsLoading}
+                        className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded border border-gray-700 hover:border-gray-500">
+                        {jurisdictionsLoading ? '⏳ Loading…' : '↺ Refresh'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-4">Per-jurisdiction feature flag for allowing existing investors to tokenise and list a pre-existing equity or debt position. Defaults to DISABLED — enable only after legal clearance is obtained for the specific jurisdiction.</p>
+
+                    {jurisdictionMsg && <p className="text-xs mb-3 text-green-300 bg-green-900/20 border border-green-700/30 rounded px-3 py-2">{jurisdictionMsg}</p>}
+
+                    {/* Existing jurisdictions table */}
+                    {jurisdictions.length > 0 && (
+                      <div className="overflow-x-auto mb-4">
+                        <table className="w-full text-xs">
+                          <thead><tr className="text-gray-500 border-b border-gray-700">
+                            <th className="text-left pb-2 pr-3">Country</th>
+                            <th className="text-left pb-2 pr-3">Code</th>
+                            <th className="text-left pb-2 pr-3">Conversion</th>
+                            <th className="text-left pb-2 pr-3">Lockup (days)</th>
+                            <th className="text-left pb-2 pr-3">Legal Status</th>
+                            <th className="text-left pb-2">Action</th>
+                          </tr></thead>
+                          <tbody>
+                            {jurisdictions.map(j => (
+                              <tr key={j.id || j.country_code} className="border-b border-gray-800/50 hover:bg-gray-800/20">
+                                <td className="py-2 pr-3 font-medium">{j.country_name}</td>
+                                <td className="py-2 pr-3 font-mono text-gray-400">{j.country_code}</td>
+                                <td className="py-2 pr-3">
+                                  {j.existing_position_conversion_enabled
+                                    ? <span className="bg-green-900/50 text-green-300 px-2 py-0.5 rounded-full border border-green-700/40">✅ Enabled</span>
+                                    : <span className="bg-red-900/50 text-red-300 px-2 py-0.5 rounded-full border border-red-700/40">🔴 Disabled</span>
+                                  }
+                                </td>
+                                <td className="py-2 pr-3 text-gray-300">{j.conversion_lockup_days}d</td>
+                                <td className="py-2 pr-3 text-gray-400">{j.legal_review_status || '—'}</td>
+                                <td className="py-2">
+                                  <button onClick={async()=>{
+                                    const t=localStorage.getItem('token');
+                                    const newVal=!j.existing_position_conversion_enabled;
+                                    const r=await fetch(`${API}/admin/jurisdictions/${j.country_code}`,{
+                                      method:'PUT',
+                                      headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'},
+                                      body:JSON.stringify({existing_position_conversion_enabled:newVal})
+                                    });
+                                    const d=await r.json();
+                                    if(r.ok){setJurisdictionMsg(d.message||'Updated.');loadJurisdictions();}
+                                    else notify('error',d.error);
+                                  }} className={`px-3 py-1 rounded text-xs font-semibold ${j.existing_position_conversion_enabled?'bg-red-800 hover:bg-red-700 text-red-200':'bg-green-800 hover:bg-green-700 text-green-200'}`}>
+                                    {j.existing_position_conversion_enabled ? 'Disable' : 'Enable'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {jurisdictions.length === 0 && !jurisdictionsLoading && (
+                      <p className="text-xs text-gray-600 mb-4 italic">No jurisdictions configured yet. Add one below.</p>
+                    )}
+
+                    {/* Add new jurisdiction */}
+                    <div className="border-t border-gray-700/50 pt-4">
+                      <p className="text-xs text-gray-500 mb-3 font-semibold">Add Jurisdiction</p>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <input placeholder="Country code (e.g. ZA)" maxLength={3}
+                          value={jurisdictionForm.country_code}
+                          onChange={e=>setJurisdictionForm(f=>({...f,country_code:e.target.value.toUpperCase()}))}
+                          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-600"/>
+                        <input placeholder="Country name"
+                          value={jurisdictionForm.country_name}
+                          onChange={e=>setJurisdictionForm(f=>({...f,country_name:e.target.value}))}
+                          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-600"/>
+                        <input type="number" placeholder="Lockup days (e.g. 90)" min={0}
+                          value={jurisdictionForm.conversion_lockup_days}
+                          onChange={e=>setJurisdictionForm(f=>({...f,conversion_lockup_days:parseInt(e.target.value)||90}))}
+                          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-600"/>
+                      </div>
+                      <button onClick={async()=>{
+                        if(!jurisdictionForm.country_code||!jurisdictionForm.country_name){notify('error','Country code and name are required.');return;}
+                        const t=localStorage.getItem('token');
+                        const r=await fetch(`${API}/admin/jurisdictions`,{
+                          method:'POST',
+                          headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'},
+                          body:JSON.stringify({...jurisdictionForm,existing_position_conversion_enabled:false})
+                        });
+                        const d=await r.json();
+                        if(r.ok){setJurisdictionMsg('Jurisdiction added (disabled by default).');setJurisdictionForm({country_code:'',country_name:'',conversion_lockup_days:90});loadJurisdictions();}
+                        else notify('error',d.error);
+                      }} className="px-4 py-2 rounded-lg text-xs bg-purple-700 hover:bg-purple-600 text-white font-semibold">
+                        Add Jurisdiction
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
