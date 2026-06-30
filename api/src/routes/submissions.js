@@ -707,6 +707,28 @@ router.put('/:id/admin-approve',
         return res.status(422).json({ error: reason422 });
       }
 
+      // ── Conversion branch (Task 4c) — skip primary issuance pipeline ──
+      // For EXISTING_POSITION_CONVERSION, no offering is created, no fees invoiced,
+      // and tokens are minted directly to the converting investor in one atomic step.
+      if (sub.submission_type === 'EXISTING_POSITION_CONVERSION') {
+        const { mintConversionTokens } = require('../services/conversionMinting');
+        const mintResult = await mintConversionTokens(req.params.id, db, req.user.userId);
+        await db.execute(
+          'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+          ['CONVERSION_ADMIN_APPROVED', req.user.userId, sub.token_symbol,
+           `Conversion approved. Tokens minted to investor ${sub.converting_investor_id}. Lockup ends ${mintResult.lockupEndDate}. Ref: ${sub.reference_number}`]
+        );
+        const { sendMessage } = require('../utils/messenger');
+        sendMessage({
+          recipientId: sub.converting_investor_id,
+          subject:     `✅ Conversion Approved — ${sub.token_symbol} tokens minted`,
+          body:        `Your existing position conversion for ${sub.token_symbol} has been approved.\n\nTokens minted: ${mintResult.totalSupply}\nToken symbol: ${sub.token_symbol}\nLockup end date: ${mintResult.lockupEndDate}\n\nYour tokens are live and visible in your portfolio. Trading is restricted until the lockup period ends.\n\nReference: ${sub.reference_number}`,
+          type:        'SYSTEM', category: 'APPLICATION', referenceId: String(req.params.id),
+        }).catch(e => console.error('[MESSENGER] conversion approval sendMessage failed:', e.message));
+        return res.json({ success: true, conversion: true, ...mintResult });
+      }
+      // ──────────────────────────────────────────────────────────────────
+
       // ── Gate: prerequisites before admin final approval ────────────────
       const aaGateData = typeof sub.data_json === 'string'
         ? JSON.parse(sub.data_json || '{}')

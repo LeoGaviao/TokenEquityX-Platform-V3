@@ -33,6 +33,28 @@ router.post('/order', authenticate, requireKYC, async (req, res) => {
       });
     }
 
+    // Lockup check — SELL orders from investors who hold conversion-acquired tokens
+    // are blocked until their lockup period expires (set at minting time).
+    if (side === 'SELL') {
+      const [holdings] = await db.execute(
+        `SELECT locked_until, acquisition_type FROM token_holdings
+         WHERE user_id = ? AND token_id = ?
+           AND acquisition_type = 'EXISTING_POSITION_CONVERSION'
+           AND locked_until IS NOT NULL`,
+        [req.user.userId, tokens[0].id]
+      );
+      if (holdings.length > 0) {
+        const lockoutDate = new Date(holdings[0].locked_until);
+        if (lockoutDate > new Date()) {
+          return res.status(403).json({
+            error:       'Sell orders are restricted during the conversion lockup period.',
+            lockupEnds:  lockoutDate.toISOString().split('T')[0],
+            message:     `Your ${tokenSymbol.toUpperCase()} holding was acquired via an existing position conversion and is locked until ${lockoutDate.toISOString().split('T')[0]}. You may not sell before this date.`,
+          });
+        }
+      }
+    }
+
     const orderId = uuidv4();
     await db.execute(`
       INSERT INTO orders

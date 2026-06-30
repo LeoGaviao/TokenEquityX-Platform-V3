@@ -70,12 +70,15 @@ router.put('/data-submissions/:id/approve',
         WHERE id = ?
       `, [req.user.userId, notes || '', req.params.id]);
 
-      // 2. Fetch submission + token for auto-valuation
+      // 2. Fetch submission + token for auto-valuation.
+      // LEFT JOIN so conversion submissions (token not yet minted, token_id = NULL) still return a row.
       const [rows] = await db.execute(`
-        SELECT ds.*, COALESCE(t.token_symbol, t.symbol) as token_symbol, t.asset_class, t.asset_type,
+        SELECT ds.*,
+               COALESCE(t.token_symbol, t.symbol, ds.token_symbol) as token_symbol,
+               COALESCE(t.asset_type, t.asset_class)               as asset_type,
                t.total_supply, t.id as token_id, t.sector
         FROM data_submissions ds
-        JOIN tokens t ON t.id = ds.token_id
+        LEFT JOIN tokens t ON t.id = ds.token_id
         WHERE ds.id = ?
       `, [req.params.id]);
 
@@ -85,8 +88,10 @@ router.put('/data-submissions/:id/approve',
       let dataObj = {};
       try { dataObj = typeof sub.data_json === 'string' ? JSON.parse(sub.data_json) : (sub.data_json || {}); } catch {}
 
-      const assetType   = sub.asset_type || sub.asset_class || 'EQUITY';
-      const totalSupply = Number(sub.total_supply) || 1000000;
+      const isConversion = sub.submission_type === 'EXISTING_POSITION_CONVERSION';
+      const assetType    = sub.asset_type || dataObj.asset_type || 'EQUITY';
+      // Conversion submissions carry total_supply in data_json (token not created yet)
+      const totalSupply  = Number(sub.total_supply) || Number(dataObj.total_supply) || 1000000;
 
       try {
         // 3. Run valuation engine
@@ -105,8 +110,13 @@ router.put('/data-submissions/:id/approve',
         const equityValue   = blendedEV - totalDebt + cash;
         const pricePerToken = Math.max(totalSupply > 0 ? equityValue / totalSupply : 1.00, 1.00);
 
-        // 3b. 30% variance escalation — auto-pause if auditor price deviates > 30% from issuer valuation
-        const issuerValuation = Number(dataObj.valuationResult || dataObj.estimated_value || 0);
+        // 3b. 30% variance escalation — auto-pause if auditor price deviates > 30% from issuer valuation.
+        // For EXISTING_POSITION_CONVERSION, the baseline is the declared existing_position_value_usd
+        // (per-token equivalent), not the DCF output from data_json.
+        const conversionTotalValueUsd = Number(sub.existing_position_value_usd) || 0;
+        const issuerValuation = isConversion && conversionTotalValueUsd > 0
+          ? conversionTotalValueUsd / totalSupply
+          : Number(dataObj.valuationResult || dataObj.estimated_value || 0);
         if (issuerValuation > 0) {
           const variance = Math.abs(pricePerToken - issuerValuation) / issuerValuation;
           if (variance > 0.30) {
@@ -129,13 +139,15 @@ router.put('/data-submissions/:id/approve',
         // 4. Generate data hash for on-chain proof
         const dataHash = generateDataHash(dataObj);
 
-        // 5. Update token oracle price
-        await db.execute(`
-          UPDATE tokens SET oracle_price = ?, current_price_usd = ?, updated_at = NOW()
-          WHERE id = ?
-        `, [pricePerToken.toFixed(6), pricePerToken.toFixed(6), sub.token_id]);
-        blockchain.updatePriceOnChain(sub.token_symbol, pricePerToken)
-          .catch(e => console.error('[BLOCKCHAIN] updatePriceOnChain skipped:', e.message));
+        // 5. Update token oracle price (skip for conversions — token not minted yet)
+        if (!isConversion && sub.token_id) {
+          await db.execute(`
+            UPDATE tokens SET oracle_price = ?, current_price_usd = ?, updated_at = NOW()
+            WHERE id = ?
+          `, [pricePerToken.toFixed(6), pricePerToken.toFixed(6), sub.token_id]);
+          blockchain.updatePriceOnChain(sub.token_symbol, pricePerToken)
+            .catch(e => console.error('[BLOCKCHAIN] updatePriceOnChain skipped:', e.message));
+        }
 
         // 6. Record in oracle_prices with data hash
         try {
