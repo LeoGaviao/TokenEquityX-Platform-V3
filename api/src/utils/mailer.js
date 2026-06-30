@@ -1481,6 +1481,109 @@ async function notifyZimraWHTPaid({ quarter, zimraReference, bankReference, paym
   });
 }
 
+// ── Existing Position Conversion emails (Task 7) ────────────────────────────
+
+async function notifyConversionSubmitted({
+  investorEmail, investorName, tokenSymbol, tokenName,
+  referenceNumber, jurisdiction, positionValue, needsLenderConsent, applicationStatus,
+}) {
+  const valFmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(positionValue || 0);
+  return send(investorEmail, `✅ Conversion Request Received — ${tokenSymbol}`,
+    baseTemplate('Existing Position Conversion — Request Received', `
+      <p>Dear ${investorName},</p>
+      <p>Your request to convert an existing position into tokenised form has been received and is now under review by the TokenEquityX team.</p>
+      <div class="detail-row"><span>Reference</span><span class="mono">${referenceNumber}</span></div>
+      <div class="detail-row"><span>Token Symbol</span><span><strong>${tokenSymbol}</strong></span></div>
+      <div class="detail-row"><span>Token Name</span><span>${tokenName}</span></div>
+      <div class="detail-row"><span>Jurisdiction</span><span>${jurisdiction}</span></div>
+      <div class="detail-row"><span>Declared Position Value</span><span>${valFmt}</span></div>
+      <div class="detail-row"><span>Status</span><span class="${applicationStatus === 'AWAITING_LENDER_CONSENT' ? 'warning' : 'success'}">${applicationStatus === 'AWAITING_LENDER_CONSENT' ? '⏳ Awaiting Lender Consent' : '🔍 Under Review'}</span></div>
+      ${needsLenderConsent && applicationStatus === 'AWAITING_LENDER_CONSENT' ? `
+      <p style="background:#fef2f2;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:4px;font-size:14px;margin:20px 0;">
+        <strong>Action Required:</strong> Your application is on hold pending written lender consent. Please upload the signed consent document via your dashboard or contact your account manager.
+      </p>` : ''}
+      <p>Our team will review your documents and contact you within 5 business days. You can track the status of your request in your investor dashboard.</p>
+      <a href="${PLATFORM}/investor/convert-position" class="btn btn-gold">Track Your Request &rarr;</a>
+    `));
+}
+
+async function notifyConversionLenderConsentRequired({
+  investorEmail, investorName, tokenSymbol, referenceNumber, notes,
+}) {
+  return send(investorEmail, `Action Required — Lender Consent Needed for ${tokenSymbol}`,
+    baseTemplate('Lender Consent Required — Action Required', `
+      <p>Dear ${investorName},</p>
+      <p>Your existing position conversion request for <strong>${tokenSymbol}</strong> requires written consent from your lender or creditor before it can proceed. This is a standard requirement where a position is subject to a security interest or covenant restricting transfer.</p>
+      <div class="detail-row"><span>Reference</span><span class="mono">${referenceNumber}</span></div>
+      <div class="detail-row"><span>Token Symbol</span><span><strong>${tokenSymbol}</strong></span></div>
+      <div class="detail-row"><span>Status</span><span class="warning">⏳ Awaiting Lender Consent</span></div>
+      ${notes ? `<div class="detail-row"><span>Notes from Review Team</span><span>${notes}</span></div>` : ''}
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">What You Need to Do</h3>
+      <ol style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>Obtain a letter of consent from your lender approving the transfer of the position into the SPV structure</li>
+        <li>Ensure the letter is signed by an authorised representative and clearly references the position and SPV</li>
+        <li>Upload the signed consent document via the portal or email it to <a href="mailto:compliance@tokenequityx.co.zw" style="color:#1A3C5E;">compliance@tokenequityx.co.zw</a> with your reference number</li>
+      </ol>
+      <p style="background:#fef2f2;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:4px;font-size:14px;">
+        Your application will remain on hold until the lender consent document is received and verified. There is no time limit, but the position cannot be tokenised without this document.
+      </p>
+      <a href="${PLATFORM}/investor/convert-position" class="btn btn-gold">Upload Consent Document &rarr;</a>
+    `));
+}
+
+async function notifyConversionApprovedTokensMinted({
+  investorEmail, investorName, tokenSymbol, tokenName,
+  totalSupply, priceUsd, lockupEndDate, referenceNumber,
+}) {
+  const lockFmt = lockupEndDate ? new Date(lockupEndDate).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : '—';
+  const priceFmt = parseFloat(priceUsd || 0).toFixed(4);
+  const totalVal = (parseFloat(priceUsd || 0) * parseInt(totalSupply || 0)).toLocaleString('en-US', { style:'currency', currency:'USD' });
+  return send(investorEmail, `🎉 Tokens Minted — ${tokenSymbol} is Now Live`,
+    baseTemplate(`Your ${tokenSymbol} Tokens Are Live`, `
+      <p>Dear ${investorName},</p>
+      <p>Congratulations! Your existing position conversion for <strong>${tokenSymbol} (${tokenName})</strong> has been approved and your tokens have been minted directly to your portfolio.</p>
+      <div class="detail-row"><span>Token Symbol</span><span><strong>${tokenSymbol}</strong></span></div>
+      <div class="detail-row"><span>Tokens Minted</span><span><strong>${parseInt(totalSupply || 0).toLocaleString()}</strong></span></div>
+      <div class="detail-row"><span>Initial Price per Token</span><span>$${priceFmt}</span></div>
+      <div class="detail-row"><span>Total Position Value</span><span>${totalVal}</span></div>
+      <div class="detail-row"><span>Reference</span><span class="mono">${referenceNumber}</span></div>
+      <div class="detail-row"><span>Lockup Ends</span><span class="warning"><strong>${lockFmt}</strong></span></div>
+      <p style="background:#fef2f2;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:4px;font-size:14px;margin:20px 0;">
+        <strong>Lockup Period Active:</strong> Your tokens are visible in your portfolio and the token is live on the secondary market, but you may not sell until the lockup period ends on <strong>${lockFmt}</strong>. You will receive a 7-day advance warning before the lockup expires.
+      </p>
+      <p>Other investors may purchase your tokens on the secondary market during the lockup period — you simply cannot initiate a sell order until the lockup date.</p>
+      <a href="${PLATFORM}/investor" class="btn btn-gold">View Your Portfolio &rarr;</a>
+    `));
+}
+
+async function notifyConversionLockupExpiringSoon({
+  investorEmail, investorName, tokenSymbol, lockupEndDate, totalSupply, currentPrice,
+}) {
+  const lockFmt = lockupEndDate ? new Date(lockupEndDate).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : '—';
+  const priceFmt = parseFloat(currentPrice || 0).toFixed(4);
+  const totalVal = (parseFloat(currentPrice || 0) * parseInt(totalSupply || 0)).toLocaleString('en-US', { style:'currency', currency:'USD' });
+  return send(investorEmail, `⏰ Lockup Expiring Soon — ${tokenSymbol} (7 Days)`,
+    baseTemplate(`Your ${tokenSymbol} Lockup Ends in 7 Days`, `
+      <p>Dear ${investorName},</p>
+      <p>This is an advance notice that the trading lockup on your <strong>${tokenSymbol}</strong> holding will expire in <strong>7 days</strong>. After this date you will be free to place sell orders on the secondary market.</p>
+      <div class="detail-row"><span>Token Symbol</span><span><strong>${tokenSymbol}</strong></span></div>
+      <div class="detail-row"><span>Lockup Expiry Date</span><span class="warning"><strong>${lockFmt}</strong></span></div>
+      <div class="detail-row"><span>Your Holdings</span><span>${parseInt(totalSupply || 0).toLocaleString()} tokens</span></div>
+      <div class="detail-row"><span>Current Price</span><span>$${priceFmt} per token</span></div>
+      <div class="detail-row"><span>Estimated Portfolio Value</span><span>${totalVal}</span></div>
+      <p style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 16px;border-radius:4px;font-size:14px;margin:20px 0;">
+        After <strong>${lockFmt}</strong> you can place sell orders on the TokenEquityX secondary market. No action is required on your part — your tokens will automatically become tradeable.
+      </p>
+      <h3 style="color:#1A3C5E;font-size:15px;margin:24px 0 8px;">What Happens Next</h3>
+      <ul style="color:#374151;font-size:14px;line-height:1.8;padding-left:20px;margin:0 0 20px;">
+        <li>On ${lockFmt}, the sell restriction on your holding is lifted automatically</li>
+        <li>You can then place LIMIT or MARKET sell orders via the trading interface</li>
+        <li>Capital gains tax may apply on any profit — consult your tax adviser</li>
+      </ul>
+      <a href="${PLATFORM}/investor/trade" class="btn btn-gold">Go to Trading &rarr;</a>
+    `));
+}
+
 module.exports = {
   send,
   sendReconciliationEmail,
@@ -1552,4 +1655,8 @@ module.exports = {
   notifyZimraWHTOverdue,
   notifyZimraWHTFiled,
   notifyZimraWHTPaid,
+  notifyConversionSubmitted,
+  notifyConversionLenderConsentRequired,
+  notifyConversionApprovedTokensMinted,
+  notifyConversionLockupExpiringSoon,
 };

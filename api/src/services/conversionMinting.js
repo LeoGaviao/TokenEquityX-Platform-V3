@@ -115,6 +115,20 @@ async function mintConversionTokens(submissionId, db, approvedBy) {
 
     await conn.commit();
 
+    // Non-blocking: notify investor their tokens are live
+    db.execute('SELECT email, full_name FROM users WHERE id = ?', [sub.converting_investor_id])
+      .then(([rows]) => {
+        if (rows[0]?.email) {
+          const { notifyConversionApprovedTokensMinted } = require('../utils/mailer');
+          notifyConversionApprovedTokensMinted({
+            investorEmail: rows[0].email, investorName: rows[0].full_name,
+            tokenSymbol: symbol, tokenName: dataObj.token_name || symbol,
+            totalSupply, priceUsd: priceUsd.toFixed(6), lockupEndDate: lockupEndStr,
+            referenceNumber: sub.reference_number || sub.id,
+          }).catch(e => console.error('[MAILER] notifyConversionApprovedTokensMinted failed:', e.message));
+        }
+      }).catch(() => {});
+
     return { tokenId, tokenSymbol: symbol, totalSupply, priceUsd: priceUsd.toFixed(6), lockupEndDate: lockupEndStr, lockupDays };
   } catch (err) {
     await conn.rollback();
