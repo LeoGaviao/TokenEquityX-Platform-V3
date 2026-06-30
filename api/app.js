@@ -406,6 +406,63 @@ cron.schedule('0 8 * * *', async () => {
   }
 });
 
+// ── Daily conversion lockup expiry check — 08:30 ─────────────────────────────
+// Sends 7-day advance warning to investors whose lockup ends within 7 days.
+// Also logs defensively for any lockups that have already passed (should not happen
+// if minting was done correctly, but acts as an operational safety net).
+cron.schedule('30 8 * * *', async () => {
+  console.log('[CRON] Checking conversion lockup expiry...');
+  try {
+    const db = require('./src/db/pool');
+    const { notifyConversionLockupExpiringSoon } = require('./src/utils/mailer');
+
+    // 7-day advance warning: locked_until between tomorrow and 8 days from now
+    const [expiringSoon] = await db.execute(`
+      SELECT
+        th.user_id, th.token_id, th.token_symbol, th.quantity, th.locked_until,
+        u.email, u.full_name,
+        t.current_price_usd
+      FROM token_holdings th
+      JOIN users u ON u.id = th.user_id
+      LEFT JOIN tokens t ON t.id = th.token_id
+      WHERE th.acquisition_type = 'EXISTING_POSITION_CONVERSION'
+        AND th.locked_until IS NOT NULL
+        AND th.locked_until::date = (CURRENT_DATE + INTERVAL '7 days')::date
+    `);
+
+    for (const h of expiringSoon) {
+      if (!h.email) continue;
+      await notifyConversionLockupExpiringSoon({
+        investorEmail: h.email,
+        investorName:  h.full_name || 'Investor',
+        tokenSymbol:   h.token_symbol,
+        lockupEndDate: h.locked_until,
+        totalSupply:   h.quantity,
+        currentPrice:  h.current_price_usd || 0,
+      }).catch(e => console.error(`[CRON] notifyConversionLockupExpiringSoon failed for ${h.token_symbol}:`, e.message));
+      console.log(`[CRON] Lockup expiry warning sent: ${h.token_symbol} — investor ${h.user_id} — expires ${h.locked_until}`);
+    }
+
+    // Defensive: log any lockups that have already expired but holding still shows locked
+    const [alreadyExpired] = await db.execute(`
+      SELECT th.user_id, th.token_symbol, th.locked_until
+      FROM token_holdings th
+      WHERE th.acquisition_type = 'EXISTING_POSITION_CONVERSION'
+        AND th.locked_until IS NOT NULL
+        AND th.locked_until < CURRENT_DATE
+    `);
+    for (const h of alreadyExpired) {
+      console.warn(`[CRON] Lockup already expired but still set: ${h.token_symbol} / user ${h.user_id} / expired ${h.locked_until}`);
+    }
+
+    if (expiringSoon.length === 0 && alreadyExpired.length === 0) {
+      console.log('[CRON] No conversion lockups expiring soon — nothing to do');
+    }
+  } catch (err) {
+    console.error('[CRON] Conversion lockup expiry check failed:', err.message);
+  }
+});
+
 } // end require.main === module (cron block)
 
 // ─── 404 HANDLER ──────────────────────────────────────────────────
