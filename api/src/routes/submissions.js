@@ -2047,4 +2047,195 @@ router.delete('/:id/withdraw', authenticate, requireRole('ISSUER', 'ADMIN'), asy
   }
 });
 
+// ── POST /api/submissions/conversion — existing position conversion ──────────
+// Auth: authenticated investor (KYC required — equivalent to issuer-level action)
+// Jurisdiction flag checked FIRST before any processing.
+router.post('/conversion',
+  authenticate,
+  requireKYC,
+  upload.fields([
+    { name: 'ownership_proof',    maxCount: 1 },
+    { name: 'transfer_agreement', maxCount: 1 },
+    { name: 'lender_consent',     maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const {
+      spv_jurisdiction,
+      underlying_owner_name,
+      existing_position_description,
+      existing_position_value_usd,
+      asset_type,
+      token_symbol,
+      token_name,
+      total_supply,
+      lender_consent_required,
+      data_json: extraDataJson,
+    } = req.body;
+
+    // 1. Jurisdiction gate — checked FIRST before any processing
+    const { isConversionEnabledForCountry } = require('../utils/jurisdiction');
+    const { enabled, lockupDays } = await isConversionEnabledForCountry(db, spv_jurisdiction);
+    if (!enabled) {
+      return res.status(403).json({
+        error:        'Existing position conversion is not currently available for this jurisdiction.',
+        jurisdiction: spv_jurisdiction,
+        message:      'This product line requires jurisdiction-specific legal clearance before activation. Contact TokenEquityX for more information.',
+      });
+    }
+
+    // 2. Required field validation
+    const missing = [];
+    if (!spv_jurisdiction)               missing.push('spv_jurisdiction');
+    if (!underlying_owner_name)          missing.push('underlying_owner_name');
+    if (!existing_position_description)  missing.push('existing_position_description');
+    if (!existing_position_value_usd)    missing.push('existing_position_value_usd');
+    if (!asset_type)                     missing.push('asset_type');
+    if (!token_symbol)                   missing.push('token_symbol');
+    if (!token_name)                     missing.push('token_name');
+    if (!total_supply)                   missing.push('total_supply');
+    if (missing.length > 0) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
+
+    const validAssetTypes = ['EQUITY','BOND','REIT','INFRASTRUCTURE','COMMODITY','AGRICULTURE'];
+    if (!validAssetTypes.includes(asset_type.toUpperCase())) {
+      return res.status(400).json({ error: `asset_type must be one of: ${validAssetTypes.join(', ')}` });
+    }
+
+    const needsLenderConsent = lender_consent_required === 'true' || lender_consent_required === true;
+
+    // 3. Document validation
+    const files = req.files || {};
+    if (!files.ownership_proof || files.ownership_proof.length === 0) {
+      return res.status(400).json({ error: 'Proof of ownership document (ownership_proof) is required' });
+    }
+    if (!files.transfer_agreement || files.transfer_agreement.length === 0) {
+      return res.status(400).json({ error: 'Transfer/assignment agreement (transfer_agreement) is required' });
+    }
+
+    // 4. Check token symbol not already taken
+    const [existingToken] = await db.execute(
+      'SELECT id FROM tokens WHERE token_symbol = ? OR symbol = ?',
+      [token_symbol.toUpperCase(), token_symbol.toUpperCase()]
+    );
+    if (existingToken.length > 0) {
+      return res.status(409).json({ error: `Token symbol ${token_symbol.toUpperCase()} is already taken` });
+    }
+
+    try {
+      // 5. Upload documents to Supabase Storage
+      let ownershipProofUrl    = null;
+      let transferAgreementUrl = null;
+      let lenderConsentUrl     = null;
+
+      if (files.ownership_proof?.[0]) {
+        const up = await uploadToSupabase(files.ownership_proof[0], 'conversions', req.user.userId);
+        ownershipProofUrl = up.url;
+      }
+      if (files.transfer_agreement?.[0]) {
+        const up = await uploadToSupabase(files.transfer_agreement[0], 'conversions', req.user.userId);
+        transferAgreementUrl = up.url;
+      }
+      if (files.lender_consent?.[0]) {
+        const up = await uploadToSupabase(files.lender_consent[0], 'conversions', req.user.userId);
+        lenderConsentUrl = up.url;
+      }
+
+      // 6. Determine initial status
+      const lenderConsentObtained = !!lenderConsentUrl;
+      const applicationStatus = (needsLenderConsent && !lenderConsentObtained)
+        ? 'AWAITING_LENDER_CONSENT'
+        : 'PENDING';
+
+      const subId     = uuidv4();
+      const refNumber = `TEX-CONV-${new Date().getFullYear()}-${Math.floor(Math.random()*9000)+1000}`;
+      const dataJson  = JSON.stringify({
+        type: 'EXISTING_POSITION_CONVERSION',
+        spv_jurisdiction, underlying_owner_name,
+        existing_position_description,
+        existing_position_value_usd: parseFloat(existing_position_value_usd),
+        asset_type: asset_type.toUpperCase(),
+        token_symbol: token_symbol.toUpperCase(),
+        token_name, total_supply: parseInt(total_supply),
+        lockup_days: lockupDays,
+        lender_consent_required: needsLenderConsent,
+        extra: extraDataJson ? JSON.parse(extraDataJson) : {},
+        submittedBy: req.user.userId,
+        submittedAt: new Date().toISOString(),
+        referenceNumber: refNumber,
+      });
+
+      await db.execute(`
+        INSERT INTO data_submissions (
+          id, token_symbol, entity_name, issuer_wallet, period, data_json,
+          document_count, status, application_status, reference_number,
+          submission_type, spv_jurisdiction, converting_investor_id,
+          existing_position_description, existing_position_value_usd,
+          underlying_owner_name, lender_consent_required, lender_consent_obtained,
+          lender_consent_document_url, transfer_agreement_document_url,
+          ownership_proof_document_url
+        ) VALUES (?, ?, ?, ?, 'CONVERSION', ?, ?, 'PENDING', ?, ?,
+                  'EXISTING_POSITION_CONVERSION', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        subId, token_symbol.toUpperCase(), underlying_owner_name, req.user.userId,
+        dataJson,
+        (ownershipProofUrl ? 1 : 0) + (transferAgreementUrl ? 1 : 0) + (lenderConsentUrl ? 1 : 0),
+        applicationStatus, refNumber,
+        spv_jurisdiction.toUpperCase(), req.user.userId,
+        existing_position_description, parseFloat(existing_position_value_usd),
+        underlying_owner_name, needsLenderConsent, lenderConsentObtained,
+        lenderConsentUrl || null, transferAgreementUrl || null, ownershipProofUrl || null,
+      ]);
+
+      await db.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        ['CONVERSION_SUBMITTED', req.user.userId, token_symbol.toUpperCase(),
+         `Existing position conversion submitted. Jurisdiction: ${spv_jurisdiction}. Value: $${existing_position_value_usd}. Status: ${applicationStatus}. Ref: ${refNumber}`]
+      );
+
+      logger.info('Conversion submission received', {
+        subId, tokenSymbol: token_symbol.toUpperCase(), jurisdiction: spv_jurisdiction,
+        status: applicationStatus, ref: refNumber, userId: req.user.userId,
+      });
+
+      // Non-blocking notification email
+      const { notifyConversionSubmitted } = require('../utils/mailer');
+      db.execute('SELECT email, full_name FROM users WHERE id = ?', [req.user.userId]).then(([userRows]) => {
+        if (userRows[0]?.email) {
+          notifyConversionSubmitted({
+            investorEmail: userRows[0].email, investorName: userRows[0].full_name,
+            tokenSymbol: token_symbol.toUpperCase(), tokenName: token_name,
+            referenceNumber: refNumber, jurisdiction: spv_jurisdiction.toUpperCase(),
+            positionValue: parseFloat(existing_position_value_usd),
+            needsLenderConsent, applicationStatus,
+          }).catch(e => console.error('[MAILER] notifyConversionSubmitted failed:', e.message));
+        }
+      }).catch(() => {});
+
+      res.status(201).json({
+        success: true, submissionId: subId, referenceNumber: refNumber,
+        tokenSymbol: token_symbol.toUpperCase(), applicationStatus, lockupDays,
+        message: applicationStatus === 'AWAITING_LENDER_CONSENT'
+          ? `Conversion submitted (ref: ${refNumber}). Please upload lender consent documentation to proceed.`
+          : `Conversion request submitted successfully (ref: ${refNumber}). Our team will review within 5 business days.`,
+      });
+    } catch (err) {
+      logger.error('Conversion submission failed', { error: err.message });
+      res.status(500).json({ error: 'Conversion submission failed: ' + err.message });
+    }
+  }
+);
+
+// GET /api/submissions/jurisdictions/enabled — public: countries where conversion is on
+// Used by the investor-facing form to populate the jurisdiction dropdown
+router.get('/jurisdictions/enabled', async (req, res) => {
+  try {
+    const { getEnabledJurisdictions } = require('../utils/jurisdiction');
+    const rows = await getEnabledJurisdictions(db);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
