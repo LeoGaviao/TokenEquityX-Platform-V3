@@ -1454,4 +1454,230 @@ router.put(
   }
 );
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// JURISDICTION SETTINGS — Existing Position Conversion feature flags
+// GET/POST/PUT require ADMIN + is_super_admin (compliance-sensitive toggle)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const requireSuperAdminInline = async (req, res, next) => {
+  try {
+    const [rows] = await db.execute('SELECT is_super_admin FROM users WHERE id = ?', [req.user.userId]);
+    if (!rows.length || !rows[0].is_super_admin) {
+      return res.status(403).json({ error: 'Super admin access required for jurisdiction settings' });
+    }
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/admin/jurisdictions — list all jurisdiction settings
+router.get('/jurisdictions',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    try {
+      const [rows] = await db.execute(
+        `SELECT * FROM jurisdiction_settings ORDER BY country_name`
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error('[ADMIN] GET /jurisdictions error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// POST /api/admin/jurisdictions — add a new jurisdiction (SUPER_ADMIN)
+router.post('/jurisdictions',
+  authenticate,
+  requireRole('ADMIN'),
+  requireSuperAdminInline,
+  async (req, res) => {
+    const {
+      country_code, country_name,
+      existing_position_conversion_enabled = false,
+      conversion_lockup_days = 90,
+      legal_review_status = 'NOT_REVIEWED',
+      legal_review_notes = null,
+      legal_reviewer = null,
+    } = req.body;
+
+    if (!country_code || !country_name) {
+      return res.status(400).json({ error: 'country_code and country_name are required' });
+    }
+    if (country_code.length > 3) {
+      return res.status(400).json({ error: 'country_code must be ISO 3166-1 alpha-2 (2 chars) or alpha-3 (3 chars)' });
+    }
+    const validStatuses = ['NOT_REVIEWED','IN_REVIEW','CLEARED','BLOCKED'];
+    if (!validStatuses.includes(legal_review_status)) {
+      return res.status(400).json({ error: `legal_review_status must be one of: ${validStatuses.join(', ')}` });
+    }
+
+    try {
+      const [existing] = await db.execute(
+        'SELECT id FROM jurisdiction_settings WHERE country_code = ?',
+        [country_code.toUpperCase()]
+      );
+      if (existing.length > 0) {
+        return res.status(409).json({ error: `Jurisdiction ${country_code.toUpperCase()} already exists. Use PUT to update.` });
+      }
+
+      await db.execute(
+        `INSERT INTO jurisdiction_settings
+           (country_code, country_name, existing_position_conversion_enabled,
+            conversion_lockup_days, legal_review_status, legal_review_notes, legal_reviewer)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          country_code.toUpperCase(), country_name,
+          existing_position_conversion_enabled,
+          conversion_lockup_days,
+          legal_review_status, legal_review_notes, legal_reviewer,
+        ]
+      );
+
+      await db.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        ['JURISDICTION_ADDED', req.user.userId, country_code.toUpperCase(),
+         `Added ${country_name} (${country_code.toUpperCase()}). Conversion enabled: ${existing_position_conversion_enabled}. Legal status: ${legal_review_status}`]
+      );
+
+      res.status(201).json({ success: true, country_code: country_code.toUpperCase() });
+    } catch (err) {
+      console.error('[ADMIN] POST /jurisdictions error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// PUT /api/admin/jurisdictions/:countryCode — update jurisdiction settings (SUPER_ADMIN)
+router.put('/jurisdictions/:countryCode',
+  authenticate,
+  requireRole('ADMIN'),
+  requireSuperAdminInline,
+  async (req, res) => {
+    const code = req.params.countryCode.toUpperCase();
+    const {
+      existing_position_conversion_enabled,
+      conversion_lockup_days,
+      legal_review_status,
+      legal_review_notes,
+      legal_reviewer,
+    } = req.body;
+
+    const validStatuses = ['NOT_REVIEWED','IN_REVIEW','CLEARED','BLOCKED'];
+    if (legal_review_status && !validStatuses.includes(legal_review_status)) {
+      return res.status(400).json({ error: `legal_review_status must be one of: ${validStatuses.join(', ')}` });
+    }
+
+    try {
+      const [before] = await db.execute(
+        'SELECT * FROM jurisdiction_settings WHERE country_code = ?', [code]
+      );
+      if (!before.length) {
+        return res.status(404).json({ error: `Jurisdiction ${code} not found. Use POST to add it.` });
+      }
+
+      const updates = [];
+      const params  = [];
+      if (existing_position_conversion_enabled !== undefined) {
+        updates.push('existing_position_conversion_enabled = ?');
+        params.push(existing_position_conversion_enabled);
+      }
+      if (conversion_lockup_days !== undefined) {
+        updates.push('conversion_lockup_days = ?');
+        params.push(parseInt(conversion_lockup_days));
+      }
+      if (legal_review_status !== undefined) {
+        updates.push('legal_review_status = ?');
+        params.push(legal_review_status);
+      }
+      if (legal_review_notes !== undefined) {
+        updates.push('legal_review_notes = ?');
+        params.push(legal_review_notes);
+      }
+      if (legal_reviewer !== undefined) {
+        updates.push('legal_reviewer = ?');
+        params.push(legal_reviewer);
+      }
+      updates.push('legal_review_date = CURRENT_DATE', 'updated_at = NOW()');
+
+      if (updates.length === 2) {
+        return res.status(400).json({ error: 'No fields to update' });
+      }
+
+      params.push(code);
+      await db.execute(
+        `UPDATE jurisdiction_settings SET ${updates.join(', ')} WHERE country_code = ?`,
+        params
+      );
+
+      const beforeState = before[0];
+      await db.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        ['JURISDICTION_UPDATED', req.user.userId, code,
+         `Before: conversion_enabled=${beforeState.existing_position_conversion_enabled}, legal_status=${beforeState.legal_review_status}. After: conversion_enabled=${existing_position_conversion_enabled ?? beforeState.existing_position_conversion_enabled}, legal_status=${legal_review_status ?? beforeState.legal_review_status}`]
+      );
+
+      const [after] = await db.execute(
+        'SELECT * FROM jurisdiction_settings WHERE country_code = ?', [code]
+      );
+      res.json({ success: true, jurisdiction: after[0] });
+    } catch (err) {
+      console.error('[ADMIN] PUT /jurisdictions/:code error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// PUT /api/admin/submissions/:id/confirm-lender-consent — mark lender consent received
+router.put('/submissions/:id/confirm-lender-consent',
+  authenticate,
+  requireRole('ADMIN'),
+  async (req, res) => {
+    const { confirmed, notes } = req.body;
+    if (!confirmed) {
+      return res.status(400).json({ error: 'confirmed: true is required' });
+    }
+    try {
+      const [rows] = await db.execute(
+        `SELECT id, submission_type, application_status, lender_consent_required
+         FROM data_submissions WHERE id = ?`,
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Submission not found' });
+      const sub = rows[0];
+      if (sub.submission_type !== 'EXISTING_POSITION_CONVERSION') {
+        return res.status(400).json({ error: 'This endpoint only applies to EXISTING_POSITION_CONVERSION submissions' });
+      }
+      if (sub.application_status !== 'AWAITING_LENDER_CONSENT') {
+        return res.status(400).json({
+          error: `Submission is not awaiting lender consent (status: ${sub.application_status})`
+        });
+      }
+
+      await db.execute(
+        `UPDATE data_submissions
+         SET lender_consent_obtained = TRUE,
+             application_status = 'PENDING',
+             admin_notes = ?,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [notes || null, req.params.id]
+      );
+
+      await db.execute(
+        'INSERT INTO audit_logs (action, performed_by, target_entity, details) VALUES (?, ?, ?, ?)',
+        ['LENDER_CONSENT_CONFIRMED', req.user.userId, req.params.id,
+         `Lender consent confirmed by admin. Notes: ${notes || 'None'}`]
+      );
+
+      res.json({ success: true, newStatus: 'PENDING', message: 'Lender consent confirmed — submission proceeds to auditor review' });
+    } catch (err) {
+      console.error('[ADMIN] confirm-lender-consent error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
 module.exports = router;

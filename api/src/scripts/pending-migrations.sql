@@ -263,5 +263,79 @@ CREATE INDEX IF NOT EXISTS idx_zimra_remittances_status  ON zimra_remittances(st
 CREATE INDEX IF NOT EXISTS idx_zimra_remittances_due     ON zimra_remittances(due_date);
 
 -- =============================================================================
+-- EXISTING POSITION CONVERSION (Tasks 1-4)
+-- Per-jurisdiction feature flag system and direct token minting pipeline
+-- Pending legal clearance from Dickson Mundia (Mundia and Mudhara) for ZW
+-- =============================================================================
+
+-- ── 16. jurisdiction_settings — per-country feature flags ────────────────────
+CREATE TABLE IF NOT EXISTS jurisdiction_settings (
+  id                                    UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code                          VARCHAR(3)    NOT NULL UNIQUE,
+  country_name                          VARCHAR(100)  NOT NULL,
+  existing_position_conversion_enabled  BOOLEAN       NOT NULL DEFAULT FALSE,
+  conversion_lockup_days                INTEGER       NOT NULL DEFAULT 90,
+  legal_review_status                   VARCHAR(30)   DEFAULT 'NOT_REVIEWED',
+  legal_review_notes                    TEXT,
+  legal_reviewer                        VARCHAR(255),
+  legal_review_date                     DATE,
+  created_at                            TIMESTAMPTZ   DEFAULT NOW(),
+  updated_at                            TIMESTAMPTZ   DEFAULT NOW()
+);
+
+-- Seed Zimbabwe as disabled pending legal review
+-- Open questions: SPV transfer treatment, lender consent requirements,
+-- whether this constitutes a distinct regulatory activity from primary
+-- issuance under SECZ classification
+INSERT INTO jurisdiction_settings
+  (country_code, country_name, existing_position_conversion_enabled,
+   conversion_lockup_days, legal_review_status, legal_review_notes)
+VALUES
+  ('ZW', 'Zimbabwe', FALSE, 90, 'IN_REVIEW',
+   'Pending review by Dickson Mundia (Mundia and Mudhara) — see internal concept note dated June 2026. Open questions include SPV transfer treatment, lender consent requirements, and whether this constitutes a distinct regulatory activity from primary issuance under SECZ classification.')
+ON CONFLICT (country_code) DO NOTHING;
+
+-- ── 17. data_submissions — existing position conversion columns ───────────────
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS submission_type             VARCHAR(40) DEFAULT 'PRIMARY_ISSUANCE';
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS spv_jurisdiction            VARCHAR(3);
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS converting_investor_id      UUID REFERENCES users(id);
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS existing_position_description TEXT;
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS existing_position_value_usd NUMERIC(20,2);
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS underlying_owner_name       VARCHAR(255);
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS lockup_end_date             DATE;
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS lender_consent_required     BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS lender_consent_obtained     BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS lender_consent_document_url TEXT;
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS transfer_agreement_document_url TEXT;
+
+ALTER TABLE data_submissions
+  ADD COLUMN IF NOT EXISTS ownership_proof_document_url TEXT;
+
+-- ── 18. token_holdings — acquisition_type column ─────────────────────────────
+ALTER TABLE token_holdings
+  ADD COLUMN IF NOT EXISTS acquisition_type VARCHAR(40) DEFAULT 'PRIMARY_SUBSCRIPTION';
+
+-- =============================================================================
 -- END
 -- =============================================================================
